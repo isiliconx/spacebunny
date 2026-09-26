@@ -1,0 +1,404 @@
+/* ─────────────────────────────────────────────────────────────
+   Lunar Hopper — HUD styling.
+   Cold instrument-panel look: thin uppercase mono, cyan accents,
+   soft glass panels. Everything is pointer-events:none except the
+   start button, so the mouse stays free for camera dragging.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --cyan: #7fe3ff;
+  --cyan-dim: rgba(127, 227, 255, 0.55);
+  --amber: #ffc46b;
+  --ink: #e9f4fb;
+  --panel-bg: rgba(6, 12, 20, 0.42);
+  --panel-edge: rgba(127, 227, 255, 0.22);
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #04070c;
+  color: var(--ink);
+  font-family: var(--mono);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+}
+#scene.dragging { cursor: grabbing; }
+
+/* ── HUD frame ───────────────────────────────────────────── */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  user-select: none;
+}
+.hud[hidden] { display: none; }
+
+.hud-corner { position: absolute; }
+.hud-corner.tl { top: 18px; left: 18px; }
+.hud-corner.tr { top: 18px; right: 18px; }
+.hud-corner.bl { bottom: 18px; left: 18px; }
+
+.panel {
+  position: relative;
+  min-width: 208px;
+  padding: 12px 14px 13px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  backdrop-filter: blur(9px) saturate(1.1);
+  -webkit-backdrop-filter: blur(9px) saturate(1.1);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* corner ticks */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 9px; height: 9px;
+  border: 1px solid var(--cyan-dim);
+  pointer-events: none;
+}
+.panel::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.panel::after  { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 9px;
+  opacity: 0.9;
+}
+
+.stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  font-size: 11px;
+  line-height: 1.85;
+}
+.stat-label {
+  color: rgba(233, 244, 251, 0.52);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 9.5px;
+}
+.stat-value { color: var(--ink); font-variant-numeric: tabular-nums; }
+.stat-value b { color: var(--cyan); font-weight: 600; }
+.stat-value i { color: rgba(233, 244, 251, 0.45); font-style: normal; margin: 0 2px; }
+
+#backend { font-size: 9.5px; letter-spacing: 0.1em; }
+#backend.webgpu { color: #8bffcf; }
+
+/* crystal pips */
+.crystal-pips {
+  display: flex;
+  gap: 3px;
+  margin: 7px 0 4px;
+  flex-wrap: wrap;
+  max-width: 180px;
+}
+.crystal-pips i {
+  width: 7px; height: 7px;
+  background: rgba(127, 227, 255, 0.16);
+  border: 1px solid rgba(127, 227, 255, 0.3);
+  transform: rotate(45deg);
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+.crystal-pips i.on {
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan), 0 0 16px rgba(127, 227, 255, 0.5);
+}
+
+/* controls list */
+.panel.controls { min-width: 250px; }
+.panel.controls ul { list-style: none; margin: 0; padding: 0; }
+.panel.controls li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  line-height: 1.9;
+  color: rgba(233, 244, 251, 0.6);
+}
+.panel.controls li span { margin-left: 5px; letter-spacing: 0.04em; }
+kbd {
+  display: inline-block;
+  min-width: 17px;
+  padding: 1px 4px;
+  font: inherit;
+  font-size: 9px;
+  text-align: center;
+  color: var(--ink);
+  background: rgba(127, 227, 255, 0.09);
+  border: 1px solid rgba(127, 227, 255, 0.3);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+.hint {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(127, 227, 255, 0.14);
+  font-size: 9.5px;
+  line-height: 1.6;
+  letter-spacing: 0.05em;
+  color: var(--amber);
+  opacity: 0.85;
+}
+
+/* compass */
+.compass {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px 5px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 3px;
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+}
+.compass span {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--cyan-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* toasts (bottom-right stack) */
+.toast-stack {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.toast {
+  padding: 7px 12px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-edge);
+  border-left: 2px solid var(--cyan);
+  border-radius: 2px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: toastIn 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.toast.gold { border-left-color: var(--amber); color: #ffe3b0; }
+.toast.fade { animation: toastOut 0.45s ease forwards; }
+@keyframes toastIn  { from { opacity: 0; transform: translateX(18px); } }
+@keyframes toastOut { to   { opacity: 0; transform: translateX(18px); } }
+
+/* big centred banner (mission complete) */
+.center-toast {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(127, 227, 255, 0.75), 0 0 60px rgba(127, 227, 255, 0.35);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  white-space: nowrap;
+}
+.center-toast.show { opacity: 1; animation: bannerPulse 2.4s ease-in-out infinite; }
+@keyframes bannerPulse { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-50%, -50%) scale(1.035); } }
+
+.reticle {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 5px; height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: rgba(127, 227, 255, 0.75);
+  box-shadow: 0 0 8px rgba(127, 227, 255, 0.8);
+}
+.reticle[hidden] { display: none; }
+
+/* flash on hard landing / launch */
+.damage-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(255, 196, 107, 0.35) 100%);
+  transition: opacity 0.45s ease;
+}
+
+/* ── Title overlay ───────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  /* Translucent, so the lunar basin and the lander stay visible behind the
+     title instead of a flat black card. */
+  background:
+    radial-gradient(ellipse at 50% 55%, rgba(4, 7, 12, 0.42), rgba(4, 7, 12, 0.86) 62%, rgba(4, 7, 12, 0.95) 100%);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  transition: opacity 0.7s ease, visibility 0.7s;
+}
+.overlay.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.overlay-inner { text-align: center; padding: 28px; max-width: 640px; }
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--cyan-dim);
+  margin-bottom: 18px;
+}
+
+.overlay h1 {
+  margin: 0;
+  font-size: clamp(40px, 9vw, 84px);
+  line-height: 0.94;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  text-transform: uppercase;
+  text-shadow: 0 0 40px rgba(127, 227, 255, 0.28);
+}
+.overlay h1 span {
+  display: block;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--cyan-dim);
+}
+
+.tagline {
+  margin: 20px 0 34px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgba(233, 244, 251, 0.55);
+  text-transform: uppercase;
+}
+
+.loader { max-width: 320px; margin: 0 auto; }
+.loader-bar {
+  height: 2px;
+  background: rgba(127, 227, 255, 0.14);
+  overflow: hidden;
+}
+.loader-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, transparent, var(--cyan));
+  box-shadow: 0 0 12px var(--cyan);
+  transition: width 0.3s ease;
+}
+.loader-text {
+  margin-top: 11px;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(233, 244, 251, 0.45);
+  min-height: 12px;
+}
+.loader.done { display: none; }
+
+.start-btn {
+  margin-top: 6px;
+  padding: 15px 46px;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #04121a;
+  background: var(--cyan);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 34px rgba(127, 227, 255, 0.4);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+  pointer-events: auto;
+}
+.start-btn:hover  { transform: translateY(-2px); box-shadow: 0 0 48px rgba(127, 227, 255, 0.6); }
+.start-btn:active { transform: translateY(0); }
+.start-btn small {
+  display: block;
+  margin-top: 6px;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  opacity: 0.65;
+  text-transform: none;
+}
+
+.overlay-foot {
+  margin-top: 40px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(233, 244, 251, 0.3);
+}
+.overlay-foot .dot { margin: 0 8px; }
+
+/* fatal error card */
+.fatal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: #04070c;
+  padding: 30px;
+}
+.fatal[hidden] { display: none; }
+.fatal-inner { max-width: 720px; }
+.fatal h2 {
+  font-size: 14px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #ff8f6b;
+  margin: 0 0 14px;
+}
+.fatal pre {
+  font-size: 11px;
+  line-height: 1.7;
+  color: rgba(233, 244, 251, 0.7);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+/* small screens: keep the view clear */
+@media (max-width: 720px) {
+  .panel.controls { display: none; }
+  .hud-corner.tl, .hud-corner.tr { transform: scale(0.88); transform-origin: top; }
+  .hud-corner.tl { transform-origin: top left; }
+  .hud-corner.tr { transform-origin: top right; }
+}
