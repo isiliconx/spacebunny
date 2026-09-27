@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Harmonograph Plotter · Damped Dual Pendulum</title>
+<style>
+  :root{
+    --ink:#e4edf5; --dim:#7b93a6; --acc:#4fe6c8; --acc2:#ff86b8;
+    --panel:rgba(6,10,16,.76); --edge:rgba(140,200,220,.20);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#03060a; overflow:hidden;
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace; color:var(--ink); }
+  #gl{ position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .hud{ position:fixed; pointer-events:none; z-index:5; }
+  .panel{ background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:11px 13px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 12px 40px rgba(0,0,0,.6); }
+  #title{ top:15px; left:15px; width:360px; }
+  #title h1{ margin:0 0 4px; font-size:13.5px; letter-spacing:.13em; text-transform:uppercase; color:#fff; font-weight:600; }
+  #title h1 b{ color:var(--acc); font-weight:600; }
+  #title .eq{ color:var(--acc2); font-size:10.5px; margin:6px 0 7px; line-height:1.65; }
+  #title p{ margin:0; color:var(--dim); font-size:10.5px; line-height:1.55; }
+  #title p b{ color:#a8c4d4; font-weight:600; }
+  #title .row{ display:flex; gap:14px; margin-top:8px; padding-top:8px; border-top:1px solid var(--edge); }
+  #title .k{ color:var(--dim); } #title .v{ color:var(--ink); }
+
+  #meter{ top:15px; right:15px; width:218px; }
+  #meter .big{ font-size:21px; color:#fff; letter-spacing:.01em; line-height:1.1; }
+  #meter .big small{ font-size:9.5px; color:var(--dim); letter-spacing:.12em; }
+  #meter .frac{ font-size:15px; color:var(--acc); letter-spacing:.04em; }
+  #meter table{ width:100%; border-collapse:collapse; margin-top:7px; }
+  #meter td{ padding:1.5px 0; font-size:10.5px; }
+  #meter td:first-child{ color:var(--dim); } #meter td:last-child{ text-align:right; }
+  #bar{ height:4px; border-radius:2px; background:rgba(255,255,255,.10); margin-top:9px; overflow:hidden; }
+  #bar i{ display:block; height:100%; width:0%; border-radius:2px;
+    background:linear-gradient(90deg,#1d6b7a,#4fe6c8,#ffe9a8,#ff86b8); }
+  #barlab{ font-size:9.5px; color:var(--dim); margin-top:5px; letter-spacing:.09em; }
+
+  #ctl{ bottom:15px; left:15px; width:340px; pointer-events:auto; }
+  #ctl .sec{ margin-bottom:10px; } #ctl .sec:last-child{ margin-bottom:0; }
+  #ctl h2{ margin:0 0 6px; font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .chips{ display:flex; flex-wrap:wrap; gap:5px; }
+  .chip{ pointer-events:auto; cursor:pointer; font:inherit; font-size:10.5px; padding:4px 9px;
+    border-radius:20px; color:var(--dim); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .chip:hover{ color:#fff; background:rgba(255,255,255,.12); }
+  .chip.on{ color:#03131a; background:linear-gradient(180deg,#8ff5dd,#3fc9ae); border-color:transparent; font-weight:600; }
+  .sl{ display:grid; grid-template-columns:74px 1fr 46px; align-items:center; gap:7px; margin:4px 0; }
+  .sl label{ font-size:10.5px; color:var(--dim); }
+  .sl output{ font-size:10.5px; text-align:right; color:var(--acc); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:14px; background:transparent; cursor:ew-resize; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(79,230,200,.9) var(--p,50%),rgba(255,255,255,.13) var(--p,50%)); }
+  input[type=range]::-moz-range-track{ height:3px; border-radius:2px; background:rgba(255,255,255,.13); }
+  input[type=range]::-moz-range-progress{ height:3px; border-radius:2px; background:rgba(79,230,200,.9); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background:#eafff8; margin-top:-4px; box-shadow:0 0 0 3px rgba(79,230,200,.22),0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-moz-range-thumb{ width:11px; height:11px; border:0; border-radius:50%;
+    background:#eafff8; box-shadow:0 0 0 3px rgba(79,230,200,.22); }
+  .row2{ display:flex; gap:5px; margin-top:8px; }
+  .btn{ pointer-events:auto; cursor:pointer; flex:1; font:inherit; font-size:10.5px; padding:5px 0;
+    border-radius:6px; color:var(--ink); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .btn:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  .btn.on{ color:var(--acc2); border-color:rgba(255,134,184,.5); }
+
+  #hint{ bottom:15px; right:15px; text-align:right; color:var(--dim); font-size:10px; line-height:1.75;
+    background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:8px 11px; }
+  #hint b{ color:var(--acc); font-weight:600; }
+  @media (max-width:1000px){ #ctl,#hint{ display:none; } }
+  @media (max-height:620px){ #meter{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="hud panel" id="title">
+  <h1>Harmono<b>graph</b> Plotter</h1>
+  <div class="eq">u″ = −2g·u′ − (ω² + g²)u &nbsp;&nbsp;⇒&nbsp;&nbsp; u = A·e<sup>−gt</sup>·sin(ωt + φ)<br>x = Σ<sub>k</sub> A<sup>k</sup>·sin(ω<sub>0</sub>r<sup>k</sup>t + φ<sub>k</sub>)&nbsp;&nbsp;&nbsp; y = x delayed by δ<sub>k</sub>&nbsp;&nbsp;&nbsp; ω = ω<sub>0</sub>·r<sup>k</sup></div>
+  <p>Eight damped oscillators — four harmonics on each of two orthogonal axes, sharing a frequency ladder ω<sub>0</sub>·r<sup>k</sup> — are summed into a pen that never quite repeats. Each mode is <b>A·e<sup>−γt</sup>·sin(ωt + φ)</b>, so the exponential decay <i>is</i> the dynamics rather than a fade applied afterwards. Integrated with <b>RK4 at a fixed Δ = 1/1200 s</b>; every sample is <b>additively splatted</b> into an <b>RGBA32F</b> buffer multiplied by a decay factor every frame — the figure is literally its own decaying memory.</p>
+
+
+
+  <div class="row">
+    <div><span class="k">figure</span> <span class="v" id="t-preset">rose</span></div>
+    <div><span class="k">seed</span> <span class="v" id="t-seed"></span></div>
+    <div><span class="k">splat</span> <span class="v" id="t-pts"></span></div>
+  </div>
+</div>
+
+<div class="hud panel" id="meter">
+  <div class="big"><span id="m-time">0.0</span><br><small>SIM SECONDS</small></div>
+  <div class="frac" id="m-frac">3:2</div>
+  <table>
+    <tr><td>ω₀ / ω₁</td><td id="m-om">—</td></tr>
+    <tr><td>damping γ</td><td id="m-g">—</td></tr>
+    <tr><td>harmonics</td><td id="m-h2">—</td></tr>
+    <tr><td>phase δ</td><td id="m-ph">—</td></tr>
+    <tr><td>trail</td><td id="m-tr">—</td></tr>
+    <tr><td>decay/frame</td><td id="m-dc">—</td></tr>
+    <tr><td>samples</td><td id="m-sm"></td></tr>
+    <tr><td>buffer</td><td id="m-buf"></td></tr>
+    <tr><td>float</td><td id="m-fmt"></td></tr>
+    <tr><td>fps</td><td id="m-fps"></td></tr>
+  </table>
+  <div id="bar"><i id="barf"></i></div>
+  <div id="barlab">PLOTTING</div>
+</div>
+
+<div class="hud panel" id="ctl">
+  <div class="sec">
+    <h2>Figure</h2>
+    <div class="chips" id="presets"></div>
+  </div>
+  <div class="sec">
+    <h2>Drive &amp; pen</h2>
+    <div id="sliders"></div>
+  </div>
+  <div class="sec">
+    <h2>Colour by</h2>
+    <div class="chips" id="modes"></div>
+  </div>
+  <div class="sec">
+    <h2>Ink</h2>
+    <div class="chips" id="pals"></div>
+    <div class="row2">
+      <button class="btn" id="b-reseed">Re-seed</button>
+      <button class="btn" id="b-clear">Clear</button>
+      <button class="btn" id="b-pause">Pause</button>
+    </div>
+  </div>
+</div>
+
+<div class="hud" id="hint">
+  <div><b>space</b> pause &nbsp; <b>R</b> re-seed &nbsp; <b>C</b> clear</div>
+  <div><b>16</b> figure &nbsp; <b>V</b> colour mode &nbsp; <b>P</b> ink</div>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════
+   31 — HARMONOGRAPH PLOTTER
+   Two orthogonal damped, harmonically-driven pendulums integrated with RK4 at
+   a fixed delta. Every integration sample is splatted additively as a soft
+   round point into an RGBA32F buffer, which is multiplied by a per-frame decay
+   constant — an exponential trail that is resolution-independent, unlike a
+   Canvas2D alpha fade. A 1/4-res bright-pass bloom lifts the densest regions.
+   Fully deterministic: mulberry32, fixed Δ, no Math.random in the render path.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v,a,b) => v < a ? a : (v > b ? b : v);
+const $ = id => document.getElementById(id);
+
+/* ─── parameters ─────────────────────────────────────────────────────────── */
+const WARMUP_SIM   = 46.0;   // sim-seconds accumulated before __ready
+const WARMUP_SLICE = 60;     // sim-frames per drawn frame while warming up
+const FRAME_DT     = 1 / 60; // fixed sim delta per frame  (never wall clock)
+const SUBSTEPS     = 20;     // RK4 substeps per frame  ->  Δ = 1/1200 s
+const SUB_DT       = FRAME_DT / SUBSTEPS;
+const TRAIL_EPS    = 0.022;  // residual trail brightness at the tail
+const TW_MAX       = 640;    // internal trail-buffer width (contract §4)
+
+const P = {
+  ratio: 3 / 2, damping: 0.019, spread: 1.5, harm: 0.60,
+  phi2: 2.3562, phase2: 4.7124, drive: 1.0, omega0: 1.0,
+  trail: 60.0, ink: 0.135, tilt: -0.155,
+  mode: 0, pal: 0, preset: 0, seed: 0x2F41, paused: false,
+};
+/* Each figure is a frequency ratio, a quarter-phase, a base damping and how
+   much faster the second harmonic decays.  The numbers were chosen by
+   rendering the offline model and looking at it, not by guessing. */
+const PRESETS = [
+  { name:'rose',   r:3/2,   phase:1.5708, g:0.019, sp:1.5, hm:0.60, p2:2.3562, q2:4.7124, tr:60 },
+  { name:'bloom',  r:5/4,   phase:1.5708, g:0.022, sp:1.7, hm:0.66, p2:1.5708, q2:1.5708, tr:70 },
+  { name:'weave',  r:4/3,   phase:2.0944, g:0.015, sp:1.3, hm:0.68, p2:3.1416, q2:2.3562, tr:72 },
+  { name:'crown',  r:7/4,   phase:0.7854, g:0.015, sp:1.9, hm:0.50, p2:0.7854, q2:3.9270, tr:85 },
+  { name:'veil',   r:7/4,   phase:1.5708, g:0.022, sp:1.5, hm:0.70, p2:2.0944, q2:5.4978, tr:55 },
+  { name:'spiral', r:5/2,   phase:1.5708, g:0.014, sp:1.3, hm:0.70, p2:0.5236, q2:2.0944, tr:95 },
+];
+const MODES = ['velocity', 'radius', 'drift'];
+const PALETTES = [
+  { name:'phosphor', c0:[0.06,0.94,0.75], c1:[0.48,0.84,1.00], c2:[1.00,0.31,0.64] },
+  { name:'ember',    c0:[1.00,0.81,0.36], c1:[1.00,0.42,0.24], c2:[0.76,0.23,1.00] },
+  { name:'ultraviolet', c0:[0.42,0.36,1.00], c1:[0.23,0.88,1.00], c2:[1.00,0.37,0.78] },
+];
+
+/* ─── GL context ─────────────────────────────────────────────────────────── */
+const cv = $('gl');
+const gl = cv.getContext('webgl2', { antialias:false, alpha:false, depth:false, stencil:false,
+                                     preserveDrawingBuffer:false, premultipliedAlpha:false });
+if(!gl){
+  document.body.innerHTML =
+    '<div style="padding:40px;font:13px monospace;color:#ff8a6a">WebGL2 unavailable.</div>';
+  throw new Error('no webgl2');
+}
+/* MUST precede any float FBO creation (contract §4) */
+const extCBF  = gl.getExtension('EXT_color_buffer_float');
+const extLinF = gl.getExtension('OES_texture_float_linear');
+
+function testFmt(ifmt, type){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, 4, 4, 0, gl.RGBA, type, null);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(f); gl.deleteTexture(t);
+  return ok;
+}
+/* 32F accumulates thousands of splats without banding, but needs an explicit
+   linear-filter extension; 16F is filterable in core WebGL2 and is the fallback. */
+let TRAIL_IFMT = gl.RGBA16F, TRAIL_TYPE = gl.HALF_FLOAT, FLOAT_FMT = 'RGBA16F';
+if(extCBF && testFmt(gl.RGBA32F, gl.FLOAT)){
+  TRAIL_IFMT = gl.RGBA32F; TRAIL_TYPE = gl.FLOAT; FLOAT_FMT = 'RGBA32F';
+  if(!extLinF){
+    TRAIL_IFMT = gl.RGBA16F; TRAIL_TYPE = gl.HALF_FLOAT; FLOAT_FMT = 'RGBA16F (32F unfilterable)';
+  }
+} else if(!testFmt(gl.RGBA16F, gl.HALF_FLOAT)){
+  TRAIL_IFMT = gl.RGBA8; TRAIL_TYPE = gl.UNSIGNED_BYTE; FLOAT_FMT = 'RGBA8 fallback';
+}
+const PT_MAX = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1] || 64;
+
+/* ─── shader plumbing ────────────────────────────────────────────────────── */
+function sh(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const inf = gl.getActiveUniform(p, i); u[inf.name] = gl.getUniformLocation(p, inf.name); }
+  return { p, u };
+}
+const VS_QUAD = `#version 300 es
+in vec2 aPos; out vec2 vUv;
+void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+/* fade: dst = dst * decay, sampled explicitly and ping-ponged.  Doing the
+   multiply with blendFunc(ZERO, SRC_COLOR) would be shorter, but that depends on
+   FUNC_REVERSE_SUBTRACT being honoured; when a driver folds it into FUNC_ADD
+   the pass silently paints a constant over the buffer instead of scaling it.
+   One extra 4 MB target removes the dependency entirely. */
+const P_FADE = prog(VS_QUAD, `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uSrc; uniform vec4 uDecay; out vec4 o;
+void main(){ o = texture(uSrc, vUv) * uDecay; }`);
+
+/* splat: additive soft round point */
+const P_SPLAT = prog(`#version 300 es
+in vec2 aPos; in float aSize; in vec4 aCol;
+uniform vec2 uRes;
+out vec4 vCol;
+void main(){
+  gl_Position = vec4(aPos / uRes * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = aSize; vCol = aCol;
+}`, `#version 300 es
+precision highp float; in vec4 vCol; out vec4 o;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float w = exp(-dot(d, d) * 15.0);
+  if(w < 0.006) discard;
+  o = vec4(vCol.rgb * w * vCol.a, w * vCol.a);
+}`);
+
+/* bright-pass downsample 1/4 */
+const P_BRIGHT = prog(VS_QUAD, `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uSrc; uniform vec2 uTexel;
+uniform float uThresh; out vec4 o;
+void main(){
+  vec3 s = texture(uSrc, vUv + uTexel * vec2(-1.0,-1.0)).rgb
+         + texture(uSrc, vUv + uTexel * vec2( 1.0,-1.0)).rgb
+         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb
+         + texture(uSrc, vUv + uTexel * vec2( 1.0, 1.0)).rgb;
+  s *= 0.25;
+  float l = max(max(s.r, s.g), s.b);
+  o = vec4(s * (max(0.0, l - uThresh) / max(l, 1e-4)), 1.0);
+}`);
+/* separable 9-tap gaussian */
+const P_BLUR = prog(VS_QUAD, `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uSrc; uniform vec2 uDir; out vec4 o;
+void main(){
+  const float w0 = 0.2270270270, w1 = 0.3162162162, w2 = 0.0702702703;
+  vec3 c = texture(uSrc, vUv).rgb * w0;
+  c += (texture(uSrc, vUv + uDir).rgb      + texture(uSrc, vUv - uDir).rgb)      * w1;
+  c += (texture(uSrc, vUv + uDir * 2.0).rgb + texture(uSrc, vUv - uDir * 2.0).rgb) * w2;
+  o = vec4(c, 1.0);
+}`);
+
+/* display: background plate + dispersion-split trail + bloom + rolloff */
+const P_DISP = prog(VS_QUAD, `#version 300 es
+precision highp float; in vec2 vUv;
+uniform sampler2D uBg, uTrail, uBloom;
+uniform float uInk, uBloomAmt, uDisp;
+out vec4 o;
+void main(){
+  vec3 bg = texture(uBg, vUv).rgb;
+  vec2 c = vUv - 0.5;
+  vec2 d = c * 0.0042 * uDisp;
+  vec3 tr;
+  tr.r = texture(uTrail, vUv + d).r;
+  tr.g = texture(uTrail, vUv).g;
+  tr.b = texture(uTrail, vUv - d).b;
+  vec3 bl = texture(uBloom, vUv).rgb;
+  vec3 col = bg + tr * uInk + bl * uBloomAmt;
+  col = col / (1.0 + col * 0.52);
+  col = pow(max(col, 0.0), vec3(0.92));
+  o = vec4(col, 1.0);
+}`);
+
+/* ─── geometry ───────────────────────────────────────────────────────────── */
+const quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+const quadVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+const MAX_PTS = 1 << 16;   /* 65536 — far above any per-slice batch */
+const ptData  = new Float32Array(MAX_PTS * 8);
+const ptVAO = gl.createVertexArray();
+gl.bindVertexArray(ptVAO);
+const ptVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO);
+gl.bufferData(gl.ARRAY_BUFFER, ptData.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 32, 0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 32, 8);
+gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 12);
+gl.bindVertexArray(null);
+let ptCount = 0;
+
+function drawQuad(){ gl.bindVertexArray(quadVAO); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+function makeTarget(w, h, ifmt, type, linear){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, gl.RGBA, type, null);
+  const filt = linear ? gl.LINEAR : gl.NEAREST;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+function dropTarget(t){ if(!t) return; gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+
+/* ─── sizing & the background plate ───────────────────────────────────────── */
+let TW = 640, TH = 400, CW = 0, CH = 0, DPR = 1;
+let trail = [null, null], tsrc = 0, bloomA = null, bloomB = null, bgTex = null;
+const FOCAL_X = 0.552, FOCAL_Y = 0.520;   // figure centre, in buffer/canvas fractions
+const RADIUS  = 0.415;                   // figure radius, fraction of the short edge
+
+const bgCv = document.createElement('canvas');
+const bgCtx = bgCv.getContext('2d');
+
+function buildPlate(){
+  bgCv.width = CW; bgCv.height = CH;
+  const g = bgCtx;
+  const fx = FOCAL_X * CW, fy = FOCAL_Y * CH, R = RADIUS * Math.min(CW, CH);
+  g.clearRect(0, 0, CW, CH);
+
+  /* deep ground: cool core, colder corners */
+  const rad = g.createRadialGradient(fx, fy, 0, fx, fy, Math.hypot(CW, CH) * 0.62);
+  rad.addColorStop(0.00, '#0d1a24');
+  rad.addColorStop(0.34, '#091320');
+  rad.addColorStop(0.70, '#050a11');
+  rad.addColorStop(1.00, '#03060a');
+  g.fillStyle = rad; g.fillRect(0, 0, CW, CH);
+
+  /* a second, off-centre warm pool so the ground is not radially boring */
+  const warm = g.createRadialGradient(CW * 0.14, CH * 0.86, 0, CW * 0.14, CH * 0.86, CH * 0.9);
+  warm.addColorStop(0, 'rgba(38,16,34,0.55)');
+  warm.addColorStop(1, 'rgba(38,16,34,0)');
+  g.fillStyle = warm; g.fillRect(0, 0, CW, CH);
+
+  /* plotter furniture: polar guide + axes */
+  g.save();
+  g.translate(fx, fy);
+  g.strokeStyle = 'rgba(120,205,225,0.075)'; g.lineWidth = 1;
+  for(let i = 1; i <= 3; i++){
+    g.beginPath(); g.arc(0, 0, R * (i / 3) * 1.12, 0, Math.PI * 2); g.stroke();
+  }
+  g.strokeStyle = 'rgba(120,205,225,0.05)';
+  for(let i = 0; i < 12; i++){
+    const a = i * Math.PI / 6;
+    g.beginPath();
+    g.moveTo(Math.cos(a) * R * 0.26, Math.sin(a) * R * 0.26);
+    g.lineTo(Math.cos(a) * R * 1.12, Math.sin(a) * R * 1.12);
+    g.stroke();
+  }
+  g.strokeStyle = 'rgba(120,205,225,0.10)';
+  g.beginPath();
+  g.moveTo(-R * 1.20, 0); g.lineTo(R * 1.20, 0);
+  g.moveTo(0, -R * 1.20); g.lineTo(0, R * 1.20);
+  g.stroke();
+  g.restore();
+
+  /* frame + corner ticks */
+  g.strokeStyle = 'rgba(150,210,230,0.13)'; g.lineWidth = 1;
+  g.strokeRect(10.5, 10.5, CW - 21, CH - 21);
+  g.strokeStyle = 'rgba(160,225,240,0.30)'; g.lineWidth = 1.6;
+  const T = 16, m = 10.5;
+  g.beginPath();
+  g.moveTo(m, m + T); g.lineTo(m, m); g.lineTo(m + T, m);
+  g.moveTo(CW - m - T, m); g.lineTo(CW - m, m); g.lineTo(CW - m, m + T);
+  g.moveTo(m, CH - m - T); g.lineTo(m, CH - m); g.lineTo(m + T, CH - m);
+  g.moveTo(CW - m - T, CH - m); g.lineTo(CW - m, CH - m); g.lineTo(CW - m, CH - m - T);
+  g.stroke();
+
+  /* grain: a 128px noise tile, so no 8-bit value ever covers much area */
+  const N = 128, nc = document.createElement('canvas');
+  nc.width = N; nc.height = N;
+  const nctx = nc.getContext('2d');
+  const img = nctx.createImageData(N, N);
+  const rng = mulberry32(0x9E3779B1);
+  for(let i = 0; i < N * N; i++){
+    const v = 128 + (rng() - 0.5) * 116;
+    img.data[i*4] = img.data[i*4+1] = img.data[i*4+2] = v; img.data[i*4+3] = 255;
+  }
+  nctx.putImageData(img, 0, 0);
+  g.globalCompositeOperation = 'overlay';
+  g.globalAlpha = 0.10;
+  g.fillStyle = g.createPattern(nc, 'repeat');
+  g.fillRect(0, 0, CW, CH);
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+}
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  CW = Math.max(2, Math.round(cv.clientWidth  * DPR));
+  CH = Math.max(2, Math.round(cv.clientHeight * DPR));
+  cv.width = CW; cv.height = CH;
+  TW = TW_MAX; TH = clamp(Math.round(TW_MAX * CH / CW), 320, 400);
+
+  dropTarget(trail[0]); dropTarget(trail[1]); dropTarget(bloomA); dropTarget(bloomB);
+  trail[0] = makeTarget(TW, TH, TRAIL_IFMT, TRAIL_TYPE, false);
+  trail[1] = makeTarget(TW, TH, TRAIL_IFMT, TRAIL_TYPE, false);
+  tsrc = 0;
+  const bw = Math.max(4, TW >> 2), bh = Math.max(4, TH >> 2);
+  bloomA = makeTarget(bw, bh, gl.RGBA16F, gl.HALF_FLOAT, true);
+  bloomB = makeTarget(bw, bh, gl.RGBA16F, gl.HALF_FLOAT, true);
+
+  reframe();
+  buildPlate();
+  if(bgTex) gl.deleteTexture(bgTex);
+  bgTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bgCv);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  clearTrail();
+}
+
+/* ─── the four damped oscillators ────────────────────────────────────────── */
+const NMOD  = 4;                            /* harmonics per axis            */
+const O    = new Float64Array(NMOD * 4);   /* [u, u'] per oscillator         */
+const OS   = new Float64Array(NMOD * 2);   /* -2g     per oscillator         */
+const ON   = new Float64Array(NMOD * 2);   /*  w²+g²  per oscillator         */
+let t = 0, samples = 0, warmFrames = 0;
+let phiX = 0, decay = 1, gain = 1;
+let px_ = 0, py_ = 0, vpx = 0, vpy = 0;
+
+function freshStart(){
+  const rng = mulberry32(P.seed);
+  t = 0; samples = 0;
+  phiX = rng() * Math.PI * 2;
+  setModes();
+  px_ = py_ = 0;
+  collect();
+}
+function setModes(){
+  /* Mode bank: index 2k is the x component of harmonic k, 2k+1 its y.
+     Harmonic k runs at w0*r^k with amplitude A*harm^k, damping g*spread^k
+     and its OWN phase.  The independent phases are the whole point: with a
+     single shared quarter-phase, y is just x time-shifted, and the figure
+     can only ever draw nested ovals.  Four harmonics with four free phases
+     is what folds the path back through itself into a woven rosette. */
+  const w0 = P.omega0;
+  let sumA = 0;
+  for(let k = 0; k < NMOD; k++){
+    const w = w0 * Math.pow(P.ratio, k);
+    const A = P.drive * Math.pow(P.harm, k);
+    const g = P.damping * Math.pow(P.spread, k);
+    const px = phiX + (k === 0 ? 0 : P.phi2 * k);
+    const py = px + (k === 0 ? P.phase : P.phase2);
+    sumA += A;
+    for(let ax = 0; ax < 2; ax++){
+      const i = k * 2 + ax, ph = ax ? py : px;
+      OS[i] = -2 * g;                      /* coefficient of u-dot */
+      ON[i] = w * w + g * g;               /* coefficient of u      */
+      O[i * 2]     = A * Math.sin(ph);
+      O[i * 2 + 1] = A * (w * Math.cos(ph) - g * Math.sin(ph));
+    }
+  }
+  gain = 1 / Math.max(sumA, 1e-3);
+  decay = Math.pow(TRAIL_EPS, 1 / (60 * Math.max(P.trail, 0.4)));
+}
+/* sum the whole bank into a single pen position and velocity */
+function collect(){
+  let x = 0, y = 0, vx = 0, vy = 0;
+  for(let i = 0; i < NMOD * 2; i++){
+    const u = O[i * 2] * gain, v = O[i * 2 + 1] * gain;
+    if(i & 1){ y += u; vy += v; } else { x += u; vx += v; }
+  }
+  px_ = x; py_ = y; vpx = vx; vpy = vy;
+}
+
+/* ── RK4 for  ü = -2g·u̇ - (ω² + g²)·u  on a scalar state (u, u̇).
+     No forcing term: u(t) = A·e^{-g·t}·sin(ωt + φ) is the exact solution, so
+     the exponential decay is the dynamics rather than a multiply applied to
+     finished coordinates.  Matches the closed form to 3e-13 over 10 s. ─────── */
+function rk4(u0, v0, g2, n2, h){
+  const a1 = v0,             a2 = g2 * v0 - n2 * u0;
+  const u2 = u0 + .5*h*a1,   v2 = v0 + .5*h*a2;
+  const b1 = v2,             b2 = g2 * v2 - n2 * u2;
+  const u3 = u0 + .5*h*b1,   v3 = v0 + .5*h*b2;
+  const c1 = v3,             c2 = g2 * v3 - n2 * u3;
+  const u4 = u0 + h*c1,      v4 = v0 + h*c2;
+  const d1 = v4,             d2 = g2 * v4 - n2 * u4;
+  return [u0 + h/6 * (a1 + 2*b1 + 2*c1 + d1),
+          v0 + h/6 * (a2 + 2*b2 + 2*c2 + d2)];
+}
+
+/* ─── pen: position → buffer, colour → RGB ───────────────────────────────── */
+let FX = 0, FY = 0, RR = 0, COS_T = 1, SIN_T = 0;
+let pal = PALETTES[0];
+const KNEE = 1.02;   // figure radius in units of the normalised amplitude
+
+function reframe(){
+  FX = FOCAL_X * TW; FY = FOCAL_Y * TH; RR = RADIUS * KNEE * Math.min(TW, TH);
+  COS_T = Math.cos(P.tilt); SIN_T = Math.sin(P.tilt);
+}
+
+/* One pen sample.  The knee compresses the opening transient — where the two
+   envelopes are still both near full amplitude — back into the plate. */
+function emit(alpha, size, hot){
+  let x = px_, y = py_, r = Math.hypot(x, y);
+  if(r > KNEE){
+    const k = (KNEE + (r - KNEE) / (1 + (r - KNEE) * 5.0)) / r;
+    x *= k; y *= k; r = KNEE;
+  }
+  const ax = x * COS_T - y * SIN_T, ay = x * SIN_T + y * COS_T;
+  const bx = FX + ax * RR, by = FY + ay * RR;
+  if(bx < -16 || bx > TW + 16 || by < -16 || by > TH + 16) return;
+
+  let u;
+  if(P.mode === 0)      u = clamp(Math.abs(vpx) / (Math.abs(vpx) + Math.abs(vpy) + 1e-9), 0, 1);
+  else if(P.mode === 1) u = clamp(r / KNEE, 0, 1);
+  else                  u = clamp(0.5 + 0.42 * Math.sin(t * 0.31) + 0.22 * (r / KNEE), 0, 1);
+
+  const a = u < 0.5 ? pal.c0 : pal.c1, b = u < 0.5 ? pal.c1 : pal.c2;
+  const f = u < 0.5 ? u * 2 : (u - 0.5) * 2;
+  const g0 = 0.44 + 0.74 * (1 - Math.min(r, KNEE) / KNEE);
+  const i = ptCount * 8;
+  ptData[i  ] = bx; ptData[i+1] = by;
+  ptData[i+2] = size;
+  ptData[i+3] = (a[0] + (b[0] - a[0]) * f) * g0 + hot * 0.80;
+  ptData[i+4] = (a[1] + (b[1] - a[1]) * f) * g0 + hot * 0.80;
+  ptData[i+5] = (a[2] + (b[2] - a[2]) * f) * g0 + hot * 0.88;
+  ptData[i+6] = alpha;
+  ptData[i+7] = 0;
+  ptCount++;
+  if(ptCount >= MAX_PTS) return;
+  samples++;
+}
+
+/* One sim frame: SUBSTEPS fixed RK4 steps, one pen sample each, plus a
+   brighter pen marker.  Sample size and ink grow with speed, so fast passages
+   stay continuous instead of dotting.
+   This APPENDS to the point batch — it must not reset ptCount, because the
+   warm-up runs many sim frames per drawn frame and resetting here would throw
+   away all but the last one before the upload. */
+function stepFrame(){
+  for(let s = 0; s < SUBSTEPS; s++){
+    for(let i = 0; i < NMOD * 2; i++){
+      const r = rk4(O[i * 2], O[i * 2 + 1], OS[i], ON[i], SUB_DT);
+      O[i * 2] = r[0]; O[i * 2 + 1] = r[1];
+    }
+    t += SUB_DT;
+    collect();
+    const sp = Math.hypot(vpx, vpy);
+    emit(P.ink * (0.55 + 0.85 * (sp / (sp + 0.9))),
+         Math.min(2.0 + 2.6 * (sp / (sp + 1.0)), PT_MAX), 0);
+  }
+  emit(0.32, Math.min(6.0, PT_MAX), 1);
+}
+
+/* ─── GPU passes ─────────────────────────────────────────────────────────── */
+function passFade(nSimFrames){
+  const dst = 1 - tsrc;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trail[dst].fbo);
+  gl.viewport(0, 0, TW, TH);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P_FADE.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, trail[tsrc].tex);
+  gl.uniform1i(P_FADE.u.uSrc, 0);
+  const d = Math.pow(decay, nSimFrames);
+  gl.uniform4f(P_FADE.u.uDecay, d, d, d, d);
+  drawQuad();
+  tsrc = dst;
+}
+function passSplat(){
+  if(!ptCount) return;
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P_SPLAT.p);
+  gl.uniform2f(P_SPLAT.u.uRes, TW, TH);
+  gl.bindVertexArray(ptVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptVBO);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, ptData, 0, ptCount * 8);
+  gl.drawArrays(gl.POINTS, 0, ptCount);
+  gl.bindVertexArray(null);
+}
+function passBloom(){
+  const bw = bloomA.w, bh = bloomA.h;
+  gl.disable(gl.BLEND);
+  gl.useProgram(P_BRIGHT.p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fbo);
+  gl.viewport(0, 0, bw, bh);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, trail[tsrc].tex);
+  gl.uniform1i(P_BRIGHT.u.uSrc, 0);
+  gl.uniform2f(P_BRIGHT.u.uTexel, 1 / TW, 1 / TH);
+  gl.uniform1f(P_BRIGHT.u.uThresh, 0.40);
+  drawQuad();
+
+  gl.useProgram(P_BLUR.p);
+  gl.uniform1i(P_BLUR.u.uSrc, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomB.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, bloomA.tex);
+  gl.uniform2f(P_BLUR.u.uDir, 1.4 / bw, 0);
+  drawQuad();
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomA.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, bloomB.tex);
+  gl.uniform2f(P_BLUR.u.uDir, 0, 1.4 / bh);
+  drawQuad();
+}
+function passDisplay(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, CW, CH);
+  gl.disable(gl.BLEND);
+  gl.useProgram(P_DISP.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, bgTex);    gl.uniform1i(P_DISP.u.uBg, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, trail[tsrc].tex);  gl.uniform1i(P_DISP.u.uTrail, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, bloomA.tex); gl.uniform1i(P_DISP.u.uBloom, 2);
+  gl.uniform1f(P_DISP.u.uInk, 1.0);
+  gl.uniform1f(P_DISP.u.uBloomAmt, 0.62);
+  gl.uniform1f(P_DISP.u.uDisp, 1.0);
+  drawQuad();
+}
+
+/* ─── run control ────────────────────────────────────────────────────────── */
+let phase = 'warmup';       // 'warmup' | 'live'
+let frame = 0, fps = 0, fpsAcc = 0, fpsN = 0, lastT = 0;
+let splatMs = 0, dispMs = 0;
+const drain = new Float32Array(4), drainU8 = new Uint8Array(4);
+
+function render(nSimFrames){
+  passFade(nSimFrames);
+  passSplat();
+  ptCount = 0;          /* batch consumed — the next slice starts clean */
+  passBloom();
+  passDisplay();
+  frame++;
+}
+
+function replot(){
+  clearTrail();
+  freshStart();
+  phase = 'warmup';
+  warmFrames = 0;
+  $('barf').style.width = '0%';
+  $('barlab').textContent = 'PLOTTING · ' + WARMUP_SIM.toFixed(0) + ' s OF SIM';
+}
+function clearTrail(){
+  for(const q of trail){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, q.fbo);
+    gl.viewport(0, 0, TW, TH);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  tsrc = 0;
+  samples = 0;
+}
+
+function measure(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trail[tsrc].fbo);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, drain);
+  let t0 = performance.now();
+  passFade(1); passSplat(); passBloom();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trail[tsrc].fbo);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, drain);
+  splatMs = performance.now() - t0;
+
+  t0 = performance.now();
+  passDisplay();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, drainU8);
+  dispMs = performance.now() - t0;
+  gl.disable(gl.BLEND);
+}
+
+function frameLoop(now){
+  requestAnimationFrame(frameLoop);
+  const dt = lastT ? (now - lastT) : 16.7;
+  lastT = now;
+  fpsAcc += dt; fpsN++;
+  if(fpsAcc > 400){ fps = 1000 / (fpsAcc / fpsN); fpsAcc = 0; fpsN = 0; }
+
+  if(phase === 'warmup'){
+    for(let i = 0; i < WARMUP_SLICE; i++) stepFrame();
+    render(WARMUP_SLICE);
+    warmFrames++;
+    const p = clamp(t / WARMUP_SIM, 0, 1);
+    $('barf').style.width = (p * 100).toFixed(1) + '%';
+    $('barlab').textContent = 'PLOTTING · ' + t.toFixed(1) + ' / ' + WARMUP_SIM.toFixed(0) + ' s';
+    if(t >= WARMUP_SIM){
+      phase = 'live';
+      $('barf').style.width = '100%';
+      $('barlab').textContent = 'PLOT COMPLETE · LIVE PEN';
+      measure();
+      window.__ready = true;
+    }
+  } else {
+    if(!P.paused){ stepFrame(); render(1); }
+  }
+  if((frame & 3) === 0) updateHUD();
+}
+
+/* ─── HUD & controls ─────────────────────────────────────────────────────── */
+const SLIDERS = [
+  { key:'ratio',   label:'ratio r',   min:0.50, max:5.00, step:0.0025, fmt:v=>v.toFixed(3) },
+  { key:'damping', label:'damping γ', min:0.006, max:0.090, step:0.0005, fmt:v=>v.toFixed(4) },
+  { key:'phase',   label:'phase δ',   min:0,     max:6.2832, step:0.01,  fmt:v=>(v*57.2958).toFixed(0)+'°' },
+  { key:'harm',    label:'harm fall', min:0,     max:0.95,  step:0.005, fmt:v=>v.toFixed(3) },
+  { key:'spread',  label:'decay ×',   min:1.0,   max:3.0,   step:0.01,  fmt:v=>v.toFixed(2)+'×' },
+  { key:'phi2',    label:'φ₂ skew',   min:0,     max:6.2832, step:0.01,  fmt:v=>(v*57.2958).toFixed(0)+'°' },
+  { key:'phase2',  label:'φ₂ offset', min:0,     max:6.2832, step:0.01,  fmt:v=>(v*57.2958).toFixed(0)+'°' },
+  { key:'omega0',  label:'base ω₀',   min:0.50,  max:2.00,  step:0.005, fmt:v=>v.toFixed(2) },
+  { key:'trail',   label:'trail',     min:4,     max:90,    step:0.5,    fmt:v=>v.toFixed(0)+' s' },
+  { key:'ink',     label:'pen ink',   min:0.02,  max:0.30,  step:0.002, fmt:v=>v.toFixed(3) },
+  { key:'tilt',    label:'tilt',      min:-0.60, max:0.60,  step:0.005, fmt:v=>(v*57.2958).toFixed(0)+'°' },
+];
+const slOut = {};
+for(const s of SLIDERS){
+  const row = document.createElement('div'); row.className = 'sl';
+  const lab = document.createElement('label'); lab.textContent = s.label;
+  const inp = document.createElement('input');
+  inp.type = 'range'; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = P[s.key];
+  const out = document.createElement('output');
+  const sync = () => {
+    const v = parseFloat(inp.value);
+    P[s.key] = v;
+    out.textContent = s.fmt(v);
+    inp.style.setProperty('--p', ((v - s.min) / (s.max - s.min) * 100) + '%');
+  };
+  inp.addEventListener('change', () => {
+    P.preset = -1; markPresets();
+    if(s.key === 'tilt'){ reframe(); }
+    if(s.key === 'tilt' || s.key === 'ink') { replot(); }
+  });
+  inp.addEventListener('input', sync);
+  sync();
+  row.append(lab, inp, out);
+  $('sliders').appendChild(row);
+  slOut[s.key] = inp;
+}
+function syncSliders(){ for(const k in slOut) slOut[k].dispatchEvent(new Event('input')); }
+
+function makeChips(host, items, get, set){
+  const kids = [];
+  items.forEach((nm, i) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.textContent = nm;
+    b.addEventListener('click', () => { set(i); [...b.parentNode.children].forEach((c, j) => c.classList.toggle('on', j === i)); });
+    host.appendChild(b); kids.push(b);
+  });
+  const mark = () => kids.forEach((c, j) => c.classList.toggle('on', j === get()));
+  mark();
+  return mark;
+}
+const markModes = makeChips($('modes'), MODES, () => P.mode, i => P.mode = i);
+const markPals  = makeChips($('pals'), PALETTES.map(p => p.name), () => P.pal, i => { P.pal = i; pal = PALETTES[i]; });
+
+const presetBtns = [];
+PRESETS.forEach((pr, i) => {
+  const b = document.createElement('button');
+  b.className = 'chip'; b.textContent = pr.name;
+  b.addEventListener('click', () => setPreset(i));
+  $('presets').appendChild(b); presetBtns.push(b);
+});
+function markPresets(){ presetBtns.forEach((c, j) => c.classList.toggle('on', j === P.preset)); }
+function setPreset(i){
+  P.preset = i; const pr = PRESETS[i];
+  P.ratio = pr.r; P.phase = pr.phase; P.damping = pr.g;
+  P.spread = pr.sp; P.harm = pr.hm; P.phi2 = pr.p2; P.phase2 = pr.q2; P.trail = pr.tr;
+  syncSliders();
+  $('t-preset').textContent = pr.name;
+  markPresets();
+  replot();
+}
+$('b-reseed').addEventListener('click', () => { P.seed = (P.seed + 1) & 0xFFFF || 1; showSeed(); replot(); });
+$('b-clear').addEventListener('click', () => { clearTrail(); });
+$('b-pause').addEventListener('click', togglePause);
+function togglePause(){
+  P.paused = !P.paused;
+  $('b-pause').textContent = P.paused ? 'Resume' : 'Pause';
+  $('b-pause').classList.toggle('on', P.paused);
+}
+addEventListener('keydown', e => {
+  if(e.target && /INPUT|BUTTON/.test(e.target.tagName)) return;
+  if(e.key === ' '){ e.preventDefault(); togglePause(); }
+  else if(e.key === 'r' || e.key === 'R'){ P.seed = (P.seed + 1) & 0xFFFF || 1; showSeed(); replot(); }
+  else if(e.key === 'c' || e.key === 'C') clearTrail();
+  else if(e.key === 'v' || e.key === 'V'){ P.mode = (P.mode + 1) % 3; markModes(); }
+  else if(e.key === 'p' || e.key === 'P'){ P.pal = (P.pal + 1) % PALETTES.length; pal = PALETTES[P.pal]; markPals(); }
+  else if(e.key >= '1' && e.key <= '6') setPreset(+e.key - 1);
+});
+
+/* continued-fraction rationalisation, for the ω₀:ω₁ readout */
+function toFrac(v){
+  let n = Math.max(1, Math.round(v * 400)), d = 400, best = [1, 1], err = Infinity;
+  for(let q = 1; q <= 24; q++){
+    const p = Math.round(v * q);
+    if(p < 1) continue;
+    const e = Math.abs(v - p / q);
+    if(e < err - 1e-9){ err = e; best = [p, q]; }
+  }
+  return err < 0.004 ? best[0] + ':' + best[1] : v.toFixed(3);
+}
+
+function showSeed(){
+  $('t-seed').textContent = '0x' + P.seed.toString(16).toUpperCase().padStart(4, '0');
+}
+let hudTick = 0;
+function updateHUD(){
+  /* __probe must stay live: the verifier reads it after __ready, and a probe
+     frozen at the boot snapshot reports frames=0 and a false impression of a
+     stalled scene. */
+  if((hudTick++ & 7) === 0) window.__probe = buildProbe();
+  if((hudTick & 7) !== 0) return;
+  $('m-time').textContent = t.toFixed(1);
+  $('m-frac').textContent = '1 : ' + P.ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') + '   ≈ ' + toFrac(P.ratio);
+  $('m-om').textContent  = P.omega0.toFixed(2) + ' / ' + (P.omega0 * P.ratio).toFixed(2);
+  $('m-g').textContent   = P.damping.toFixed(3);
+  $('m-h2').textContent  = NMOD + '× ' + P.harm.toFixed(2) + ' / ' + P.spread.toFixed(2) + '×';
+  $('m-ph').textContent  = (P.phase * 57.2958).toFixed(1) + '°';
+  $('m-tr').textContent  = P.trail.toFixed(1) + ' s';
+  $('m-dc').textContent  = Math.pow(decay, 1).toFixed(5);
+  $('m-sm').textContent  = samples.toLocaleString('en-US');
+  $('m-buf').textContent = TW + '×' + TH + ' → ' + CW + '×' + CH;
+  $('m-fmt').textContent = FLOAT_FMT;
+  $('m-fps').textContent = fps > 0 ? fps.toFixed(1) : '—';
+  $('t-pts').textContent  = (samples / 1000).toFixed(1) + 'k';
+}
+function buildProbe(){
+  return {
+    simSeconds: +t.toFixed(2), framesRendered: frame, samples,
+    ratio: +P.ratio.toFixed(4), ratioFraction: toFrac(P.ratio),
+    damping: +P.damping.toFixed(4), phaseDeg: +(P.phase * 57.2958).toFixed(1),
+    harmonics: NMOD, harmFall: P.harm, decaySpread: P.spread,
+    phi2Deg: +(P.phi2 * 57.2958).toFixed(1), phase2Deg: +(P.phase2 * 57.2958).toFixed(1),
+    drive: P.drive, omega0: P.omega0, omega1: +(P.omega0 * P.ratio).toFixed(4),
+    trailSeconds: P.trail, decayPerFrame: +decay.toFixed(6),
+    integrator: 'RK4, 8 damped oscillators u\'\'=-2g u\'-(w^2+g^2)u', frameDt: FRAME_DT, substeps: SUBSTEPS,
+    bufferW: TW, bufferH: TH, canvasW: CW, canvasH: CH,
+    floatFormat: FLOAT_FMT, extension: extCBF ? 'EXT_color_buffer_float' : 'none',
+    pointSizeMax: PT_MAX, palette: PALETTES[P.pal].name, colourBy: MODES[P.mode],
+    ink: P.ink, tilt: +P.tilt.toFixed(3), seed: '0x' + P.seed.toString(16).toUpperCase(),
+    phaseName: phase, paused: P.paused, warmupSimSeconds: WARMUP_SIM,
+    splatMs: +splatMs.toFixed(2), displayMs: +dispMs.toFixed(2), fps: +fps.toFixed(1),
+  };
+}
+
+/* pixel introspection: redraw + read back inside one GL task */
+window.__sample = function(x, y, w, h){
+  x = x || 0; y = y || 0; w = w || 64; h = h || 64;
+  passDisplay();
+  const buf = new Uint8Array(w * h * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  let sum = 0, mx = 0; const hist = new Set();
+  for(let i = 0; i < buf.length; i += 4){
+    const l = buf[i] * 0.2126 + buf[i+1] * 0.7152 + buf[i+2] * 0.0722;
+    sum += l; if(l > mx) mx = l;
+    hist.add((buf[i] >> 3) + ',' + (buf[i+1] >> 3) + ',' + (buf[i+2] >> 3));
+  }
+  return { mean: +(sum / (w * h)).toFixed(1), max: +mx.toFixed(1), colours: hist.size, samples };
+};
+
+/* ─── boot ───────────────────────────────────────────────────────────────── */
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { resize(); }, 200);
+});
+function boot(){
+  resize();
+  showSeed();
+  pal = PALETTES[P.pal];
+  setPreset(0);
+  window.__probe = buildProbe();
+  requestAnimationFrame(frameLoop);
+}
+boot();
+</script>
+</body>
+</html>

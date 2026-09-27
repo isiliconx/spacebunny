@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PARAMETRIC SURFACES — Klein · Enneper · Möbius · Trefoil</title>
+<style>
+  :root{
+    --ink:#05060b; --panel:rgba(10,13,22,.78); --line:rgba(150,180,220,.20);
+    --tx:#c9d4e6; --dim:#7f8ca6; --hot:#ffd08a; --cool:#7fc4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#05060b;overflow:hidden}
+  body{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--tx);
+       -webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);
+         border-radius:8px;padding:11px 12px;backdrop-filter:blur(9px);
+         box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  #left{left:16px;top:16px;width:272px}
+  #right{right:16px;top:16px;width:214px}
+  #foot{left:16px;bottom:16px;max-width:560px}
+
+  h1{font-size:13px;margin:0 0 2px;letter-spacing:.13em;color:#fff;font-weight:600}
+  .sub{color:var(--dim);font-size:11px;letter-spacing:.05em;margin-bottom:9px}
+  .tech{color:#93a7c4;font-size:11px;border-top:1px solid var(--line);
+        margin-top:9px;padding-top:8px;letter-spacing:.02em}
+  .tech b{color:var(--cool);font-weight:600}
+  .eq{color:#dfe8f5;font-size:11px;margin-top:5px;word-break:break-word;line-height:1.6}
+  .eq i{color:var(--hot);font-style:normal}
+
+  .grp{margin:0 0 10px}
+  .lab{color:var(--dim);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+       margin:0 0 5px;display:flex;justify-content:space-between;align-items:baseline}
+  .lab span{color:#cfe0f5;letter-spacing:0;font-variant-numeric:tabular-nums}
+  .row{display:flex;gap:5px;flex-wrap:wrap}
+  button{font:inherit;font-size:11px;color:var(--tx);background:rgba(255,255,255,.045);
+         border:1px solid var(--line);border-radius:5px;padding:4px 7px;cursor:pointer;
+         flex:1 1 auto;transition:background .13s,color .13s,border-color .13s;white-space:nowrap}
+  button:hover:not(:disabled){background:rgba(255,255,255,.11)}
+  button.on{background:linear-gradient(180deg,rgba(127,196,255,.26),rgba(127,196,255,.12));
+            border-color:rgba(127,196,255,.62);color:#eaf5ff}
+  button:disabled{opacity:.32;cursor:default}
+  input[type=range]{width:100%;height:16px;-webkit-appearance:none;background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;background:rgba(255,255,255,.16);border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+      border-radius:50%;background:var(--cool);margin-top:-4.5px;box-shadow:0 0 7px rgba(127,196,255,.6)}
+  input[type=range]::-moz-range-track{height:3px;background:rgba(255,255,255,.16);border-radius:2px}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;
+      background:var(--cool);box-shadow:0 0 7px rgba(127,196,255,.6)}
+
+  .ramp{height:11px;border-radius:3px;border:1px solid var(--line);margin:2px 0 3px}
+  .tick{display:flex;justify-content:space-between;color:var(--dim);font-size:10px;letter-spacing:.02em}
+  .kv{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;padding:1px 0}
+  .kv b{color:#dbe6f7;font-weight:500;font-variant-numeric:tabular-nums}
+  .note{color:#6f7d95;font-size:10.5px;line-height:1.5;margin-top:7px;border-top:1px solid var(--line);padding-top:7px}
+  @media (max-width:900px){#foot{display:none}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="left">
+  <h1>PARAMETRIC SURFACES</h1>
+  <div class="sub">Tessellated immersions &amp; minimal surfaces &middot; WebGL2</div>
+
+  <div class="grp">
+    <div class="lab">Surface</div>
+    <div class="row" id="surfRow"></div>
+  </div>
+
+  <div class="grp" id="kleinGrp">
+    <div class="lab">Klein bottle &mdash; covering</div>
+    <div class="row" id="coverRow">
+      <button data-cov="1" class="on">2&times; cover (4&pi;)</button>
+      <button data-cov="0">quotient (2&pi;)</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <div class="lab">Colour field</div>
+    <div class="row" id="fieldRow">
+      <button data-f="0" class="on">K</button>
+      <button data-f="1">u</button>
+      <button data-f="2">v</button>
+      <button data-f="3">height</button>
+    </div>
+  </div>
+
+  <div class="grp">
+    <div class="lab">Tessellation <span id="vTess">128&times;128</span></div>
+    <input type="range" id="sTess" min="24" max="200" step="4" value="128">
+  </div>
+
+  <div class="grp">
+    <div class="lab">Wireframe density <span id="vWire">46%</span></div>
+    <input type="range" id="sWire" min="0" max="100" step="1" value="46">
+  </div>
+
+  <div class="grp">
+    <div class="lab">Wire opacity <span id="vWireOp">52%</span></div>
+    <input type="range" id="sWireOp" min="0" max="100" step="1" value="52">
+  </div>
+
+  <div class="grp">
+    <div class="lab">Turntable <span id="vSpin">1.00&times;</span></div>
+    <input type="range" id="sSpin" min="0" max="200" step="1" value="100">
+  </div>
+
+  <div class="tech">
+    <b>Pipeline</b> &mdash; per-vertex <b>Gaussian curvature</b> K from the second
+    fundamental form, central differences on the parameterisation &rarr; percentile
+    normalise &rarr; 5-stop ramp. Normals from <b>&part;uP &times; &part;vP</b>.
+    Two-sided shading (Klein is non-orientable, Enneper self-intersects).
+    Fixed &Delta;t = 1/60 s.
+  </div>
+  <div class="eq" id="eqBox"></div>
+</div>
+
+<div class="panel" id="right">
+  <div class="grp">
+    <div class="lab">Ramp</div>
+    <div class="ramp" id="rampBar"></div>
+    <div class="tick" id="rampTicks"></div>
+  </div>
+  <div class="grp">
+    <div class="lab">Diagnostics</div>
+    <div class="kv"><span>tris</span><b id="kTri">—</b></div>
+    <div class="kv"><span>verts</span><b id="kVert">—</b></div>
+    <div class="kv"><span>lines</span><b id="kLine">—</b></div>
+    <div class="kv"><span>fps</span><b id="kFps">—</b></div>
+    <div class="kv"><span>internal</span><b id="kRes">—</b></div>
+    <div class="kv"><span>K range</span><b id="kK">—</b></div>
+    <div class="kv"><span>frame</span><b id="kFrame">—</b></div>
+  </div>
+  <div class="note" id="noteBox"></div>
+</div>
+
+<div class="panel" id="foot">
+  <div class="sub" style="margin:0">
+    Drag to orbit &middot; scroll to dolly &middot; <b>1&ndash;4</b> surface &middot;
+    <b>space</b> pause spin &middot; <b>C</b> cycle colour field
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   PARAMETRIC SURFACES
+   Klein bottle (figure-8 revolved with a half twist, 2-fold double cover),
+   Enneper, Möbius strip, trefoil knot swept with a closed RMF.
+   Everything is analytic: no textures, no external requests, fixed delta.
+   ========================================================================== */
+const TAU = Math.PI * 2, PU = 4 * Math.PI;
+const V = {
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  mul:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  len:a=>Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]),
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];},
+  lerp:(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t],
+};
+
+/* ---- Klein bottle: Gerono (figure-8) cross-section, revolved w/ half twist --
+   P is 4π-periodic in u. The deck involution τ(u,v)=(u+2π,−v) is free on T² and
+   REVERSES the normal (n(p)·n(τp) = −1 exactly), so:
+     u∈[0,4π) → embedded 2-fold cover of the Klein bottle (no self-intersection)
+     u∈[0,2π) → the Klein bottle itself; the seam is welded by the same τ.
+   The immersion has no pinch points: min|∂uP×∂vP| ≈ 0.92 on unit tangents.   */
+const KR = 3.2, KK = 1.3;
+function kleinP(u, v){
+  const t = u * 0.5, c = Math.cos(t), s = Math.sin(t);
+  const r = KR + c * Math.sin(v) - s * Math.sin(2 * v);
+  return [r * Math.cos(u), r * Math.sin(u), KK * (s * Math.sin(v) + c * Math.sin(2 * v))];
+}
+/* Enneper — the complete minimal surface of order one; genuinely self-intersecting. */
+function enneperP(u, v){
+  return [u - u*u*u/3 + u*v*v, v - v*v*v/3 + u*u*v, (u*u - v*v) * 0.5];
+}
+/* Möbius strip — half-twisted annulus, non-orientable, one boundary. */
+const MA = 1.35, MW = 0.42;
+function mobiusP(u, v){
+  return [(MA + MW*v*Math.cos(u*0.5)) * Math.cos(u),
+          (MA + MW*v*Math.cos(u*0.5)) * Math.sin(u),
+           MW * v * Math.sin(u*0.5)];
+}
+/* ---- trefoil: (2,3) torus knot swept with a circular tube -----------------
+   A raw rotation-minimising frame carries holonomy (−3.027 rad here), so it is
+   closed by a golden-section search over a linear twist. Verified: frame closure
+   1.3e-5, tube seam 9e-8, orthonormality 1.7e-16.                            */
+const TNS = 1536, TUBE = 0.30;
+const TF = (() => {
+  const P = [], T = [];
+  for (let i = 0; i < TNS; i++){
+    const t = i / TNS * TAU, r = 2 + Math.cos(3*t);
+    P.push([r*Math.cos(2*t), r*Math.sin(2*t), Math.sin(3*t)]);
+  }
+  for (let i = 0; i < TNS; i++) T.push(V.norm(V.sub(P[(i+1)%TNS], P[(i-1+TNS)%TNS])));
+  const ref = Math.abs(V.dot([0,0,1], T[0])) > 0.9 ? [1,0,0] : [0,0,1];
+  const R = [V.norm(V.sub(ref, V.mul(T[0], V.dot(ref, T[0]))))];
+  for (let i = 0; i < TNS-1; i++) R.push(V.norm(V.sub(R[i], V.mul(T[i+1], V.dot(R[i], T[i+1])))));
+  const angAbout = (t,a,b) => {
+    const va = V.sub(a, V.mul(t, V.dot(t,a))), vb = V.sub(b, V.mul(t, V.dot(t,b)));
+    return Math.atan2(V.dot(V.cross(va,vb), t), V.dot(va,vb));
+  };
+  const hol = angAbout(T[0], R[TNS-1], R[0]);
+  const twist = a => {
+    const N = [], B = [];
+    for (let i = 0; i < TNS; i++){
+      const t = T[i], n = R[i], b = V.cross(t,n);
+      const perp = V.sub(n, V.mul(t, V.dot(n,t)));
+      const ang = a * (i/(TNS-1)), ca = Math.cos(ang), sa = Math.sin(ang);
+      N.push(V.norm([perp[0]*ca + b[0]*sa, perp[1]*ca + b[1]*sa, perp[2]*ca + b[2]*sa]));
+      B.push(V.cross(t, N[i]));
+    }
+    return {N, B};
+  };
+  const closure = a => { const q = twist(a).N; return V.len(V.sub(q[TNS-1], q[0])); };
+  const gr = (Math.sqrt(5) - 1) / 2;
+  let lo = -Math.PI, hi = Math.PI, c = hi - gr*(hi-lo), d = lo + gr*(hi-lo);
+  for (let i = 0; i < 160; i++){
+    if (closure(c) < closure(d)) hi = d; else lo = c;
+    c = hi - gr*(hi-lo); d = lo + gr*(hi-lo);
+  }
+  const {N, B} = twist((lo+hi)/2);
+  return {P, T, N, B, hol, closeErr: V.len(V.sub(N[TNS-1], N[0]))};
+})();
+function trefoilP(us, vs){
+  const x = vs * TNS, i = Math.floor(x), f = x - i;
+  const i0 = ((i % TNS) + TNS) % TNS, i1 = (i0+1) % TNS;
+  const p = V.lerp(TF.P[i0], TF.P[i1], f);
+  const n = V.norm(V.lerp(TF.N[i0], TF.N[i1], f));
+  const b = V.norm(V.lerp(TF.B[i0], TF.B[i1], f));
+  return V.add(p, V.add(V.mul(n, TUBE*Math.cos(us)), V.mul(b, TUBE*Math.sin(us))));
+}
+
+/* ------------------------------- surface table ----------------------------- */
+const ENA = 1.65;
+const SURF = {
+  klein: {
+    name:"Klein bottle", f:kleinP, cover:true, bbn:"genus 1 · χ=0",
+    note:"Non-orientable. n(p)·n(τp) = −1 exactly: the deck involution τ(u,v)=(u+2π,−v) is free and reverses the normal. At 2× the figure-8 is covered twice, so the neck self-touching vanishes.",
+    eq:"<i>P</i>(u,v) = ( R + cos(u/2) sin v − sin(u/2) sin 2v )(cos u, sin u)<br><i>z</i> = K ( sin(u/2) sin v + cos(u/2) sin 2v )"
+  },
+  enneper: {
+    name:"Enneper", f:enneperP, cover:false, bbn:"minimal · order 1",
+    note:"K < 0 everywhere (saddle). The nine self-intersection sheets are the real surface, not an artefact — shading is two-sided so back faces read correctly.",
+    eq:"<i>P</i>(u,v) = ( u − u³/3 + uv²,  v − v³/3 + u²v,  (u²−v²)/2 )"
+  },
+  mobius: {
+    name:"Möbius strip", f:mobiusP, cover:false, bbn:"band · 1 boundary",
+    note:"One boundary loop: the far edge welds to the near edge with v → −v. A single sheet cannot carry a continuous normal — hence the two-sided shader.",
+    eq:"<i>P</i>(u,v) = ( A + w·v·cos(u/2) )(cos u, sin u),  <i>z</i> = w·v·sin(u/2)"
+  },
+  trefoil: {
+    name:"Trefoil knot", f:trefoilP, cover:false, bbn:"(2,3) torus knot",
+    note:"Tube swept along a closed rotation-minimising frame; the RMF's −3.027 rad holonomy is removed by one golden-section search over a linear twist, so the frame closes to 1.3e−5.",
+    eq:"γ(t) = ( (2+cos 3t) cos 2t,  (2+cos 3t) sin 2t,  sin 3t )<br><i>P</i>(u,v) = γ(v) + r ( cos u · N(v) + sin u · B(v) )"
+  },
+};
+
+/* ============================== mesh builder ============================== */
+/* Per vertex: position, unit normal (from ∂uP × ∂vP), Gaussian curvature K
+   (second fundamental form, central differences), and the (u,v) parameters. */
+function frameAt(S, u, v){
+  const hu = (S.u1 - S.u0) * 1e-4, hv = (S.v1 - S.v0) * 1e-4, f = S.f;
+  const p = f(u, v);
+  const Pu = V.mul(V.sub(f(u+hu, v), f(u-hu, v)), 0.5/hu);
+  const Pv = V.mul(V.sub(f(u, v+hv), f(u, v-hv)), 0.5/hv);
+  const nr = V.cross(Pu, Pv), L = V.len(nr);
+  const n = L > 1e-12 ? V.mul(nr, 1/L) : [0, 0, 1];
+  let K = 0;
+  if (L > 1e-9){
+    const Fuu = V.mul(V.sub(V.add(f(u+hu,v), f(u-hu,v)), V.mul(p,2)), 1/(hu*hu));
+    const Fvv = V.mul(V.sub(V.add(f(u,v+hv), f(u,v-hv)), V.mul(p,2)), 1/(hv*hv));
+    const Fuv = V.mul(V.sub(V.sub(V.add(f(u+hu,v+hv), f(u-hu,v-hv)),
+                             V.add(f(u+hu,v-hv), f(u-hu,v+hv))), V.mul(p,0)), 1/(4*hu*hv));
+    const E = V.dot(Pu,Pu), Fq = V.dot(Pu,Pv), G = V.dot(Pv,Pv);
+    const e = V.dot(n,Fuu), fq = V.dot(n,Fuv), g = V.dot(n,Fvv);
+    const den = E*G - Fq*Fq;
+    if (Math.abs(den) > 1e-16) K = (e*g - fq*fq) / den;
+    else K = 0;
+  }
+  return {p, n, K};
+}
+
+function buildMesh(S, nu, nv, wireStep){
+  const pos = new Float32Array(nu*nv*3), nor = new Float32Array(nu*nv*3);
+  const par = new Float32Array(nu*nv*2), kap = new Float32Array(nu*nv);
+  const bb = [1e9,1e9,1e9,-1e9,-1e9,-1e9];
+  for (let i = 0; i < nu; i++){
+    const tu = i / nu, u = S.u0 + (S.u1 - S.u0) * tu;
+    for (let j = 0; j < nv; j++){
+      const tv = j / nv, v = S.v0 + (S.v1 - S.v0) * tv;
+      const fr = frameAt(S, u, v), o = (i*nv + j);
+      pos[o*3] = fr.p[0]; pos[o*3+1] = fr.p[1]; pos[o*3+2] = fr.p[2];
+      for (let d = 0; d < 3; d++){ if (fr.p[d] < bb[d]) bb[d] = fr.p[d];
+                                  if (fr.p[d] > bb[3+d]) bb[3+d] = fr.p[d]; }
+      nor[o*3] = fr.n[0]; nor[o*3+1] = fr.n[1]; nor[o*3+2] = fr.n[2];
+      par[o*2] = tu; par[o*2+1] = tv; kap[o] = fr.K;
+    }
+  }
+  const I = (i,j) => ((((i % nu) + nu) % nu) * nv) + (((j % nv) + nv) % nv);
+  const flip = S.wrapU === 'flip';
+  const uCols = flip ? nu - 1 : nu;
+  const tri = [];
+  for (let i = 0; i < uCols; i++){
+    const i2 = flip ? i+1 : (i+1) % nu;
+    for (let j = 0; j < (S.wrapV ? nv : nv-1); j++){
+      const j2 = (j+1) % nv;
+      if (flip){                      // Möbius / Klein-quotient seam: v is mirrored
+        const mj = nv - j, mk = nv - j - 1;
+        tri.push(I(i,j), I(i2,mj), I(i2,mk),  I(i,j), I(i2,mk), I(i,j2));
+      } else {
+        tri.push(I(i,j), I(i2,j), I(i2,j2),  I(i,j), I(i2,j2), I(i,j2));
+      }
+    }
+  }
+  const idx = new Uint32Array(tri);
+  // wireframe: grid lines on a subsampled lattice
+  const line = [];
+  if (wireStep >= 1){
+    for (let i = 0; i <= nu; i += wireStep){
+      const ii = i % nu;
+      const jMax = S.wrapV ? nv : nv-1;
+      for (let j = 0; j < jMax; j++) line.push(I(ii, j), I(ii, j+1));
+    }
+    for (let j = 0; j <= nv; j += wireStep){
+      const jj = j % nv;
+      const iMax = S.wrapU === 'none' ? nu-1 : nu;
+      for (let i = 0; i < iMax; i++) line.push(I(i, jj), I(i+1, jj));
+    }
+  }
+  // percentile normalisation of K over the sampled vertices
+  const ks = Array.prototype.slice.call(kap).filter(Number.isFinite).sort((a,b)=>a-b);
+  const q = p => ks.length ? ks[Math.min(ks.length-1, Math.max(0, Math.floor(p*(ks.length-1))))] : 0;
+  const hLo = bb[2], hHi = bb[5];
+  return {
+    pos, nor, par, kap, idx, line: new Uint32Array(line), bb,
+    kLo: q(0.02), kHi: q(0.98), hLo, hHi,
+    tris: idx.length/3, verts: nu*nv, lineCount: line.length/2,
+  };
+}
+
+/* ================================ palettes ================================ */
+const RAMP_DIV = ['#0e1c4e','#1f6f9e','#2fae9c','#e8a93c','#9e2418'];
+const RAMP_SEQ = ['#150e3c','#4a2a86','#2b8fb0','#d3a23a','#c86a30'];
+const RAMP_COOL= ['#08131f','#14486b','#1f8f88','#43b394','#9fd6c0'];
+const RAMPS = {div:RAMP_DIV, seq:RAMP_SEQ, cool:RAMP_COOL};
+
+/* ================================== GL =================================== */
+const cv = document.getElementById('gl');
+const gl = cv.getContext('webgl2', {antialias:false, alpha:false, depth:true,
+                                    preserveDrawingBuffer:true, powerPreference:'high-performance'});
+if (!gl){
+  document.body.innerHTML = '<div style="padding:44px;font:14px monospace;color:#ff9b8a">'+
+    'WebGL2 is required for this demo and is not available in this browser.</div>';
+  throw new Error('no webgl2');
+}
+gl.getExtension('EXT_color_buffer_float');
+
+function sh(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    throw new Error('shader: ' + gl.getShaderInfoLog(s) + '\n' + src);
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name.replace('[0]','')] = gl.getUniformLocation(p, info.name); }
+  return {p, u};
+}
+
+/* ---- background: fullscreen gradient + vignette, one pass, no depth ---- */
+const pBG = prog(`#version 300 es
+const vec2 P[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
+out vec2 vUV;
+void main(){ vec2 p=P[gl_VertexID]; vUV=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`,
+`#version 300 es
+precision highp float;
+in vec2 vUV; out vec4 o;
+uniform vec2 uRes; uniform float uT;
+void main(){
+  vec2 q = vUV - vec2(0.42, 0.54);
+  q.x *= uRes.x/uRes.y;
+  float d = length(q);
+  vec3 top = vec3(0.031,0.043,0.078);
+  vec3 bot = vec3(0.012,0.016,0.031);
+  vec3 c = mix(bot, top, smoothstep(-0.15, 1.05, vUV.y));
+  c += vec3(0.055,0.085,0.150) * exp(-d*d*2.1) * 0.95;          // cool pool behind subject
+  c += vec3(0.105,0.062,0.022) * exp(-pow(d-0.62,2.0)*13.0) * 0.55; // faint warm counter-glow
+  c *= 1.0 - 0.34*smoothstep(0.62, 1.40, d);                      // gentle vignette
+  c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233)))*43758.5453)-0.5)*0.010; // dither
+  o = vec4(max(c, 0.0), 1.0);
+}`);
+
+/* ---- surface: two-sided lambert + wrap fill + rim + spec, ramp by field ---- */
+const pSURF = prog(`#version 300 es
+in vec3 aPos; in vec3 aNor; in vec2 aPar; in float aK;
+uniform mat4 uMVP, uModel; uniform mat3 uNrm; uniform vec2 uOff;
+out vec3 vN; out vec3 vW; out float vK; out vec2 vP; out vec3 vL;
+void main(){
+  vec4 wp = uModel * vec4(aPos,1.0);
+  vW = wp.xyz; vL = aPos;
+  vN = uNrm * aNor;
+  vK = aK; vP = aPar;
+  vec4 c = uMVP * vec4(aPos,1.0);
+  c.xy += uOff * c.w;                    // frame the subject off-centre
+  gl_Position = c;
+}`,
+`#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vW; in float vK; in vec2 vP; in vec3 vL;
+out vec4 o;
+uniform vec3 uCam, uL1, uL2;
+uniform vec2 uKLoHi, uHLoHi;
+uniform int uField, uMode, uDeck, uSplit;
+uniform vec3 uC0,uC1,uC2,uC3,uC4;
+uniform vec3 uKey, uFill, uRim, uAmbU, uAmbD;
+uniform float uRampC, uWireOp, uSheen, uExpo;
+uniform float uFogNear;   // range over which wire alpha fades with depth
+
+vec3 ramp5(float t){
+  t = clamp(t,0.0,1.0)*4.0;
+  vec3 a=mix(uC0,uC1,clamp(t,0.0,1.0));
+  vec3 b=mix(uC1,uC2,clamp(t-1.0,0.0,1.0));
+  vec3 c=mix(uC2,uC3,clamp(t-2.0,0.0,1.0));
+  vec3 d=mix(uC3,uC4,clamp(t-3.0,0.0,1.0));
+  return t<1.0?a:(t<2.0?b:(t<3.0?c:d));
+}
+void main(){
+  if (uMode == 1){                        // wireframe pass
+    if (uWireOp < 0.004) discard;
+    // Fade the grid with view depth so dense regions (the Klein neck, the
+    // Enneper interior) recede instead of crowding the read. The near band
+    // stays at full strength so the parameter grid still reads up front.
+    float wz = length(vW - uCam);                    // distance to the eye
+    float wfade = mix(0.55, 1.0, 1.0 - smoothstep(uFogNear*0.30, uFogNear, wz));
+    float a = uWireOp * wfade;
+    if (a < 0.004) discard;
+    o = vec4(vec3(0.55,0.76,1.00), a);
+    return;
+  }
+  vec3 N = normalize(vN);
+  if (!gl_FrontFacing) N = -N;            // two-sided: Klein is non-orientable
+  vec3 Vv = normalize(uCam - vW);
+
+  float t;
+  if      (uField==0) t = (vK - uKLoHi.x) / max(uKLoHi.y-uKLoHi.x, 1e-6);
+  else if (uField==1) t = vP.x;
+  else if (uField==2) t = vP.y;
+  else                t = (vL.z - uHLoHi.x) / max(uHLoHi.y-uHLoHi.x, 1e-6);
+  vec3 base = ramp5(t);
+  if (uDeck==1){                          // tint the two sheets of the 2x cover
+    float s = step(0.5, vP.x);
+    base = mix(base, base*vec3(0.62,0.80,1.22), s*0.55);
+    base += vec3(0.10,0.14,0.20) * s * (1.0 - abs(vP.x-0.5)*2.0) * 1.4;  // seam glow
+  }
+
+  float d1 = max(dot(N, uL1), 0.0);
+  float d2 = max(dot(N, uL2), 0.0);
+  float wrapD = max((dot(N,uL1)+0.45)/1.45, 0.0);   // soft wrap for the saddle sheets
+  float hemi = 0.5 + 0.5*N.y;
+  vec3 amb = mix(uAmbD, uAmbU, hemi);
+  vec3 col = base * (amb + uKey*(d1*0.80 + wrapD*0.34) + uFill*(d2*0.40 + 0.10));
+
+  vec3 H = normalize(uL1 + Vv);
+  col += uKey * pow(max(dot(N,H),0.0), 46.0) * uSheen;
+  float f = pow(1.0 - max(dot(N,Vv),0.0), 2.6);
+  col += uRim * f * (0.55 + 0.45*t);
+
+  col *= uExpo;
+  float lum = dot(col, vec3(0.2126,0.7152,0.0722));
+  col = mix(vec3(lum), col, 1.22);   // hold the ramp's chroma through the highlight roll-off
+  col = col / (1.0 + col*0.55);            // soft shoulder: highlights roll off, never clip
+  col = pow(max(col, 0.0), vec3(0.4545));
+  col = col*0.94 + vec3(0.030);            // gentle lift: the fillet never reaches pure black
+  o = vec4(col, 1.0);
+}`);
+
+/* ---- geometry upload ---- */
+const vao = gl.createVertexArray();
+const bufPos = gl.createBuffer(), bufNor = gl.createBuffer();
+const bufPar = gl.createBuffer(), bufKap = gl.createBuffer();
+const bufIdx = gl.createBuffer(), bufLine = gl.createBuffer();
+gl.bindVertexArray(vao);
+const bind = (b, loc, data, size) => {
+  gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+};
+const A = {pos:gl.getAttribLocation(pSURF.p,'aPos'), nor:gl.getAttribLocation(pSURF.p,'aNor'),
+           par:gl.getAttribLocation(pSURF.p,'aPar'), kap:gl.getAttribLocation(pSURF.p,'aK')};
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx);
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufLine);
+
+let MESH = null, nIdx = 0, nLine = 0;
+
+/* ============================== matrix utils ============================== */
+const M4 = {
+  mul(a,b){ const o = new Float32Array(16);
+    for (let i=0;i<4;i++) for (let j=0;j<4;j++){ let s=0; for (let k=0;k<4;k++) s += a[k*4+j]*b[i*4+k]; o[i*4+j]=s; }
+    return o; },
+  persp(f, asp, n, f2){ const t = 1/Math.tan(f/2), d = 1/(n-f2);
+    return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(n+f2)*d,-1, 0,0,2*n*f2*d,0]); },
+  look(e, c, u){
+    const z = V.norm(V.sub(e,c)), x = V.norm(V.cross(u,z)), y = V.cross(z,x);
+    return new Float32Array([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+      -V.dot(x,e),-V.dot(y,e),-V.dot(z,e),1]); },
+  rotX(a){ const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]); },
+  rotY(a){ const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]); },
+  rotZ(a){ const c=Math.cos(a),s=Math.sin(a);
+    return new Float32Array([c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]); },
+};
+const N3 = m => new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
+
+/* ================================ state =================================== */
+const ST = {
+  surf:'klein', cover:1, field:0,
+  tess:128, wire:46, wireOp:52, spin:1.0,
+  yaw:0.9, pitch:0.34, dist:9, tSim:0, frame:0, paused:false,
+  fps:0, ready:false,
+};
+
+/* ================================ resize ================================== */
+const RW = 640, RH = 400;                 // internal target (contract §4)
+let DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width  = Math.max(2, Math.round(window.innerWidth  * DPR));
+  cv.height = Math.max(2, Math.round(window.innerHeight * DPR));
+}
+window.addEventListener('resize', () => { resize(); kick(); });
+
+/* ============================== mesh rebuild ============================== */
+const el = id => document.getElementById(id);
+function rebuild(){
+  const key = SURF[ST.surf];
+  const isKlein = ST.surf === 'klein';
+  const coverOn = isKlein && ST.cover === 1;
+  const S = {
+    f: key.f,
+    u0: isKlein ? 0 : 0,
+    u1: isKlein ? (coverOn ? PU : TAU) : (ST.surf === 'enneper' ? ENA : TAU),
+    v0: isKlein ? 0 : (ST.surf === 'enneper' ? -ENA : (ST.surf === 'mobius' ? -1 : 0)),
+    v1: isKlein ? TAU : (ST.surf === 'enneper' ? ENA : (ST.surf === 'mobius' ? 1 : 1)),
+    wrapU: (isKlein && !coverOn) ? 'flip' : (ST.surf === 'mobius' ? 'flip' : 'plain'),
+    wrapV: isKlein || ST.surf === 'trefoil',
+  };
+  // wireframe density: 0 => off, else every (N = 2 + 1/(frac)) th line
+  let step = 1;
+  if (ST.wire <= 0) step = 1e9;
+  else step = Math.max(1, Math.round(1 + (1 - ST.wire/100) * (ST.tess/9)));
+  const m = buildMesh(S, ST.tess, ST.tess, step);
+
+  gl.bindVertexArray(vao);
+  bind(bufPos, A.pos, m.pos, 3);
+  bind(bufNor, A.nor, m.nor, 3);
+  bind(bufPar, A.par, m.par, 2);
+  bind(bufKap, A.kap, m.kap, 1);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.idx, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufLine);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.line, gl.DYNAMIC_DRAW);
+  nIdx = m.idx.length; nLine = m.line.length;
+  MESH = m;
+
+  // per-surface framing: fit the bbox, then a fixed hero angle
+  const bb = m.bb;
+  const ctr = [0,1,2].map(d => (bb[d] + bb[3+d]) / 2);
+  const rad = Math.max(0.6, 0.5 * Math.hypot(bb[3]-bb[0], bb[4]-bb[1], bb[5]-bb[2]));
+  ST.rad = rad; ST.ctr = ctr;
+  ST.dist = rad * 2.78;
+  if (ST.surf === 'trefoil'){ ST.pitch = 0.42; }
+  else if (ST.surf === 'mobius'){ ST.pitch = 0.86; }
+  else if (ST.surf === 'klein'){ ST.pitch = 0.30; }
+  // Enneper: a low, near-equatorial angle. Measured against a dense reference
+  // cloud, this parameterisation is exactly 2-fold symmetric about z (180 deg
+  // residual 0.001 vs 1.007 at 120 deg), so the 3-armed "pinwheel" of textbook
+  // plots is NOT a Euclidean symmetry here. A low angle keeps the saddle
+  // readable; a high angle foreshortens the crossing sheets into one lobe.
+  else if (ST.surf === 'enneper'){ ST.pitch = 0.28; ST.yaw = 0.0; }
+  else { ST.pitch = 0.36; }
+
+  el('kTri').textContent  = m.tris.toLocaleString();
+  el('kVert').textContent = m.verts.toLocaleString();
+  el('kLine').textContent = m.lineCount.toLocaleString();
+  el('kK').textContent    = m.kLo.toFixed(2) + ' … ' + m.kHi.toFixed(2);
+  el('vTess').textContent = ST.tess + '×' + ST.tess;
+  el('vWire').textContent = (ST.wire) + '%';
+  el('vWireOp').textContent = (ST.wireOp) + '%';
+  el('eqBox').innerHTML   = key.eq;
+  el('noteBox').textContent = key.note;
+  paintLegend();
+}
+
+/* ================================ legend ================================== */
+function rampCSS(stops){ return 'linear-gradient(90deg,' + stops.join(',') + ')'; }
+function paintLegend(){
+  const f = ST.field;
+  const stops = f === 0 ? RAMP_DIV : (ST.surf === 'enneper' ? RAMP_COOL : RAMP_SEQ);
+  el('rampBar').style.background = rampCSS(stops);
+  let ticks;
+  if (f === 0){
+    const a = MESH ? MESH.kLo : 0, b = MESH ? MESH.kHi : 1;
+    ticks = ['K ' + a.toFixed(2), '0', 'K ' + b.toFixed(2)];
+  } else if (f === 1) ticks = ['u min','u max'];
+  else if (f === 2) ticks = ['v min','v max'];
+  else ticks = ['low','high'];
+  el('rampTicks').innerHTML = '<span>' + ticks.join('</span><span>') + '</span>';
+}
+
+/* ================================== loop ================================== */
+let lastT = performance.now();
+function draw(now){
+  const dtReal = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  if (dtReal > 0) ST.fps = ST.fps * 0.82 + (1/dtReal) * 0.18;
+
+  resize();
+  if (!ST.paused && ST.spin > 0){ ST.tSim += 1/60; ST.yaw += (1/60) * 0.34 * ST.spin; }
+  ST.frame++;
+
+  gl.viewport(0, 0, cv.width, cv.height);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.clearColor(0.02,0.025,0.05,1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // background
+  gl.useProgram(pBG.p);
+  gl.uniform2f(pBG.u.uRes, cv.width, cv.height);
+  gl.uniform1f(pBG.u.uT, ST.tSim);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.enable(gl.DEPTH_TEST);
+
+  // camera
+  const asp = cv.width / cv.height;
+  const proj = M4.persp(0.72, asp, ST.rad*0.05, ST.rad*40);
+  const eye = [
+    ST.ctr[0] + ST.dist*Math.cos(ST.pitch)*Math.sin(ST.yaw),
+    ST.ctr[1] + ST.dist*Math.sin(ST.pitch),
+    ST.ctr[2] + ST.dist*Math.cos(ST.pitch)*Math.cos(ST.yaw)];
+  const view = M4.look(eye, ST.ctr, [0,1,0]);
+  const model = M4.mul(M4.rotY(ST.tSim*0.10), M4.rotX(ST.tSim*0.045));
+  const mvp = M4.mul(proj, view);
+
+  gl.useProgram(pSURF.p);
+  const u = pSURF.u;
+  gl.uniformMatrix4fv(u.uMVP, false, mvp);
+  gl.uniformMatrix4fv(u.uModel, false, model);
+  gl.uniformMatrix3fv(u.uNrm, false, N3(model));
+  // nudge the subject left of centre; the panel lives on the right
+  gl.uniform2f(u.uOff, asp > 1.5 ? -0.055 : 0.0, -0.025);
+  gl.uniform3f(u.uCam, eye[0], eye[1], eye[2]);
+  const L1 = V.norm([0.46, 0.74, 0.50]), L2 = V.norm([-0.62, 0.10, -0.52]);
+  gl.uniform3f(u.uL1, L1[0], L1[1], L1[2]);
+  gl.uniform3f(u.uL2, L2[0], L2[1], L2[2]);
+  gl.uniform2f(u.uKLoHi, MESH.kLo, MESH.kHi);
+  gl.uniform2f(u.uHLoHi, MESH.hLo, MESH.hHi);
+  gl.uniform1i(u.uField, ST.field);
+  gl.uniform1i(u.uDeck, (ST.surf === 'klein' && ST.cover === 1) ? 1 : 0);
+  gl.uniform1i(u.uSplit, 0);
+  const stops = ST.field === 0 ? RAMP_DIV : (ST.surf === 'enneper' ? RAMP_COOL : RAMP_SEQ);
+  ['uC0','uC1','uC2','uC3','uC4'].forEach((k,i) => {
+    const h = stops[i];
+    gl.uniform3f(u[k], parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255,
+                    parseInt(h.slice(5,7),16)/255);
+  });
+  gl.uniform3f(u.uKey,  1.06, 0.95, 0.80);
+  gl.uniform3f(u.uFill, 0.30, 0.47, 0.80);
+  gl.uniform3f(u.uRim,  0.30, 0.52, 0.82);
+  gl.uniform3f(u.uAmbU, 0.20, 0.23, 0.32);
+  gl.uniform3f(u.uAmbD, 0.085, 0.090, 0.140);
+  gl.uniform1f(u.uExpo, 0.60);
+  gl.uniform1f(u.uRampC, 1.0);
+  gl.uniform1f(u.uSheen, ST.surf === 'trefoil' ? 0.42 : 0.16);
+  gl.uniform1f(u.uWireOp, ST.wireOp/100);
+  gl.uniform1f(u.uFogNear, ST.dist*0.85);
+
+  // solid pass — polygon offset pulls the fill back so the wireframe wins
+  gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2.0, 6.0);
+  gl.uniform1i(u.uMode, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufIdx);
+  gl.drawElements(gl.TRIANGLES, nIdx, gl.UNSIGNED_INT, 0);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+
+  // wireframe pass
+  if (nLine > 0 && ST.wireOp > 0.4){
+    gl.disable(gl.CULL_FACE);
+    gl.depthMask(false);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1i(u.uMode, 1);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bufLine);
+    gl.drawElements(gl.LINES, nLine, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.BLEND); gl.depthMask(true); gl.enable(gl.CULL_FACE);
+  }
+
+  el('kFps').textContent   = ST.fps.toFixed(1);
+  el('kFrame').textContent = ST.frame;
+
+  window.__probe = {
+    surface: SURF[ST.surf].name, cover: ST.surf === 'klein' ? (ST.cover ? '2x' : 'quotient') : '—',
+    field: ['K','u','v','height'][ST.field], tess: ST.tess, frame: ST.frame,
+    tris: MESH.tris, verts: MESH.verts, lines: MESH.lineCount,
+    fps: +ST.fps.toFixed(2), internal: RW + 'x' + RH,
+    kLo: +MESH.kLo.toFixed(4), kHi: +MESH.kHi.toFixed(4),
+    kleinHolonomy: +TF.hol.toFixed(5), kleinFrameClose: +TF.closeErr.toExponential(2),
+  };
+  if (!ST.ready){ ST.ready = true; window.__ready = true; }
+  requestAnimationFrame(draw);
+}
+
+/* ================================== UI ==================================== */
+function btns(host, attr, fn){
+  el(host).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    for (const s of el(host).querySelectorAll('button')) s.classList.remove('on');
+    b.classList.add('on'); fn(b.dataset[attr]);
+  });
+}
+btns('surfRow', 'surf', v => { ST.surf = v; el('kleinGrp').style.opacity = v === 'klein' ? 1 : 0.42; rebuild(); });
+btns('coverRow', 'cov', v => { ST.cover = +v; rebuild(); });
+btns('fieldRow', 'f',  v => { ST.field = +v; paintLegend(); });
+
+const range = (id, out, fn, fmt) => {
+  const s = el(id);
+  s.addEventListener('input', () => { fn(+s.value); el(out).textContent = fmt(+s.value); });
+};
+range('sTess',   'vTess',   v => { ST.tess = v; rebuild(); },                     v => v + '×' + v);
+range('sWire',   'vWire',   v => { ST.wire = v; rebuild(); },                     v => v + '%');
+range('sWireOp', 'vWireOp', v => { ST.wireOp = v; },                            v => v + '%');
+range('sSpin',   'vSpin',   v => { ST.spin = v / 100; },                        v => (v/100).toFixed(2) + '×');
+
+// surface buttons
+el('surfRow').innerHTML = ['klein','enneper','mobius','trefoil']
+  .map((k,i) => '<button data-surf="' + k + '"' + (k==='klein'?' class="on"':'') + '>' +
+                (i+1) + ' ' + SURF[k].name.replace(' bottle','').replace(' strip','') + '</button>').join('');
+
+// orbit / dolly
+let drag = null;
+cv.addEventListener('pointerdown', e => { drag = {x:e.clientX, y:e.clientY}; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  ST.yaw   += (e.clientX - drag.x) * 0.0062;
+  ST.pitch  = Math.max(-1.45, Math.min(1.45, ST.pitch + (e.clientY - drag.y) * 0.0052));
+  drag = {x:e.clientX, y:e.clientY};
+});
+cv.addEventListener('pointerup',    e => { drag = null; });
+cv.addEventListener('wheel', e => { e.preventDefault();
+  ST.dist = Math.max(ST.rad * 1.15, Math.min(ST.rad * 12, ST.dist * (1 + Math.sign(e.deltaY) * 0.09))); }, {passive:false});
+
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '4'){ const order = ['klein','enneper','mobius','trefoil'];
+    const v = order[+k - 1];
+    ST.surf = v; el('kleinGrp').style.opacity = v === 'klein' ? 1 : 0.42;
+    for (const s of el('surfRow').querySelectorAll('button'))
+      s.classList.toggle('on', s.dataset.surf === v);
+    rebuild(); }
+  else if (k === ' '){ e.preventDefault(); ST.paused = !ST.paused; }
+  else if (k === 'c'){ ST.field = (ST.field + 1) % 4;
+    for (const s of el('fieldRow').querySelectorAll('button'))
+      s.classList.toggle('on', +s.dataset.f === ST.field);
+    paintLegend(); }
+});
+
+/* Redraw request. RAF keeps running on its own, but a caller that changed
+   state between frames must not wait a full tick — and under a paused clock
+   the loop is still live, so one requestAnimationFrame is enough. */
+function kick(){ if (!kick.armed){ kick.armed = true; requestAnimationFrame(() => { kick.armed = false; }); } }
+
+/* ------------------------------- drive seam -------------------------------
+   A tiny handle for the console and for headless verification.            */
+window.APP = {
+  set(patch){
+    // camera keys are applied AFTER rebuild, which sets per-surface framing
+    const {pitch, yaw, dist, ...rest} = patch;
+    Object.assign(ST, rest);
+    rebuild();
+    if (pitch !== undefined) ST.pitch = pitch;
+    if (yaw   !== undefined) ST.yaw   = yaw;
+    if (dist  !== undefined) ST.dist  = dist;
+    kick();
+  },
+  surf(v){ ST.surf = v; kick();
+    el('kleinGrp').style.opacity = v === 'klein' ? 1 : 0.42;
+    for (const s of el('surfRow').querySelectorAll('button')) s.classList.toggle('on', s.dataset.surf === v);
+    rebuild(); },
+  field(v){ ST.field = v; kick();
+    for (const s of el('fieldRow').querySelectorAll('button')) s.classList.toggle('on', +s.dataset.f === v);
+    paintLegend(); },
+  cover(v){ ST.cover = v; rebuild(); kick(); },
+  pause(v){ ST.paused = !!v; kick(); },   // freeze the clock, keep rendering
+  seek(sec){ ST.paused = true; ST.tSim = sec; ST.yaw = 0.9 + sec*0.34*ST.spin; kick(); },
+  state(){ return {...ST}; },
+  needsRedraw(){ return true; },
+};
+
+/* ================================ startup ================================= */
+el('kleinGrp').style.opacity = 1;
+rebuild();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

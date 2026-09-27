@@ -1,0 +1,1378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signed Distance Type — text reconstructed from a distance field</title>
+<style>
+  :root{
+    --ink:#e9f2ff; --dim:#7d93ad; --faint:#4d6076;
+    --line:rgba(120,190,255,.20); --line2:rgba(120,190,255,.11);
+    --card:rgba(7,12,22,.70); --card2:rgba(7,12,22,.55);
+    --cool:#5ac8ff; --warm:#ffa850; --hot:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#04060c;overflow:hidden}
+  body{font:12px/1.45 "JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       color:var(--ink);-webkit-font-smoothing:antialiased;letter-spacing:.01em}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+
+  .card{position:fixed;z-index:5;background:var(--card);border:1px solid var(--line);
+        border-radius:10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+        padding:10px 12px 12px;pointer-events:auto}
+  /* The control stack is taller than the rail on short viewports: let it
+     scroll rather than letting the last controls fall off the screen. */
+  #ctl{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;
+       scrollbar-color:rgba(120,190,255,.30) transparent}
+  #ctl::-webkit-scrollbar{width:5px}
+  #ctl::-webkit-scrollbar-thumb{background:rgba(120,190,255,.28);border-radius:3px}
+  #ctl::-webkit-scrollbar-track{background:transparent}
+  .card > h2{margin:0 0 7px;font-size:9.5px;letter-spacing:.19em;color:var(--dim);
+             text-transform:uppercase;font-weight:600;display:flex;justify-content:space-between;
+             align-items:baseline;gap:8px}
+  .card > h2 em{font-style:normal;color:var(--faint);letter-spacing:.08em;font-size:9px}
+  .rule{height:1px;background:linear-gradient(90deg,var(--line),transparent);margin:6px 0}
+
+  /* ---------- header ---------- */
+  #head h1{margin:0;font:600 17px/1.1 Inter,"Noto Sans Display","DejaVu Sans",sans-serif;
+           letter-spacing:.055em;color:#f2f8ff;text-transform:uppercase}
+  #head h1 b{color:var(--cool);font-weight:600}
+  #head .tech{margin:6px 0 0;font-size:10px;line-height:1.6;color:var(--dim);letter-spacing:.015em;max-width:74ch}
+  #head .tech u{text-decoration:none;color:#a8c8e4}
+  #head .tech s{text-decoration:none;color:var(--warm)}
+
+  /* ---------- labels over the canvas ---------- */
+  .ovl{position:fixed;z-index:4;pointer-events:none;font-size:9.5px;letter-spacing:.16em;
+       color:var(--faint);text-transform:uppercase;white-space:nowrap}
+  .ovl b{color:var(--dim);font-weight:600}
+  .ovl.c{color:#8fb6d8}
+  #ladLab{position:fixed;inset:0;z-index:4;pointer-events:none}
+  #ladLab .lv{position:absolute;font-size:9px;letter-spacing:.06em;color:#6f8aa4;white-space:nowrap}
+
+  /* ---------- field monitor ----------
+     This card's interior is painted by the GL monitor pass, which sits on the
+     canvas BELOW this element. A card background here would veil it, so the
+     card is transparent: only its border, header and footer are DOM. */
+  #mon{background:transparent;border-color:var(--line)}
+  #mon h2,#mon #monFoot{position:relative;z-index:2}
+  #monCv{display:block;width:100%;height:100%;border-radius:5px}
+  /* reserved slot: the monitor image itself is the GL pass underneath, so this
+     2D canvas must not paint over it */
+  #monCv{visibility:hidden}
+  #monWrap{position:relative;border-radius:5px;overflow:hidden;background:transparent}
+  #monLab{position:absolute;left:6px;bottom:4px;font-size:8.5px;letter-spacing:.1em;color:rgba(190,220,255,.5);
+          text-transform:uppercase;pointer-events:none}
+
+  /* ---------- histogram ---------- */
+  #histCv{display:block;width:100%;height:100%}
+
+  /* ---------- controls ---------- */
+  .row{margin:0 0 6px}
+  .row > label{display:flex;justify-content:space-between;align-items:baseline;font-size:10px;
+               color:var(--dim);margin-bottom:3px;letter-spacing:.05em}
+  .row > label span{color:#cfe6ff}
+  .row > label span i{font-style:normal;color:var(--faint)}
+  input[type=text]{width:100%;background:rgba(8,20,38,.85);color:#eaf4ff;border:1px solid var(--line);
+      border-radius:6px;padding:5px 8px;font:600 12px/1.2 Inter,"Noto Sans Display",sans-serif;
+      letter-spacing:.04em;outline:none}
+  input[type=text]:focus{border-color:var(--cool);box-shadow:0 0 0 2px rgba(90,200,255,.16)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+      background:linear-gradient(90deg,var(--cool) var(--p,50%),rgba(120,200,255,.15) var(--p,50%));
+      outline:none;margin:0;cursor:pointer;display:block}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+      background:#eaf4ff;border:1px solid rgba(0,0,0,.55);box-shadow:0 0 8px rgba(90,200,255,.7);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:#eaf4ff;
+      border:1px solid rgba(0,0,0,.55);box-shadow:0 0 8px rgba(90,200,255,.7);cursor:pointer;border-width:1px}
+  .btns{display:flex;gap:4px}
+  button{font:inherit;font-size:9.5px;letter-spacing:.09em;color:var(--dim);text-transform:uppercase;
+      background:rgba(28,62,100,.24);border:1px solid var(--line);border-radius:5px;padding:4px 5px;
+      cursor:pointer;transition:.13s;flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  button:hover{color:#eaf4ff;background:rgba(46,120,180,.32)}
+  button[aria-pressed=true]{color:#04121e;background:var(--cool);border-color:var(--cool);
+      font-weight:600;box-shadow:0 0 14px rgba(90,200,255,.4)}
+  button.w[aria-pressed=true]{background:var(--warm);border-color:var(--warm);box-shadow:0 0 14px rgba(255,168,80,.4)}
+  button#play{width:100%;flex:none;margin-top:2px;padding:5px}
+  .hint{margin:6px 0 0;font-size:8.5px;color:var(--faint);letter-spacing:.03em;line-height:1.55}
+  kbd{background:rgba(120,200,255,.12);border:1px solid var(--line2);border-radius:3px;padding:0 3px;
+      font:inherit;font-size:8.5px;color:var(--dim)}
+
+  /* ---------- readout ---------- */
+  #read{font-size:10px;line-height:1.7;color:var(--dim);letter-spacing:.04em;white-space:nowrap}
+  #read b{color:var(--cool);font-weight:600}
+  #read i{font-style:normal;color:var(--warm)}
+  #read u{text-decoration:none;color:#b9d4ec}
+  #read .sep{color:var(--faint);padding:0 6px}
+  #read .q{color:var(--warm)}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="card" id="head">
+  <h1>Signed&nbsp;Distance&nbsp;<b>Type</b></h1>
+  <p class="tech" id="tech">—</p>
+</div>
+
+<div class="card" id="mon">
+  <h2>Field monitor <em id="monMeta">—</em></h2>
+  <div id="monWrap">
+    <canvas id="monCv"></canvas>
+    <div id="monLab">edge</div>
+  </div>
+  <div class="ovl" id="monFoot" style="position:static;margin-top:6px;color:#6f8aa4;font-size:9px">
+    <b id="monFootA">—</b>
+  </div>
+</div>
+
+<div class="card" id="hist">
+  <h2>Distance histogram <em id="histMeta">—</em></h2>
+  <div id="histWrap" style="position:relative;width:100%;height:100%">
+    <canvas id="histCv"></canvas>
+  </div>
+</div>
+
+<div class="card" id="ctl">
+  <h2>Controls <em>sdf-text · 45</em></h2>
+
+  <div class="row">
+    <label>String <span id="lenV">8 <i>chars</i></span></label>
+    <input type="text" id="txt" value="SDF TEXT" maxlength="24" spellcheck="false" autocomplete="off">
+  </div>
+  <div class="btns" style="margin-bottom:7px">
+    <button data-s="SDF TEXT">sdf</button>
+    <button data-s="HAMBURGEFONS">hamburgefonstiv</button>
+    <button data-s="Aa">aa</button>
+    <button data-s="RESOLUTION">scale</button>
+    <button data-s="GLSL">glsl</button>
+  </div>
+
+  <div class="row">
+    <label>Bake size <span id="sizeV">168 <i>px atlas</i></span></label>
+    <input type="range" id="size" min="88" max="360" step="4" value="168">
+  </div>
+  <div class="row">
+    <label>Tracking <span id="trackV">+2.0 <i>%</i></span></label>
+    <input type="range" id="track" min="-6" max="30" step="1" value="2">
+  </div>
+  <div class="row">
+    <label>Weight <span id="wV">600</span></label>
+    <div class="btns" id="wBtns">
+      <button class="w" data-w="400">400</button>
+      <button class="w" data-w="500">500</button>
+      <button class="w" data-w="600" aria-pressed="true">600</button>
+      <button class="w" data-w="700">700</button>
+      <button class="w" data-w="800">800</button>
+    </div>
+  </div>
+  <div class="row">
+    <label>Edge sharpness <span id="edgeV">0.25</span></label>
+    <input type="range" id="edge" min="0" max="100" step="1" value="25">
+  </div>
+  <div class="row" style="margin-bottom:5px">
+    <label>Falloff band <span id="fallV">11 <i>texels</i></span></label>
+    <input type="range" id="fall" min="30" max="240" step="1" value="110">
+  </div>
+
+  <div class="rule" style="margin:5px 0"></div>
+  <div class="row" style="margin-bottom:6px">
+    <label>View <span id="modeV">glow</span></label>
+    <div class="btns" id="modeBtns">
+      <button data-m="0">solid</button>
+      <button data-m="1" aria-pressed="true">glow</button>
+      <button data-m="2">field</button>
+    </div>
+  </div>
+  <div class="row" style="margin-bottom:9px">
+    <label>Zoom <span id="zoomV">1.000 <i>px/texel</i></span></label>
+    <input type="range" id="zoom" min="0" max="1000" step="1" value="1000">
+  </div>
+  <button id="play" aria-pressed="true" title="space: play/pause · 1/2/3: view · drag the hero to scrub the zoom">▶ replay zoom sweep</button>
+</div>
+
+<div class="card" id="read"></div>
+
+<div class="ovl" id="l1">source bitmap · nearest</div>
+<div class="ovl" id="l2">signed distance field · analytic coverage</div>
+<div class="ovl" id="l3">0 isoline</div>
+<div id="ladLab"></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   45 · sdf-text
+   Display type reconstructed from an exact Euclidean distance field.
+
+   Pipeline, all in one file, zero external requests:
+     1. the string is rasterised once, at bake size, into an alpha mask
+     2. the mask becomes a signed distance field by an EXACT Euclidean
+        distance transform (Felzenszwalb & Huttenlocher, 1984) run twice --
+        once from inside, once from outside. Seeding each pixel with the
+        antialiased coverage (cost = (0.5 - a)^2) buys sub-texel accuracy
+        for free: the 50% coverage isoline is the true edge.
+     3. the field is quantised to 8 bits over +/-SPREAD texels, packed with
+        the coverage and the field gradient into one RGBA8 texture.
+     4. the shader reconstructs coverage analytically from the distance --
+        one clamp across an exact field is an infinitely sharp edge, so the
+        glyph survives any magnification. The same field also drives the
+        iso-contour falloff that shows the numbers behind the type.
+
+   The whole scene is one fixed-dt step per frame. No wall clock, no RNG.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- constants */
+const SPREAD     = 24;        // distance range encoded into 8 bits, in texels
+const LSB        = 2 * SPREAD / 255;
+const FAMILY     = 'Inter, "Noto Sans Display", "DejaVu Sans", sans-serif';
+const MAX_TEXT   = 24;
+const MAX_AW     = 2048, MAX_AH = 640, MAX_APX = 2048 * 640;
+const BIG        = 1e9;       // finite "no seed" cost; Infinity poisons the parabola maths
+const FIXED_DT   = 1 / 20;    // sim seconds per frame -> a slow machine sees the same movie
+const MON_TEXELS = 16;        // window shown by the field monitor's pixel-peep
+const INTRO      = 56;        // frames of the opening zoom sweep, then park
+
+/* ---------------------------------------------------------------- state */
+const S = {
+  text:'SDF TEXT', fontPx:168, weight:600, track:0.02,
+  edge:0.25, fall:11, mode:1, zoom:1, zoomMin:0.035, playing:true,
+  fit:1, heroRect:[0,0,0,0], monEdge:null, monAtlas:null,
+  frames:0, t:0, phase:0, parkPhase:0, fps:0, ms:0, bakeMs:0, ladLabDone:false,
+  atlas:null, bins:null, stats:null, pending:null, warm:false, luma:0,
+};
+window.__probe = { ok:false, stage:'boot' };
+window.__ready = false;
+
+/* ---------------------------------------------------------------- layout */
+const L = {};
+/* The window size is a parameter, not a global: resize() passes it in, and
+   the ResizeObserver path re-runs layout() with no arguments, so both have to
+   have a working fallback. Reading an undeclared `ch` here threw a
+   ReferenceError on boot and the page just stayed blank -- no error surfaced
+   anywhere except a missing __ready, which reads like a slow render. */
+function layout(w, h){
+  const cw = Math.max(320, w || window.innerWidth);
+  const ch = Math.max(240, h || window.innerHeight);
+  const M = Math.round(Math.min(30, Math.max(16, ch * 0.033)));
+  const gap = 16;
+  const railW = Math.round(Math.min(340, Math.max(248, cw * 0.262)));
+  const heroW = cw - M * 2 - railW - gap;
+  const headH = 92, readH = 34, ladderH = Math.round(Math.min(186, ch * 0.238));
+  const bottom = ch - M;
+  const readY = bottom - readH;
+  const ladderY = readY - gap - ladderH;
+  const heroY = M + headH + gap;
+  const heroH = ladderY - gap - heroY;
+  const railX = M + heroW + gap;
+
+  L.M = M; L.gap = gap;
+  L.head  = { x:M, y:M, w:heroW, h:headH };
+  L.hero  = { x:M, y:heroY, w:heroW, h:heroH };
+  L.ladder= { x:M, y:ladderY, w:heroW, h:ladderH };
+  L.read  = { x:M, y:readY, w:heroW, h:readH };
+  L.rail  = { x:railX, y:M, w:railW, h:bottom - M };
+  // The lower monitor view shows the WHOLE atlas, whose aspect is set by the
+  // baked texture (typically ~4.7:1). Reserve exactly that height for it, or
+  // the overview is squashed into an unreadable sliver.
+  const bodyW = railW - 24;
+  const atlasStripH = Math.max(38, Math.round(bodyW * 190 / 892) + 10);
+  L.histH = 96;
+  // The control card has a fixed, intrinsic height (its rows do not reflow).
+  // Rather than let it scroll, give it exactly what it needs and let the
+  // flexible monitor above absorb the remainder -- so the rail never clips
+  // and the monitor still shows a usable pixel-peep.
+  // measured, not guessed: the card's own scrollHeight is its intrinsic need
+  const ctlCard = document.getElementById('ctl');
+  const ctlNeed = ctlCard ? ctlCard.scrollHeight : 380;
+  const flexible = ch - M - L.histH - 2 * gap - ctlNeed;
+  L.monH  = Math.max(160, Math.min(flexible, 288));
+  L.mon   = { x:railX, y:M, w:railW, h:L.monH };
+  L.hist  = { x:railX, y:L.mon.y + L.monH + gap, w:railW, h:L.histH };
+  L.ctl   = { x:railX, y:L.hist.y + L.histH + gap, w:railW, h:bottom - (L.hist.y + L.histH + gap) };
+  S.heroRect = [L.hero.x, L.hero.y, L.hero.w, L.hero.h];
+}
+
+/* ---- the monitor card is split into an extreme zoom (top) and the whole
+        atlas (bottom); both are GL regions inside the DOM card's body ---- */
+function monRects(){
+  const b = monBody(), gapY = 7;
+  const a = S.atlas;
+  // the atlas strip keeps its own aspect; the pixel-peep takes what is left
+  const botH = Math.max(30, Math.min(atlasStripH(a), Math.round(b.h * 0.62)));
+  const topH = Math.max(60, b.h - botH - gapY);
+  return { body:b, top:{ x:b.x, y:b.y, w:b.w, h:topH },
+           bot:{ x:b.x, y:b.y + topH + gapY, w:b.w, h:botH } };
+}
+function monBody(){
+  const padX = 12, padTop = 10 + 15;    // card padding + h2 line
+  const x = L.mon.x + padX, y = L.mon.y + padTop;
+  const w = L.mon.w - padX * 2, h = L.mon.h - padTop - 30;   // 30 = footer line
+  return { x, y, w, h };
+}
+/* Height the whole-atlas strip needs, given the baked texture's aspect. */
+function atlasStripH(atlas){
+  const b = monBody();
+  return Math.round(b.w * (atlas ? atlas.h / atlas.w : 0.21));
+}
+function histBody(){
+  const padX = 12, padTop = 10 + 15;
+  return { x:L.hist.x + padX, y:L.hist.y + padTop,
+           w:L.hist.w - padX * 2, h:L.hist.h - padTop - 12 };
+}
+
+/* ---------------------------------------------------------------- helpers */
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const $ = id => document.getElementById(id);
+
+/* ==========================================================================
+   1. the exact Euclidean distance transform
+   ========================================================================== */
+function edt1d(f, d, v, z, n){
+  let k = 0;
+  v[0] = 0; z[0] = -BIG; z[1] = BIG;
+  for (let q = 1; q < n; q++){
+    let s;
+    for (;;){
+      const p = v[k];
+      s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * q - 2 * p);
+      if (s > z[k] || k === 0) break;
+      k--;
+    }
+    k++;
+    v[k] = q; z[k] = s; z[k + 1] = BIG;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++){
+    while (z[k + 1] < q) k++;
+    const p = v[k];
+    d[q] = (q - p) * (q - p) + f[p];
+  }
+}
+function edt2d(cost, w, h, out){
+  const n = w > h ? w : h;
+  const f = new Float64Array(n), d = new Float64Array(n);
+  const v = new Int32Array(n + 1), z = new Float64Array(n + 2);
+  for (let y = 0; y < h; y++){
+    const o = y * w;
+    for (let x = 0; x < w; x++) f[x] = cost[o + x];
+    edt1d(f, d, v, z, w);
+    for (let x = 0; x < w; x++) out[o + x] = d[x];
+  }
+  for (let x = 0; x < w; x++){
+    for (let y = 0; y < h; y++) f[y] = out[y * w + x];
+    edt1d(f, d, v, z, h);
+    for (let y = 0; y < h; y++) out[y * w + x] = d[y];
+  }
+}
+
+/* ==========================================================================
+   2. bake: string -> alpha mask -> signed field -> RGBA8 atlas
+   ========================================================================== */
+const meas = document.createElement('canvas').getContext('2d');
+let _ls = 0;
+function metrics(ctx, str, fontPx, weight, trackEm){
+  ctx.font = weight + ' ' + fontPx + 'px ' + FAMILY;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = (trackEm * fontPx).toFixed(3) + 'px';
+  const m = ctx.measureText(str);
+  const asc = m.actualBoundingBoxAscent  || fontPx * 0.80;
+  const desc = m.actualBoundingBoxDescent || fontPx * 0.22;
+  const left = Math.max(0, m.actualBoundingBoxLeft  || 0);
+  const right= Math.max(1, m.actualBoundingBoxRight || m.width);
+  return { asc, desc, left, right, w:left + right };
+}
+function bake(str, fontPx, weight, trackEm){
+  const t0 = performance.now();
+  str = (str || '').slice(0, MAX_TEXT) || ' ';
+
+  const pad = Math.ceil(SPREAD) + 8;
+  let m = metrics(meas, str, fontPx, weight, trackEm);
+  let k = 1;
+  let AW = Math.ceil(m.w) + pad * 2, AH = Math.ceil(m.asc + m.desc) + pad * 2;
+  if (AW > MAX_AW || AH > MAX_AH || AW * AH > MAX_APX){
+    k = Math.min(MAX_AW / AW, MAX_AH / AH, Math.sqrt(MAX_APX / (AW * AH)));
+    fontPx = Math.max(12, fontPx * k);
+    m = metrics(meas, str, fontPx, weight, trackEm);
+    AW = Math.min(MAX_AW, Math.ceil(m.w) + pad * 2);
+    AH = Math.min(MAX_AH, Math.ceil(m.asc + m.desc) + pad * 2);
+  }
+  AW = Math.max(8, AW - (AW & 1)); AH = Math.max(8, AH - (AH & 1));
+
+  /* -- rasterise ------------------------------------------------------- */
+  const cv = document.createElement('canvas');
+  cv.width = AW; cv.height = AH;
+  const cx = cv.getContext('2d', { willReadFrequently:true });
+  cx.clearRect(0, 0, AW, AH);
+  cx.font = weight + ' ' + fontPx + 'px ' + FAMILY;
+  if ('letterSpacing' in cx) cx.letterSpacing = (trackEm * fontPx).toFixed(3) + 'px';
+  cx.textBaseline = 'alphabetic'; cx.textAlign = 'left'; cx.fillStyle = '#ffffff';
+  const ox = pad + m.left, oy = pad + m.asc;
+  cx.fillText(str, ox, oy);
+  const img = cx.getImageData(0, 0, AW, AH).data;
+
+  /* -- coverage, two signed cost fields ------------------------------- */
+  const n = AW * AH;
+  const cov = new Float32Array(n);
+  for (let i = 0; i < n; i++) cov[i] = img[i * 4 + 3] / 255;
+  let maxA = 0, minA = 1;
+  for (let i = 0; i < n; i++){ const a = cov[i]; if (a > maxA) maxA = a; if (a < minA) minA = a; }
+
+  const cIn = new Float64Array(n), cOut = new Float64Array(n);
+  needScratch(n);
+  const run = thr => {
+    for (let i = 0; i < n; i++){
+      const a = cov[i], e = 0.5 - a;
+      cIn[i]  = a >= thr ? e * e : BIG;
+      cOut[i] = a <  thr ? e * e : BIG;
+    }
+    edt2d(cIn,  AW, AH, _d1);
+    edt2d(cOut, AW, AH, _d2);
+  };
+  // Normally the 50% coverage isoline is the edge. If the glyph is so thin or
+  // so small that nothing ever reaches 50% coverage, the field would be all
+  // "outside" -- fall back to the darkest threshold that still finds a core.
+  let thr = 0.5;
+  run(thr);
+  let core = 0;
+  for (let i = 0; i < n; i += 7) if (cov[i] >= thr && _d1[i] < 2.0) core++;
+  if (core === 0 && maxA > 0.02){
+    thr = Math.max(0.02, maxA - 1 / 255);
+    run(thr);
+  }
+
+  /* -- combine, quantise, pack ---------------------------------------- */
+  const px = new Uint8Array(n * 4);
+  const bins = new Float32Array(48);
+  const binScale = 48 / (2 * SPREAD);
+  let dMin = 1e9, dMax = -1e9, clamped = 0, touched = 0;
+  for (let y = 0; y < AH; y++){
+    for (let x = 0; x < AW; x++){
+      const i = y * AW + x, o = i * 4;
+      let dv = Math.sqrt(_d1[i]) - Math.sqrt(_d2[i]);
+      if (dv < dMin) dMin = dv;
+      if (dv > dMax) dMax = dv;
+      if (dv >  SPREAD){ dv =  SPREAD; clamped++; }
+      if (dv < -SPREAD){ dv = -SPREAD; clamped++; }
+      if (cov[i] > 0.002){
+        touched++;
+        let bi = ((dv + SPREAD) * binScale) | 0;
+        if (bi < 0) bi = 0; else if (bi > 47) bi = 47;
+        bins[bi]++;
+      }
+      const q = (dv / (2 * SPREAD) + 0.5) * 255 + 0.5;
+      px[o]     = q < 0 ? 0 : q > 255 ? 255 : q | 0;
+      px[o + 1] = (cov[i] * 255 + 0.5) | 0;
+      // field normal, straight off the coverage ramp. Spacing 2 texels, so a
+      // one-pixel-wide antialiased edge still yields a usable direction.
+      const xm = x > 1 ? x - 2 : 0, xp = x < AW - 2 ? x + 2 : AW - 1;
+      const ym = y > 1 ? y - 2 : 0, yp = y < AH - 2 ? y + 2 : AH - 1;
+      let nx = (cov[y * AW + xp] - cov[y * AW + xm]) * 0.25;
+      let ny = (cov[yp * AW + x] - cov[ym * AW + x]) * 0.25;
+      const l = Math.hypot(nx, ny);
+      if (l > 0.02){ nx /= l; ny /= l; } else { nx = 0; ny = -1; }
+      px[o + 2] = (nx * 127.5 + 127.5) | 0;
+      px[o + 3] = (ny * 127.5 + 127.5) | 0;
+    }
+  }
+  let bmax = 0;
+  for (let i = 0; i < 48; i++) if (bins[i] > bmax) bmax = bins[i];
+  for (let i = 0; i < 48; i++) bins[i] = bmax > 0 ? bins[i] / bmax : 0;
+
+  return {
+    w:AW, h:AH, px, bins, fontPx, weight, trackEm, thr, pad, ox, oy, k,
+    asc:m.asc, desc:m.desc, inkL:m.left, inkR:m.right,
+    dMin, dMax, clamped, touched, covMean:0,
+    ms: performance.now() - t0,
+  };
+}
+let _d1 = new Float64Array(0), _d2 = new Float64Array(0);
+function needScratch(n){
+  if (_d1.length < n){
+    _d1 = new Float64Array(n);
+    _d2 = new Float64Array(n);
+  }
+}
+
+/* ==========================================================================
+   3. GL
+   ========================================================================== */
+const canvas = $('gl');
+let gl = null, prog = null, bgProg = null, U = {}, B = {}, texLin = null, texNear = null;
+let dpr = 1, devW = 0, devH = 0;
+
+// A rect is drawn as a 4-vertex TRIANGLE_STRIP whose UVs span exactly [0,1].
+// (The 3-vertex fullscreen-triangle trick spans [0,2], which only covers HALF
+// the rect once the vertices are remapped into it -- that slices a diagonal
+// through every quad and silently deletes most of the type.)
+const VS = `#version 300 es
+uniform vec4 uQuad;      // device px, y down from the top-left
+uniform vec2 uRes;       // device px
+out vec2 vUV;
+void main(){
+  vec2 p = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1));
+  vUV = p;
+  vec2 q = mix(uQuad.xy, uQuad.zw, p);
+  gl_Position = vec4(q.x / uRes.x * 2.0 - 1.0, 1.0 - q.y / uRes.y * 2.0, 0.0, 1.0);
+}`;
+
+const FS_BG = `#version 300 es
+precision highp float;
+in vec2 vUV; out vec4 frag;
+uniform vec2 uRes;        // design px
+uniform float uDpr;
+uniform vec2 uHero;
+uniform vec2 uBal;
+float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec2 p = vUV * uRes;
+  vec2 n = p / uRes;
+  vec3 c = mix(vec3(0.030,0.039,0.062), vec3(0.011,0.015,0.029), smoothstep(0.0,1.0,n.y));
+  c += vec3(0.052,0.074,0.125) * exp(-length((p - uHero) / uRes.y) * 2.05);
+  c += vec3(0.030,0.049,0.092) * exp(-length((p - uBal)  / uRes.y) * 2.45);
+  // fine grid
+  vec2 fp = p / 40.0;
+  vec2 gd = min(fract(fp), 1.0 - fract(fp)) * 40.0;
+  c += vec3(0.30,0.46,0.72) * (1.0 - smoothstep(0.0, 1.3 / uDpr, min(gd.x, gd.y))) * 0.030;
+  // coarse grid
+  vec2 fq = p / 200.0;
+  vec2 ge = min(fract(fq), 1.0 - fract(fq)) * 200.0;
+  c += vec3(0.38,0.58,0.88) * (1.0 - smoothstep(0.0, 1.5 / uDpr, min(ge.x, ge.y))) * 0.055;
+  // vignette + grain
+  c *= 1.0 - 0.52 * smoothstep(0.40, 0.98, length((n - 0.5) * vec2(1.05, 1.0)));
+  c += (hash21(gl_FragCoord.xy + 11.7) - 0.5) * 0.0105;
+  frag = vec4(max(c, 0.0), 1.0);
+}`;
+
+const FS_TEX = `#version 300 es
+precision highp float;
+in vec2 vUV; out vec4 frag;
+uniform sampler2D uTex;
+uniform vec4  uRect;      // design px
+uniform vec2  uAtlas;
+uniform float uK;         // design px per atlas texel
+uniform vec2  uOff;       // design px position of atlas texel (0,0)
+uniform float uDpr, uSpread, uEdge, uFall, uT, uInk;
+uniform int   uKind;      // 1 hero  2 ladder field  3 ladder bitmap  4 monitor
+uniform int   uMode;      // 0 solid  1 glow  2 field
+uniform vec4  uMon;       // (cx tex, cy tex, design px per texel, ring step)
+const vec3 INK_HI = vec3(0.985,0.995,1.000);
+const vec3 INK_LO = vec3(0.612,0.815,0.945);
+const vec3 WARM   = vec3(1.000,0.600,0.230);
+const vec3 COOL   = vec3(0.290,0.760,1.000);
+float hash21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float contour(float d, float st, float w){
+  float f = abs(fract(d / st + 0.5) - 0.5) * st;
+  return 1.0 - smoothstep(0.0, w, f);
+}
+void main(){
+  vec2 p = mix(uRect.xy, uRect.zw, vUV);
+  float lsb = 2.0 * uSpread / 255.0;
+  float dth = (hash21(gl_FragCoord.xy + 3.1) - 0.5) * lsb * 0.85;
+
+  /* ---------- field monitor: the raw numbers, magnified ---------- */
+  if (uKind == 4){
+    vec2 ctr = mix(uRect.xy, uRect.zw, 0.5);
+    float mag = max(uMon.z, 0.02);
+    vec2 t = uMon.xy + (p - ctr) / mag;
+    vec2 uv = t / uAtlas;
+    bool inside = t.x >= 0.0 && t.y >= 0.0 && t.x < uAtlas.x && t.y < uAtlas.y;
+    vec4 s = inside ? texture(uTex, uv) : vec4(0.5, 0.0, 0.5, 0.0);
+    float dT = (s.r - 0.5) * 2.0 * uSpread + dth;
+    float t01 = clamp(dT / uSpread, -1.0, 1.0);
+    // BANDED ramp, not a smooth one. A smooth pow() ramp of a field that varies
+    // by ~1 texel per texel just paints a gradient; stepping the ramp through
+    // discrete levels is what makes the stored numbers legible as a contour map.
+    float band01 = floor(abs(t01) * 9.0) / 9.0;
+    vec3 col = mix(vec3(0.020,0.026,0.044), t01 < 0.0 ? WARM : COOL, band01);
+    // iso-contours every uMon.w texels: these ARE the stored distance values
+    float aa = max(1.0 / (mag * uDpr), 0.05);
+    float rg = contour(dT, uMon.w, aa * 0.9);
+    col += (dT < 0.0 ? WARM : COOL) * rg * 0.55;
+    // the 0 isoline, drawn hard: this is the edge the glyph is reconstructed from
+    float zl = 1.0 - smoothstep(0.0, max(aa * 1.2, 0.09), abs(dT));
+    col = mix(col, vec3(0.97,0.99,1.0), zl * 0.92);
+    // texel grid, so you can count the quantisation steps
+    float gw = 1.0 / (mag * uDpr);
+    vec2 gg = min(fract(t), 1.0 - fract(t));
+    float grid = 1.0 - smoothstep(0.0, gw * 1.1, min(gg.x, gg.y));
+    col += vec3(0.42,0.64,0.92) * grid * (mag >= 5.0 ? 0.22 : 0.0);
+    col += (hash21(gl_FragCoord.xy * 1.7) - 0.5) * 0.015;
+    // opaque: the monitor is an instrument, not a light source, so it paints
+    // its own dark ground rather than compositing over the page
+    frag = vec4(max(col, 0.0), 1.0);
+    return;
+  }
+
+  /* ---------- type ---------- */
+  vec2 texel = (p - uOff) / uK;
+  vec2 uv = texel / uAtlas;
+  vec4 s = texture(uTex, uv);
+  float dT = (s.r - 0.5) * 2.0 * uSpread;
+  float dd = dT + dth;
+  float aaT = 1.0 / max(uK * uDpr, 1e-4);         // one device pixel, in texels
+  vec2 nn = s.ba * 2.0 - 1.0;
+  float nl = length(nn);
+  nn = nl > 0.25 ? nn / nl : vec2(0.0, -1.0);
+  float w = aaT * (0.30 + 3.20 * uEdge);
+  float cov = smoothstep(-w, w, -dd);             // +d is outside -> coverage 0
+
+  if (uKind == 3){                               // raw bitmap, nearest sampled
+    // The ink is blue-white and the 50% coverage isoline is marked amber, so
+    // you can see which texels the distance field treats as "the edge".
+    // Alpha MUST be the coverage: this pass is drawn with blending on, and a
+    // constant 1.0 here floods the whole quad with ink-coloured background.
+    vec3 g = mix(vec3(0.30,0.40,0.56), vec3(0.88,0.94,1.0), s.g);
+    float q = max(fwidth(s.g), 1.0 / 255.0);
+    float iso = 1.0 - smoothstep(0.0, q * 1.6, abs(s.g - 0.5));
+    g = mix(g, vec3(1.0,0.60,0.24), iso * 0.85);
+    float a = max(s.g, iso * 0.45);
+    frag = vec4(g * a, a);
+    return;
+  }
+
+  float outd = max(dd, 0.0), ind = max(-dd, 0.0);
+  float band = max(uFall, 2.0);
+  float step_ = max(band * 0.24, 1.0);
+  float ring  = contour(dd, step_, max(aaT * 0.55, 0.10));
+  float fade  = exp(-outd / max(band * 1.15, 1.2));
+  float iglow = exp(-ind / max(band * 0.26, 0.5));
+
+  if (uKind == 1 && uMode == 2){                 // raw distance field, false colour
+    float t01 = clamp(dd / uSpread, -1.0, 1.0);
+    vec3 col = mix(vec3(0.010,0.016,0.030), t01 < 0.0 ? WARM : COOL, pow(abs(t01), 0.58));
+    col += (t01 < 0.0 ? WARM : COOL) * ring * fade * 0.45;
+    col += (t01 < 0.0 ? WARM : COOL) * iglow * 0.20;
+    float zl = 1.0 - smoothstep(0.0, max(aaT * 1.1, 0.10), abs(dd));
+    col = mix(col, vec3(0.96,0.99,1.0), zl * 0.85);
+    col += (hash21(gl_FragCoord.xy * 2.3) - 0.5) * 0.012;
+    frag = vec4(max(col, 0.0), 1.0);
+    return;
+  }
+
+  vec3 ink = mix(INK_LO, INK_HI, clamp(0.55 - texel.y / max(uAtlas.y * 0.9, 1.0), 0.0, 1.0));
+  ink *= 1.0 + 0.34 * dot(nn, normalize(vec2(0.38, -0.92)));
+  float aInk = cov * uInk;
+
+  if (uKind == 2){                               // size ladder, field side
+    float g1 = exp(-outd / max(band * 0.30, 0.5));
+    float g2 = exp(-outd / max(band * 1.15, 1.5));
+    vec3 glowC = COOL * (g1 * 0.85 + g2 * 0.50) * 0.85;
+    float gA = clamp(g1 * 0.85 + g2 * 0.60, 0.0, 1.0);
+    float coreC = iglow * 0.30 * (1.0 - aInk);
+    vec3 c = ink * aInk + (glowC + WARM * coreC) * (1.0 - aInk);
+    float al = aInk + (gA + coreC) * (1.0 - aInk);
+    frag = vec4(c * al, al);
+    return;
+  }
+
+  if (uMode == 0){                               // solid type
+    float sh = exp(-outd / max(band * 0.85, 1.0)) * 0.62;
+    vec3 outc = vec3(0.004,0.008,0.020) * sh;
+    float a = sh * 0.75;
+    float al = aInk + a * (1.0 - aInk);
+    frag = vec4((ink * aInk + outc * (1.0 - aInk)) * al, al);
+    return;
+  }
+
+  // glow: the falloff band, made visible
+  float g1 = exp(-outd / max(band * 0.30, 0.5));
+  float g2 = exp(-outd / max(band * 1.15, 1.5)) * 0.34;
+  float pulse = 0.86 + 0.14 * sin(uT * 6.28318);
+  vec3 glowC = COOL * (g1 * 0.90 + g2) * pulse;
+  vec3 ringC = (dd < 0.0 ? WARM : COOL) * ring * fade * 0.60;
+  float gA = clamp(g1 * 0.92 + g2 * 0.7 + ring * fade * 0.55, 0.0, 1.0);
+  vec3 coreC = WARM * iglow * (1.0 - aInk) * 0.42;
+  float cA = iglow * (1.0 - aInk) * 0.40;
+  vec3 underC = glowC + ringC + coreC;
+  float underA = clamp(gA + cA, 0.0, 1.0);
+  float al = aInk + underA * (1.0 - aInk);
+  frag = vec4((ink * aInk + underC * (1.0 - aInk)) * al, al);
+}`;
+
+function sh(type, src, name){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    die(name + ' shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fsSrc, name){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, VS, name + '.vs'));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc, name + '.fs'));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) die(name + ' link: ' + gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){
+    const info = gl.getActiveUniform(p, i);
+    u[info.name] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, u };
+}
+function die(msg){
+  window.__probe = { ok:false, error:msg };
+  window.__ready = true;
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;z-index:99;display:grid;place-items:center;background:#0a0408;color:#ff8a6a;font:12px/1.6 monospace;padding:40px;text-align:center;white-space:pre-wrap';
+  d.textContent = 'sdf-text could not start\n\n' + msg;
+  document.body.appendChild(d);
+  throw new Error(msg);
+}
+
+function initGL(){
+  gl = canvas.getContext('webgl2', {
+    antialias:false, depth:false, stencil:false, alpha:false,
+    premultipliedAlpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'
+  });
+  if (!gl) die('WebGL2 unavailable');
+  // Every render target in this project is RGBA8, so EXT_color_buffer_float is
+  // never needed: nothing here allocates a float FBO.
+  const px = new Uint8Array(4);
+  const main = program(FS_TEX, 'tex'), back = program(FS_BG, 'bg');
+  prog = main.p; U = main.u; bgProg = back.p; B = back.u;
+  gl.bindVertexArray(gl.createVertexArray());
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); }, false);
+}
+
+function makeTex(filter){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function upload(atlas){
+  for (const t of [texLin, texNear]){
+    if (t) gl.deleteTexture(t);
+  }
+  texLin = makeTex(gl.LINEAR); texNear = makeTex(gl.NEAREST);
+  for (const t of [texLin, texNear]){
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, atlas.w, atlas.h, 0,
+                  gl.RGBA, gl.UNSIGNED_BYTE, atlas.px);
+  }
+}
+
+function resize(){
+  const w = Math.max(320, window.innerWidth), h = Math.max(240, window.innerHeight);
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  devW = Math.round(w * dpr); devH = Math.round(h * dpr);
+  if (canvas.width !== devW || canvas.height !== devH){
+    canvas.width = devW; canvas.height = devH;
+  }
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  layout(w, h);
+  placeDOM();
+}
+
+/* ==========================================================================
+   4. hero + ladder geometry
+   ========================================================================== */
+/* The atlas is built with symmetric padding, so the ink is centred inside the
+   texture in both axes: the ink box is exactly [pad, AW-pad] x [pad, AH-pad].
+   uK is DESIGN PIXELS PER ATLAS TEXEL, so zoom *is* uK directly. */
+function heroGeom(zoom){
+  const a = S.atlas; if (!a) return null;
+  const r = L.hero, k = zoom;
+  // Centre the TEXTURE on the optical centre, then back off by the falloff
+  // margin so the glow -- which reaches S.fall texels past the ink -- is not
+  // clipped by the quad edge. Without this the halo is sliced off square.
+  const m = S.fall * k;
+  const cx = r.x + r.w * 0.5, by = r.y + r.h * 0.72;
+  return { k, x0: cx - a.w * 0.5 * k, y0: by - a.oy * k, base: by, cx, m };
+}
+function ladderSteps(){
+  const a = S.atlas; if (!a) return [];
+  // Advance by INK width, not texture width: the atlas carries `pad` texels of
+  // dead margin on every side, and multiplying that by the draw scale is what
+  // makes a "ladder" run off the end of its own card.
+  const inkW = a.w - a.pad * 2;
+  const boxX = L.ladder.x + 84, boxW = L.ladder.w - 84 - 10;
+  const gapPx = Math.max(6, boxW * 0.020);
+  const ramp = [1, .70, .49, .34, .238, .166, .116];
+  const sum = ramp.reduce((s, r) => s + r, 0);
+  const capMax = Math.max(8, (boxW - gapPx * (ramp.length - 1)) / (inkW / a.asc * sum));
+  const base1 = L.ladder.y + Math.round(L.ladder.h * 0.34);
+  const base2 = L.ladder.y + Math.round(L.ladder.h * 0.82);
+  const out = [];
+  let pen = boxX;
+  for (let i = 0; i < ramp.length; i++){
+    // the number in the label is the on-screen CAP HEIGHT, so the ramp reads as
+    // a typographic scale rather than an arbitrary texture magnification
+    const capPx = capMax * ramp[i];
+    const k = capPx / a.asc;
+    const wpx = inkW * k;
+    out.push({ capPx, k, pen, w:wpx, base1, base2 });
+    pen += wpx + gapPx;
+  }
+  return out;
+}
+/* Returns a {x,y,w,h} rect, NOT a {x0,y0,x1,y1} box: drawQuad() multiplies
+   rect.w/rect.h by dpr, so handing it end coordinates renders a zero-area
+   quad -- which is exactly what silently emptied the size ladder. */
+function quadForAtlas(atlas, k, penX, baseY){
+  return {
+    x: penX - atlas.ox * k,
+    y: baseY - atlas.oy * k,
+    w: atlas.w * k,
+    h: atlas.h * k,
+  };
+}
+
+/* the field monitor's top view: the strongest edge in the atlas, magnified.
+   Scored off the packed field channel, which is the 0-isoline isophote. */
+function monitorPick(atlas){
+  let bv = -1, bx = 0, by = 0;
+  const y0 = Math.floor(atlas.h * 0.30), y1 = Math.ceil(atlas.h * 0.70);
+  const x0 = Math.floor(atlas.w * 0.02), x1 = Math.ceil(atlas.w * 0.98);
+  const R = MON_TEXELS / 2;
+  for (let y = y0; y < y1; y += 2){
+    for (let x = x0; x < x1; x += 2){
+      const i = y * atlas.w + x;
+      const gx = atlas.px[(i + 1) * 4]     - atlas.px[(i - 1) * 4];
+      const gy = atlas.px[(i + atlas.w) * 4] - atlas.px[(i - atlas.w) * 4];
+      // Score the window the monitor will ACTUALLY show: reward having the
+      // 0-isoline inside it and a wide spread of values either side. That puts
+      // the white edge line and several contour bands on screen together,
+      // instead of a patch of one-sided field that reads as a flat wash.
+      let lo = 255, hi = 0, near = 1e9, n = 0;
+      for (let dy = -R; dy <= R; dy++){
+        const yy = y + dy; if (yy < 0 || yy >= atlas.h) continue;
+        for (let dx = -R; dx <= R; dx++){
+          const xx = x + dx; if (xx < 0 || xx >= atlas.w) continue;
+          const v = atlas.px[(yy * atlas.w + xx) * 4];
+          if (v < lo) lo = v; if (v > hi) hi = v; n++;
+          const d = Math.hypot(dx, dy);
+          if (d < 128 - 6 && d < near) near = d;   // distance to the isoline
+        }
+      }
+      if (n < 16) continue;
+      const spread = hi - lo;
+      if (spread < 90) continue;                  // too flat to be interesting
+      // The isoline must sit near the CENTRE of the window, not in a corner:
+      // score a window by how evenly it straddles the edge. A window that is
+      // 95% one-sided field renders as a single flat colour no matter how wide.
+      const mid = (lo + hi) * 0.5;
+      const balance = 1.0 - Math.min(Math.abs(mid - 128) / 64, 1.0);
+      const s = spread * (0.35 + 0.65 * balance) + 0.2 * (gx * gx + gy * gy) / 255;
+      if (s > bv){ bv = s; bx = x; by = y; }
+    }
+  }
+  return { x:bx, y:by };
+}
+/* The top monitor is a pixel-peep on the field itself. The window has to be
+   NARROW: the distance changes by ~1 texel per texel, so a window wider than
+   2*SPREAD texels walks off both ends of the encoded range and every pixel
+   clamps to the same saturated colour. ~16 texels across keeps the whole
+   window inside +/-SPREAD and leaves room to count the contours. */
+function monitorMag(atlas, rect){
+  return Math.max(4, Math.min(rect.w / MON_TEXELS, rect.h / (MON_TEXELS * 0.6), 26));
+}
+
+/* ==========================================================================
+   5. render
+   ========================================================================== */
+function devRect(r){
+  return [r.x * dpr, r.y * dpr, (r.x + r.w) * dpr, (r.y + r.h) * dpr];
+}
+function drawQuad(rect, setup){
+  const q = devRect(rect);
+  if (q[2] <= q[0] || q[3] <= q[1]) return;
+  gl.uniform4f(U.uQuad, q[0], q[1], q[2], q[3]);
+  gl.uniform4f(U.uRect, rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+  setup();
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+function scissor(r){
+  const q = devRect(r);
+  const x = Math.max(0, Math.floor(q[0])), y = Math.max(0, Math.floor(q[1]));
+  const w = Math.min(devW - x, Math.ceil(q[2] - q[0])), h = Math.min(devH - y, Math.ceil(q[3] - q[1]));
+  if (w > 0 && h > 0) gl.scissor(x, devH - (y + h), w, h);
+}
+
+function render(){
+  const a = S.atlas;
+  gl.viewport(0, 0, devW, devH);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.disable(gl.BLEND);
+
+  /* background */
+  gl.useProgram(bgProg);
+  gl.uniform4f(B.uQuad, 0, 0, devW, devH);
+  gl.uniform2f(B.uRes, window.innerWidth, window.innerHeight);
+  gl.uniform1f(B.uDpr, dpr);
+  gl.uniform2f(B.uHero, L.hero.x + L.hero.w * 0.5, L.hero.y + L.hero.h * 0.52);
+  gl.uniform2f(B.uBal, L.rail.x + L.rail.w * 0.5, L.rail.y + L.rail.h * 0.86);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  if (!a) return;
+
+  gl.useProgram(prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(U.uTex, 0);
+  gl.uniform2f(U.uAtlas, a.w, a.h);
+  gl.uniform2f(U.uRes, devW, devH);        // the vertex shader divides by this
+  gl.uniform1f(U.uDpr, dpr);
+  gl.uniform1f(U.uSpread, SPREAD);
+  gl.uniform1f(U.uEdge, S.edge);
+  gl.uniform1f(U.uFall, S.fall);
+  gl.uniform1f(U.uT, S.phase);
+  gl.uniform1i(U.uMode, S.mode);
+  gl.uniform1f(U.uInk, S.mode === 2 ? 0.0 : 1.0);
+  gl.enable(gl.BLEND);
+  gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+  /* hero */
+  const g = heroGeom(S.zoom);
+  const heroQuad = { x:g.x0 - g.m, y:g.y0 - g.m,
+                     w:g.k * (S.atlas.w + 2 * S.fall), h:g.k * (S.atlas.h + 2 * S.fall) };
+  gl.bindTexture(gl.TEXTURE_2D, texLin);
+  drawQuad(heroQuad, () => {
+    gl.uniform1i(U.uKind, 1);
+    gl.uniform1f(U.uK, g.k);
+    gl.uniform2f(U.uOff, g.x0, g.y0);
+  });
+  gl.bindTexture(gl.TEXTURE_2D, texNear);
+
+  /* size ladder: the same atlas, nearest vs analytic, at identical sizes */
+  gl.enable(gl.SCISSOR_TEST);
+  const steps = ladderSteps();
+  const r1 = { x:L.ladder.x + 6, y:L.ladder.y + 6, w:L.ladder.w - 12, h:Math.round(L.ladder.h * 0.42) };
+  const r2 = { x:L.ladder.x + 6, y:r1.y + r1.h + 4, w:L.ladder.w - 12, h:L.ladder.h - (r1.y - L.ladder.y) - r1.h - 10 };
+  S.ladSteps = steps; S.ladRows = [r1, r2];
+  for (let row = 0; row < 2; row++){
+    const base = row ? r2.y + r2.h * 0.80 : r1.y + r1.h * 0.78;
+    const band = row ? r2 : r1;
+    scissor(band);
+    for (const s of steps){
+      const k = s.k;
+      const q = quadForAtlas(a, k, s.pen, base);
+      if (q.x + q.w < band.x || q.x > band.x + band.w) continue;
+      drawQuad(q, () => {
+        gl.uniform1i(U.uKind, row ? 2 : 3);
+        gl.uniform1f(U.uK, k);
+        gl.uniform2f(U.uOff, q.x, q.y);
+      });
+    }
+  }
+  gl.disable(gl.SCISSOR_TEST);
+  gl.disable(gl.BLEND);
+
+  /* field monitor */
+  gl.useProgram(prog);
+  gl.bindTexture(gl.TEXTURE_2D, texLin);
+  const mr = monRects();
+  const pick = S.monEdge;
+  drawQuad(mr.top, () => {
+    gl.uniform1i(U.uKind, 4);
+    gl.uniform4f(U.uMon, pick.x, pick.y, monitorMag(a, mr.top), 2.0);
+  });
+  drawQuad(mr.bot, () => {
+    gl.uniform1i(U.uKind, 4);
+    // the whole atlas, fit, with a 3-texel contour so the banding reads
+    const k = Math.max(mr.bot.w / a.w, mr.bot.h / a.h);
+    gl.uniform4f(U.uMon, a.w * 0.5, a.h * 0.5, k, 3.0);
+  });
+}
+
+/* ==========================================================================
+   6. histogram (2D canvas, redrawn only when its inputs change)
+   ========================================================================== */
+function drawHist(){
+  const cv = $('histCv'), b = histBody();
+  if (!S.bins) return;
+  const w = Math.max(80, Math.round(b.w * dpr)), h = Math.max(40, Math.round(b.h * dpr));
+  if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  const c = cv.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, w, h);
+  const base = h - Math.round(13 * dpr), top = Math.round(4 * dpr);
+  const H = base - top;
+  // zero rule
+  c.strokeStyle = 'rgba(180,215,255,.42)'; c.lineWidth = Math.max(1, dpr);
+  c.beginPath(); c.moveTo(0, base + .5); c.lineTo(w, base + .5); c.stroke();
+  // the AA band: exactly which distance values produce visible edge pixels
+  const a = S.atlas;
+  if (a){
+    const g = heroGeom(S.zoom);
+    const aaT = 1 / Math.max(g.k * dpr, 1e-4);
+    const band = aaT * (0.30 + 3.20 * S.edge);
+    const x0 = w * 0.5 + (0 / (2 * SPREAD)) * w;
+    const x1 = w * 0.5 + (band / SPREAD) * 0.5 * w;
+    c.fillStyle = 'rgba(90,200,255,.13)';
+    c.fillRect(x0, top, Math.max(1.5 * dpr, x1 - x0), H);
+    c.fillRect(x1, top, Math.max(1.5 * dpr, x0 - x1), H);
+  }
+  const n = S.bins.length, bw = w / n;
+  for (let i = 0; i < n; i++){
+    const v = S.bins[i], dmid = ((i + 0.5) / n) * 2 * SPREAD - SPREAD;
+    const bh = Math.max(v > 0.001 ? 1 : 0, v * H);
+    const grd = c.createLinearGradient(0, base - bh, 0, base);
+    if (dmid < 0){ grd.addColorStop(0, 'rgba(255,214,150,.95)'); grd.addColorStop(1, 'rgba(255,150,60,.55)'); }
+    else { grd.addColorStop(0, 'rgba(180,236,255,.95)'); grd.addColorStop(1, 'rgba(60,170,255,.55)'); }
+    c.fillStyle = grd;
+    c.fillRect(i * bw + 0.5 * dpr, base - bh, Math.max(1, bw - 1.2 * dpr), bh);
+  }
+  c.fillStyle = 'rgba(125,147,173,.9)';
+  c.font = (8.5 * dpr) + 'px "JetBrains Mono", monospace';
+  c.textBaseline = 'top';
+  c.fillText('-' + SPREAD, 1, base + 3 * dpr);
+  c.textAlign = 'center';
+  c.fillStyle = 'rgba(200,225,250,.85)';
+  c.fillText('0  isoline', w * 0.5, base + 3 * dpr);
+  c.textAlign = 'right';
+  c.fillText('+' + SPREAD + ' texels', w - 1, base + 3 * dpr);
+}
+
+/* ==========================================================================
+   7. DOM
+   ========================================================================== */
+function placeDOM(){
+  const put = (id, r) => {
+    const e = $(id);
+    e.style.left = r.x + 'px'; e.style.top = r.y + 'px';
+    e.style.width = r.w + 'px'; e.style.height = r.h + 'px';
+  };
+  put('head', L.head); put('mon', L.mon); put('hist', L.hist);
+  put('ctl', L.ctl); put('read', L.read);
+  const cv = $('monCv'), b = monBody();
+  const w = Math.max(40, Math.round(b.w * dpr)), h = Math.max(30, Math.round(b.h * dpr));
+  if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  cv.style.width = b.w + 'px'; cv.style.height = b.h + 'px';
+  $('monLab').style.right = '6px'; $('monLab').style.left = 'auto';
+  const l1 = L.ladder;
+  $('l1').style.left = (l1.x + 6) + 'px';  $('l1').style.top = (l1.y + 2) + 'px';
+  $('l2').style.left = (l1.x + 6) + 'px';  $('l2').style.top = (l1.y + Math.round(l1.h * 0.45)) + 'px';
+  $('l3').style.left = (L.ladder.x + 6) + 'px';
+  $('l3').style.top = (L.ladder.y + l1.h - 12) + 'px';
+  /* ---- ladder labels: one per step, the on-screen cap height ---- */
+  const lab = $('ladLab');
+  if (S.ladSteps && S.ladSteps.length && S.ladRows){
+    const want = S.ladSteps.length;
+    if (lab.childElementCount !== want){
+      lab.innerHTML = S.ladSteps.map(() => '<span class="lv"></span>').join('');
+    }
+    const base2 = S.ladRows[1].y + S.ladRows[1].h * 0.80;
+    const spans = lab.children;
+    for (let i = 0; i < spans.length; i++){
+      const s = S.ladSteps[i];
+      spans[i].textContent = s.capPx.toFixed(0) + 'px';
+      spans[i].style.left = (s.pen - 2) + 'px';
+      spans[i].style.top  = (base2 + 4) + 'px';
+    }
+  } else {
+    lab.innerHTML = '';
+  }
+  drawHist();
+}
+function updateReadout(){
+  const a = S.atlas;
+  if (!a) return;
+  const g = heroGeom(S.zoom);
+  // cap height in screen px, and how many atlas texels a screen pixel covers:
+  // below 1.0 we are magnifying, so the field is being stretched, not sampled.
+  const onScreen = Math.round(a.asc * a.k * g.k);
+  const texPerPx = 1 / (g.k * dpr);
+  const emOnScreen = a.fontPx * a.k * g.k;
+  $('read').innerHTML =
+    'atlas <b>' + a.w + '×' + a.h + '</b> (2× exact EDT)' +
+    '<span class="sep">|</span>em <b>' + emOnScreen.toFixed(0) + ' px</b>' +
+    '<span class="sep">|</span>cap <b>' + onScreen + ' px</b>' +
+    '<span class="sep">|</span>' + (texPerPx < 1 ? 'magnify <b>' + (1 / texPerPx).toFixed(1) + '×</b>'
+                                            : 'minify <b>' + texPerPx.toFixed(2) + '×</b>') +
+    '<span class="sep">|</span>LSB <b>' + LSB.toFixed(3) + '</b> texel' +
+    '<span class="sep">|</span>field <i>' + a.dMin.toFixed(0) + '…' + a.dMax.toFixed(0) + '</i>' +
+    '<span class="sep">|</span>clamped <i>' + (100 * a.clamped / (a.w * a.h)).toFixed(1) + '%</i>' +
+    '<span class="sep">|</span>' + (S.frames <= INTRO && S.playing
+      ? '<b>' + S.fps.toFixed(1) + ' fps</b> <span class="q">' + S.ms.toFixed(0) + ' ms</span>'
+      : '<span class="q">parked</span>');
+  $('tech').innerHTML =
+    'Distance transform: <u>Felzenszwalb–Huttenlocher</u> exact Euclidean, run twice ' +
+    '(from inside, from outside) on an antialiased mask seeded with <u>cost = (0.5 − α)²</u> — ' +
+    'the 50% coverage isoline is the true edge, so the field is sub-texel accurate. ' +
+    'Quantised to <u>8 bits over ±' + SPREAD + ' texels</u> (1 LSB = ' + LSB.toFixed(3) + ' texels) and packed with ' +
+    'coverage + field normal. Coverage is reconstructed <u>analytically</u> from the distance, ' +
+    'so a 1-px edge is exact at every magnification — <s>while the distance values themselves are shown as the glowing iso-band</s>.';
+  $('monMeta').textContent = a.w + '×' + a.h + ' · ' + (a.w * a.h / 1000).toFixed(0) + 'k texels';
+  const mr = monRects();
+  $('monLab').textContent = 'edge · ' + monitorMag(a, mr.top).toFixed(0) + '×';
+  $('monFootA').textContent = MON_TEXELS + ' texels across · 1 contour = 2 texels';
+  $('histMeta').textContent = (a.touched / 1000).toFixed(1) + 'k texels within reach of the outline';
+  $('sizeV').innerHTML = a.fontPx + ' <i>px atlas</i>';
+  $('lenV').innerHTML = S.text.length + ' <i>chars</i>';
+  $('modeV').textContent = ['solid', 'glow', 'field'][S.mode];
+  $('zoomV').innerHTML = S.zoom.toFixed(3) + ' <i>px/texel</i>';
+  $('play').setAttribute('aria-pressed', String(S.playing));
+  $('play').textContent = S.playing ? '❚❚ pause zoom sweep' : '▶ replay zoom sweep';
+}
+/* The zoom slider is logarithmic in px-per-texel: 0 -> 0.06x fit, 1000 -> 2.6x fit */
+const zoomFromSlider = v => S.fit * (0.06 * Math.pow(2.6 / 0.06, v / 1000));
+const zoomToSlider   = z => clamp(1000 * Math.log(z / (S.fit * 0.06)) / Math.log(2.6 / 0.06), 0, 1000);
+
+function syncSliders(){
+  const set = (id, v) => { const e = $(id); if (+e.value !== v) e.value = v; };
+  set('size', S.fontPx); set('track', Math.round(S.track * 100));
+  set('edge', Math.round(S.edge * 100)); set('fall', Math.round(S.fall * 10));
+  set('zoom', Math.round(zoomToSlider(S.zoom)));
+  $('sizeV').innerHTML = S.fontPx + ' <i>px atlas</i>';
+  $('trackV').innerHTML = (S.track * 100 >= 0 ? '+' : '') + (S.track * 100).toFixed(0) + ' <i>%</i>';
+  $('edgeV').textContent = S.edge.toFixed(2);
+  $('fallV').innerHTML = S.fall.toFixed(0) + ' <i>texels</i>';
+  $('zoomV').innerHTML = S.zoom.toFixed(3) + ' <i>px/texel</i>';
+  document.querySelectorAll('#wBtns button').forEach(b =>
+    b.setAttribute('aria-pressed', String(+b.dataset.w === S.weight)));
+  document.querySelectorAll('#modeBtns button').forEach(b =>
+    b.setAttribute('aria-pressed', String(+b.dataset.m === S.mode)));
+  document.querySelectorAll('.btns button[data-s]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.s === S.text)));
+  for (const id of ['size', 'track', 'edge', 'fall', 'zoom']){
+    const e = $(id);
+    e.style.setProperty('--p', ((e.value - e.min) / (e.max - e.min) * 100) + '%');
+  }
+  $('play').setAttribute('aria-pressed', String(S.playing));
+  $('play').textContent = S.playing ? '❚❚ pause zoom sweep' : '▶ replay zoom sweep';
+}
+
+/* ==========================================================================
+   8. bake scheduling
+   ========================================================================== */
+let bakeTimer = 0, bakeQueued = false;
+function requestBake(){
+  bakeQueued = true;
+  clearTimeout(bakeTimer);
+  bakeTimer = setTimeout(doBake, 90);
+}
+function doBake(){
+  const a = bake(S.text, S.fontPx, S.weight, S.track);
+  S.atlas = a; S.bins = a.bins;
+  S.monEdge = monitorPick(a);
+  const r = L.hero;
+  // S.zoom is DESIGN PIXELS PER ATLAS TEXEL. "Fit" = scale so the ink width
+  // fills the hero column; the sweep runs from far-below-fit up to fit.
+  // fit must leave room for the glow margin (SPREAD+8 texels of pad plus the
+  // falloff band) or the halo runs off the card on both sides
+  const marg = (a.pad + S.fall) * 2;
+  S.fit = Math.min(r.w / (a.w + marg), r.h * 0.92 / (a.h + marg), 1.6);
+  S.zoomMin = Math.max(0.035, S.fit * 0.085);
+  if (!S.touchedZoom) S.zoom = S.fit;
+  else S.zoom = clamp(S.zoom, S.zoomMin, S.fit * 1.3);
+  upload(a);
+  S.bakeMs = a.ms;
+  bakeQueued = false;
+  drawHist();
+  updateReadout();
+  syncSliders();
+}
+
+/* ==========================================================================
+   9. controls
+   ========================================================================== */
+function wire(){
+  $('txt').addEventListener('input', e => {
+    S.text = e.target.value.slice(0, MAX_TEXT);
+    S.touchedZoom = false;
+    requestBake();
+    syncSliders();
+  });
+  document.querySelectorAll('button[data-s]').forEach(b => b.addEventListener('click', () => {
+    S.text = b.dataset.s; S.touchedZoom = false; $('txt').value = S.text; requestBake(); syncSliders();
+  }));
+  $('size').addEventListener('input', e => { S.fontPx = +e.target.value; syncSliders(); requestBake(); });
+  $('track').addEventListener('input', e => { S.track = +e.target.value / 100; syncSliders(); requestBake(); });
+  $('edge').addEventListener('input', e => { S.edge = +e.target.value / 100; syncSliders(); drawHist(); updateReadout(); });
+  $('fall').addEventListener('input', e => { S.fall = +e.target.value / 10; syncSliders(); updateReadout(); });
+  $('zoom').addEventListener('input', e => {
+    S.zoom = zoomFromSlider(+e.target.value); S.playing = false;
+    S.touchedZoom = true; syncSliders(); drawHist(); updateReadout();
+  });
+  $('wBtns').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.weight = +b.dataset.w; requestBake(); syncSliders();
+  });
+  $('modeBtns').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.mode = +b.dataset.m; syncSliders(); updateReadout();
+  });
+  $('play').addEventListener('click', () => {
+    if (!S.playing){
+      S.frames = Math.min(S.frames, INTRO - 14);
+      S.t = 0;
+      S.touchedZoom = false;
+    }
+    S.playing = !S.playing; syncSliders();
+  });
+  addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' && e.key !== ' ') return;
+    if (e.key === ' '){ $('play').click(); e.preventDefault(); }
+    else if (e.key === '1' || e.key === '2' || e.key === '3'){ S.mode = +e.key - 1; syncSliders(); updateReadout(); }
+  });
+  // drag the hero to scrub the zoom
+  let drag = false;
+  const scrub = e => {
+    const r = L.hero;
+    const t = clamp((e.clientY - r.y) / r.h, 0, 1);
+    S.zoom = S.zoomMin + (1 - t) * (S.fit * 1.25 - S.zoomMin);
+    S.playing = false; S.touchedZoom = true; syncSliders(); drawHist();
+  };
+  canvas.addEventListener('pointerdown', e => {
+    const r = L.hero;
+    if (e.clientX < r.x || e.clientX > r.x + r.w || e.clientY < r.y || e.clientY > r.y + r.h) return;
+    drag = true; canvas.setPointerCapture(e.pointerId); scrub(e);
+  });
+  canvas.addEventListener('pointermove', e => { if (drag) scrub(e); });
+  canvas.addEventListener('pointerup', e => { drag = false; try { canvas.releasePointerCapture(e.pointerId); } catch (_) {} });
+  addEventListener('resize', layout);
+  // The control card's intrinsic height changes with its font metrics, so the
+  // rail split must be recomputed when the content reflows, not just on resize.
+  if (window.ResizeObserver){
+    let lastNeed = -1;
+  const ro = new ResizeObserver(function(entries){
+    const need = Math.round(entries[0].target.scrollHeight);
+    if (need === lastNeed) return;   // observer fired, nothing actually changed
+    lastNeed = need;
+    layout();
+  });
+    const cc = document.getElementById('ctl');
+    if (cc) ro.observe(cc);
+  }
+    resize();
+    if (S.atlas){
+      const mg = (S.atlas.pad + S.fall) * 2;
+      S.fit = Math.min(L.hero.w / (S.atlas.w + mg), L.hero.h * 0.92 / (S.atlas.h + mg), 1.6);
+      S.zoomMin = Math.max(0.035, S.fit * 0.085);
+      S.zoom = clamp(S.zoom, S.zoomMin, S.fit * 1.3);
+    }
+    drawHist(); updateReadout();
+}
+
+/* ==========================================================================
+   10. loop
+   ========================================================================== */
+let msEMA = 0, fpsEMA = 0, lastT = 0, hudT = 0;
+function zoomCurve(u){                      // 0 -> 1, eased, monotone
+  u = clamp(u, 0, 1);
+  return u * u * (3 - 2 * u);
+}
+function frame(now){
+  requestAnimationFrame(frame);
+  if (!lastT) lastT = now;
+  const wall = Math.min((now - lastT) / 1000, 0.5);
+  lastT = now;
+
+  const t0 = performance.now();
+  if (S.playing){
+    S.frames++;
+    if (S.frames <= INTRO){
+      S.t += FIXED_DT;
+      const u = S.frames / INTRO;
+      S.zoom = S.zoomMin + (S.fit - S.zoomMin) * zoomCurve(u);
+      S.phase = (S.t * 0.11) % 1;
+    } else {
+      // PARK. The clock stops here on purpose: past this point the scene is a
+      // pure function of state, so two cold loads produce identical pixels.
+      // (Letting the glow pulse keep running would make every screenshot land
+      // on a different phase and break that guarantee.)
+      S.zoom = S.fit;
+      S.phase = S.parkPhase;
+    }
+  }
+
+  render();
+  // The per-step size labels live in the DOM, but the geometry they anchor to
+  // only exists once render() has run, so build them on the first frame that
+  // has it.
+  if (!S.ladLabDone && S.ladSteps && S.ladRows){ S.ladLabDone = true; placeDOM(); }
+
+  if (S.frames > 2){
+    const px = new Uint8Array(4);
+    gl.readPixels(devW >> 1, devH >> 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    S.luma = 0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2];
+  }
+  const ms = performance.now() - t0;
+  msEMA = msEMA ? msEMA * 0.82 + ms * 0.18 : ms;
+  fpsEMA = fpsEMA ? fpsEMA * 0.82 + (1 / Math.max(wall, 1e-3)) * 0.18 : 1 / Math.max(wall, 1e-3);
+  // Freeze the perf figures at the moment of parking. Wall-clock timings are
+  // the one genuinely machine-dependent value in the scene, and the contract
+  // requires two cold loads to agree -- so after the sweep ends, the reported
+  // numbers are frozen too rather than left flickering.
+  if (S.playing && S.frames <= INTRO){ S.ms = msEMA; S.fps = fpsEMA; }
+
+  hudT += wall;
+  if (hudT > 0.4){
+    hudT = 0;
+    if (!S.playing) drawHist();
+    // While the sweep is running, keep the perf numbers live. Once parked the
+    // scene is static, so the frame time stops meaning anything -- and letting
+    // it tick is the one thing that would make two cold loads differ.
+    if (S.playing || S.frames < INTRO) updateReadout();
+    syncSliders();
+  }
+
+  if (!window.__ready){
+    const parked = !S.playing || S.frames >= INTRO;
+    if (S.frames > 3 && parked && S.luma > 3 && S.atlas){
+      window.__ready = true;
+      window.__probe = probe();
+    } else if (S.frames % 10 === 0){
+      window.__probe = probe();
+    }
+  } else {
+    window.__probe = probe();
+  }
+}
+function probe(){
+  const a = S.atlas;
+  return {
+    ok: true, stage: window.__ready ? 'parked' : 'intro',
+    frames: S.frames, t: +S.t.toFixed(2), fps: +S.fps.toFixed(1), ms: +S.ms.toFixed(1),
+    luma: Math.round(S.luma), playing: S.playing,
+    text: S.text, weight: S.weight, track: +S.track.toFixed(3),
+    atlas: a ? [a.w, a.h] : null, atlasPx: a ? a.w * a.h : 0,
+    fontPx: a ? +a.fontPx.toFixed(1) : null, bakeMs: a ? +a.ms.toFixed(1) : null,
+    spread: SPREAD, lsb: +LSB.toFixed(4), thr: a ? +a.thr.toFixed(3) : null,
+    dMin: a ? +a.dMin.toFixed(1) : null, dMax: a ? +a.dMax.toFixed(1) : null,
+    clampedPct: a ? +(100 * a.clamped / (a.w * a.h)).toFixed(2) : 0,
+    zoom: +S.zoom.toFixed(4), fit: +S.fit.toFixed(4), zoomMin: +S.zoomMin.toFixed(4),
+    edge: S.edge, fall: S.fall, mode: S.mode,
+    device: [devW, devH], dpr: +dpr.toFixed(2),
+  };
+}
+
+/* ==========================================================================
+   11. boot
+   ========================================================================== */
+initGL();
+resize();
+wire();
+syncSliders();
+doBake();
+updateReadout();
+requestAnimationFrame(frame);
+
+// a small, explicit control surface for headless inspection
+window.__app = {
+  set(k, v){
+    if (k === 'text'){ S.text = String(v).slice(0, MAX_TEXT); $('txt').value = S.text; }
+    else if (k === 'fontPx') S.fontPx = v;
+    else if (k === 'weight') S.weight = v;
+    else if (k === 'track') S.track = v;
+    else if (k === 'edge') S.edge = v;
+    else if (k === 'fall') S.fall = v;
+    else if (k === 'mode') S.mode = v;
+    else if (k === 'zoom'){ S.zoom = v; S.playing = false; S.touchedZoom = true; }
+    else return false;
+    S.touchedZoom = k === 'zoom';
+    if (['text', 'fontPx', 'weight', 'track'].includes(k)) doBake();
+    else { syncSliders(); drawHist(); updateReadout(); }
+    return true;
+  },
+  park(zoom){ S.playing = false; S.frames = INTRO + 1; if (zoom != null){ S.zoom = zoom; S.touchedZoom = true; } syncSliders(); drawHist(); return probe(); },
+  play(on){ S.playing = on != null ? !!on : !S.playing; syncSliders(); return S.playing; },
+  reset(){ S.frames = 0; S.t = 0; S.touchedZoom = false; S.playing = true; S.parkPhase = 0.0; },
+  probe,
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sandpile · Bak–Tang–Wiesenfeld</title>
+<style>
+  :root{
+    --ink:#e6eef6; --dim:#7d93a6; --acc:#ffb347; --acc2:#5fd4e6;
+    --panel:rgba(6,10,18,.78); --edge:rgba(150,200,235,.20);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#04060b; overflow:hidden;
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace; color:var(--ink); }
+  #bgc{ position:fixed; inset:0; width:100%; height:100%; display:block; }
+  #c{ position:fixed; display:block; touch-action:none; cursor:crosshair; }
+  .hud{ position:fixed; pointer-events:none; z-index:5; }
+  .panel{ background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:11px 13px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 14px 44px rgba(0,0,0,.65); }
+
+  #title{ top:14px; left:14px; width:336px; }
+  #title h1{ margin:0 0 5px; font-size:13px; letter-spacing:.11em; text-transform:uppercase; color:#fff; font-weight:600; }
+  #title h1 b{ color:var(--acc); font-weight:600; }
+  #title .rule{ color:var(--acc2); font-size:11px; margin:2px 0 7px; }
+  #title p{ margin:0; color:var(--dim); font-size:11px; line-height:1.55; }
+  #title p b{ color:#a9c6d8; font-weight:600; }
+  #title .row{ display:flex; gap:13px; margin-top:8px; padding-top:7px; border-top:1px solid var(--edge); }
+  #title .k{ color:var(--dim); } #title .v{ color:var(--acc2); }
+
+  #meter{ top:14px; right:14px; width:244px; }
+  #meter .big{ font-size:20px; color:#fff; letter-spacing:.01em; line-height:1.05; }
+  #meter .big small{ font-size:10px; color:var(--dim); letter-spacing:.14em; }
+  #meter table{ width:100%; border-collapse:collapse; margin-top:7px; }
+  #meter td{ padding:1.5px 0; font-size:11px; }
+  #meter td:first-child{ color:var(--dim); }
+  #meter td:last-child{ text-align:right; color:var(--ink); }
+  #meter td.hot{ color:var(--acc); }
+  #bar{ height:4px; border-radius:2px; background:rgba(255,255,255,.10); margin-top:9px; overflow:hidden; }
+  #bar i{ display:block; height:100%; width:0%; border-radius:2px;
+    background:linear-gradient(90deg,#2b3f7a,#7a3f9c,#d1495b,#ffb347,#fff3d8); }
+  #barlab{ font-size:10px; color:var(--dim); margin-top:5px; letter-spacing:.08em; line-height:1.4; }
+
+  #ctl{ bottom:14px; left:14px; width:330px; pointer-events:auto; }
+  #ctl .sec{ margin-bottom:9px; } #ctl .sec:last-child{ margin-bottom:0; }
+  #ctl h2{ margin:0 0 5px; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .chips{ display:flex; flex-wrap:wrap; gap:5px; }
+  .chip{ pointer-events:auto; cursor:pointer; font:inherit; font-size:11px; padding:4px 9px;
+    border-radius:20px; color:var(--dim); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .chip:hover{ color:#fff; background:rgba(255,255,255,.12); }
+  .chip.on{ color:#180d02; background:linear-gradient(180deg,#ffd08a,#ff9d3c); border-color:transparent; font-weight:600; }
+  .chip.on.cool{ color:#02161b; background:linear-gradient(180deg,#a8eefb,#4ec5da); }
+  .sl{ display:grid; grid-template-columns:82px 1fr 44px; align-items:center; gap:7px; margin:4px 0; }
+  .sl label{ font-size:11px; color:var(--dim); }
+  .sl output{ font-size:11px; text-align:right; color:var(--acc); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:14px; background:transparent; cursor:ew-resize; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(255,179,71,.9) var(--p,50%),rgba(255,255,255,.13) var(--p,50%)); }
+  input[type=range]::-moz-range-track{ height:3px; border-radius:2px; background:rgba(255,255,255,.13); }
+  input[type=range]::-moz-range-progress{ height:3px; border-radius:2px; background:rgba(255,179,71,.9); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background:#fff6e6; margin-top:-4px; box-shadow:0 0 0 3px rgba(255,179,71,.22),0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-moz-range-thumb{ width:11px; height:11px; border:0; border-radius:50%;
+    background:#fff6e6; box-shadow:0 0 0 3px rgba(255,179,71,.22); }
+  .row2{ display:flex; gap:5px; margin-top:8px; }
+  .btn{ pointer-events:auto; cursor:pointer; flex:1; font:inherit; font-size:11px; padding:5px 0;
+    border-radius:6px; color:var(--ink); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .btn:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  .btn.on{ color:var(--acc); border-color:rgba(255,179,71,.55); background:rgba(255,179,71,.10); }
+
+  #legend{ bottom:14px; right:14px; width:272px; }
+  #legend h2{ margin:0 0 6px; font-size:10px; letter-spacing:.17em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  #ramp{ display:block; width:244px; height:20px; border-radius:3px; }
+  #spark{ display:block; width:244px; height:40px; margin-top:7px; border:1px solid var(--edge); border-radius:3px; }
+  #legend .lab{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--dim); margin-top:4px; letter-spacing:.06em; }
+  #legend .note{ font-size:11px; color:var(--dim); line-height:1.62; margin-top:9px; padding-top:8px; border-top:1px solid var(--edge); }
+  #legend .note b{ color:var(--acc2); font-weight:600; }
+  @media (max-width:1010px){ #ctl,#legend{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="bgc"></canvas>
+<canvas id="c"></canvas>
+
+<div class="hud panel" id="title">
+  <h1>Sandpile <b>BAK–TANG–WIESENFELD</b></h1>
+  <div class="rule">h ≥ 4 ⟶ h − 4, &nbsp;h(i±1) + 1, &nbsp;h(j±1) + 1 &nbsp;· open boundary (dissipative)</div>
+  <p>Grains rain onto one cell. The over-loaded cell topples into its four
+     neighbours and the cascade has <b>no characteristic size</b> — that is
+     self-organised criticality. Hue is the <b>time since a cell last toppled</b>,
+     so a live avalanche draws itself as a burning front that cools behind itself
+     into the SOC fractal.</p>
+  <div class="row">
+    <div><span class="k">lattice</span> <span class="v" id="t-grid">—</span></div>
+    <div><span class="k">grain</span> <span class="v" id="t-grain">—</span></div>
+    <div><span class="k">probe</span> <span class="v" id="t-cell">—</span></div>
+  </div>
+</div>
+
+<div class="hud panel" id="meter">
+  <div class="big"><span id="m-topples">0</span><br><small>TOTAL TOPPLES</small></div>
+  <table>
+    <tr><td>this tick</td><td class="hot" id="m-tick">—</td></tr>
+    <tr><td>queue</td><td id="m-queue">—</td></tr>
+    <tr><td>grains</td><td id="m-grains">—</td></tr>
+    <tr><td>density</td><td id="m-dens">—</td></tr>
+    <tr><td>max h</td><td id="m-max">—</td></tr>
+    <tr><td>escaped</td><td id="m-lost">—</td></tr>
+    <tr><td>front</td><td id="m-front">—</td></tr>
+    <tr><td>fps</td><td id="m-fps">—</td></tr>
+  </table>
+  <div id="bar"><i id="barf"></i></div>
+  <div id="barlab">WARM-UP</div>
+</div>
+
+<div class="hud panel" id="ctl">
+  <div class="sec">
+    <h2>Lattice</h2>
+    <div class="chips" id="gridsize"></div>
+  </div>
+  <div class="sec">
+    <h2>Drive</h2>
+    <div class="sl"><label>sand / click</label><input type="range" id="r-sand" min="1" max="200" step="1"><output id="o-sand">—</output></div>
+    <div class="chips" id="emitmode" style="margin-top:5px"></div>
+  </div>
+  <div class="sec">
+    <h2>Colour</h2>
+    <div class="chips" id="colour"></div>
+    <div class="sl" style="margin-top:5px"><label>sensitivity S</label><input type="range" id="r-sens" min="40" max="4000" step="10"><output id="o-sens">—</output></div>
+  </div>
+  <div class="sec">
+    <div class="row2">
+      <button class="btn" id="b-pause">Pause</button>
+      <button class="btn" id="b-step">Step</button>
+      <button class="btn" id="b-clear">Clear</button>
+      <button class="btn" id="b-warm">Rewarm</button>
+    </div>
+  </div>
+</div>
+
+<div class="hud panel" id="legend">
+  <h2>Time since last topple</h2>
+  <canvas id="ramp" width="244" height="20"></canvas>
+  <div class="lab"><span>NOW · t=log(1+age)/log(1+S)</span><span id="l-sens">—</span><span>STALE → HEIGHT</span></div>
+  <canvas id="spark" width="488" height="80"></canvas>
+  <div class="note">
+    <b>drag</b> pour sand &nbsp;<b>space</b> pause<br>
+    <b>s</b> step &nbsp;<b>a</b> auto &nbsp;<b>c</b> clear<br>
+    <b>w</b> re-warm &nbsp;<b>1–4</b> lattice size<br>
+    past the age window, colour falls back to <b>grain height</b>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════
+   13 — SANDPILE: the Bak–Tang–Wiesenfeld abelian cellular automaton.
+
+       h(i) >= 4  ⟹  h(i) -= 4;  h(i±1) += 1;  h(j±1) += 1     (open edges)
+
+   The lattice is driven to quiescence through an explicit work queue in which
+   each unstable cell sits at most once. That is what makes the automaton
+   *abelian*: the relaxed configuration cannot depend on the order topples are
+   applied in, which is exactly what lets the frame driver below cut the
+   per-frame topple budget short without perturbing the physics — a truncated
+   relaxation just converges a frame or two later.
+
+   Colour = frames since that cell last toppled. A live avalanche therefore
+   paints itself as a hot front that cools into the self-organised-critical
+   fractal behind it; past the sensitivity window the palette cross-fades to
+   grain height so the cooled pile still reads as structure.
+
+   Deterministic: mulberry32 only, no Math.random, a fixed-delta tick, and a
+   warm-up that is an exact fixed drop schedule. Two cold loads match.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const SEED = 0x5A4D11E7;
+
+/* ─── palettes ──────────────────────────────────────────────────────────── */
+/* hot ramp: t = log(1+frames since last topple) / log(1+S) — log age, so
+   the power-law decades of an SOC pile each get their own slice of the ramp */
+const RAMP = [
+  [0.00, 255, 252, 242],
+  [0.06, 255, 220, 140],
+  [0.16, 255, 164,  76],
+  [0.30, 244, 104,  84],
+  [0.45, 214,  70, 124],
+  [0.60, 176,  62, 150],
+  [0.74, 130,  70, 158],
+  [0.86,  82,  74, 146],
+  [1.00,  34,  44,  92],
+];
+const LUT = new Uint8Array(256 * 3);
+for(let i = 0; i < 256; i++){
+  const t = i / 255;
+  let a = RAMP[0], b = RAMP[RAMP.length - 1];
+  for(let k = 0; k < RAMP.length - 1; k++)
+    if(t >= RAMP[k][0] && t <= RAMP[k + 1][0]){ a = RAMP[k]; b = RAMP[k + 1]; break; }
+  const u = Math.max(0, Math.min(1, (t - a[0]) / Math.max(1e-6, b[0] - a[0])));
+  LUT[i*3]   = (a[1] + (b[1] - a[1]) * u) | 0;
+  LUT[i*3+1] = (a[2] + (b[2] - a[2]) * u) | 0;
+  LUT[i*3+2] = (a[3] + (b[3] - a[3]) * u) | 0;
+}
+/* cooled relief: the SOC fractal once the age signal leaves the window */
+const RELIEF = [[30,38,78],[52,78,132],[86,126,178],[128,186,212]];
+/* raw sand: grains on the lattice that have not toppled yet */
+const SAND = [[0,0,0,0],[38,40,58,150],[80,70,56,205],[128,108,78,238],[180,150,100,255]];
+
+/* ─── lattice state ─────────────────────────────────────────────────────── */
+let gw = 160, gh = 160, N = 0;
+let hgt, lastT, inq, queue, xpos, jit;
+let qsp = 0, tick = 0;
+let totalTopples = 0, totalGrains = 0, escaped = 0;
+let lastTickTopples = 0, lastQueue = 0;
+
+function alloc(w, h){
+  gw = w; gh = h; N = w * h;
+  hgt   = new Int32Array(N);
+  lastT = new Int32Array(N);
+  inq   = new Uint8Array(N);
+  queue = new Int32Array(N + 8);
+  xpos  = new Uint8Array(N);
+  jit   = new Uint8Array(N);
+  for(let y = 0; y < h; y++)
+    for(let x = 0; x < w; x++){ const i = y * w + x; xpos[i] = x; lastT[i] = -1; }
+  const r = mulberry32(SEED ^ (w * 733 + h));
+  for(let i = 0; i < N; i++) jit[i] = (r() * 256) | 0;
+  qsp = 0; tick = 0;
+  totalTopples = 0; totalGrains = 0; escaped = 0;
+}
+
+/* ─── the automaton ─────────────────────────────────────────────────────── */
+function relax(budget){
+  const H = hgt, T = lastT, Q = queue, X = xpos, I = inq;
+  const W = gw, NN = N;
+  let n = 0;
+  while(qsp > 0 && n < budget){
+    const i = Q[--qsp]; I[i] = 0;
+    if(H[i] >= 4){
+      H[i] -= 4; T[i] = tick;
+      const x = X[i];
+      if(x > 0){ const j = i - 1; if(++H[j] >= 4 && !I[j]){ I[j] = 1; Q[qsp++] = j; } } else escaped++;
+      if(x < W - 1){ const j = i + 1; if(++H[j] >= 4 && !I[j]){ I[j] = 1; Q[qsp++] = j; } } else escaped++;
+      if(i >= W){ const j = i - W; if(++H[j] >= 4 && !I[j]){ I[j] = 1; Q[qsp++] = j; } } else escaped++;
+      if(i < NN - W){ const j = i + W; if(++H[j] >= 4 && !I[j]){ I[j] = 1; Q[qsp++] = j; } } else escaped++;
+    }
+    n++;
+  }
+  return n;
+}
+function driveAt(i, amount){
+  hgt[i] += amount; totalGrains += amount;
+  if(hgt[i] >= 4 && !inq[i]){ inq[i] = 1; queue[qsp++] = i; }
+}
+function drive(cx, cy, amount){
+  if(cx < 0) cx = 0; else if(cx >= gw) cx = gw - 1;
+  if(cy < 0) cy = 0; else if(cy >= gh) cy = gh - 1;
+  driveAt(cy * gw + cx, amount);
+}
+
+/* ─── configuration ─────────────────────────────────────────────────────── */
+const CFG = { grid:160, sand:24, sens:1200, colour:0, mode:'orbit', auto:true, paused:false };
+const GRIDS = [96, 128, 160, 208];
+const COLOUR_MODES = ['age', 'grain', 'blend'];
+const EMIT_MODES = ['orbit', 'rain', 'core', 'off'];
+const WARM_GRAIN  = 4;         // canonical SOC protocol: 4 grains per drop
+const LIVE_BUDGET = 1200000;   // topples allowed per frame while running
+const WARM_CHUNK  = 2000000;   // topples allowed per frame during warm-up
+const SRC_BX = 0.70, SRC_BY = 0.34;   // live cluster, upper right of centre
+const FRONT_AGE = 3;                // frames a cell counts as "live front"
+const FINGERPRINT_TICK = 12000;      // determinism checkpoint in the live phase
+const FP = { hash:null, done:false };
+
+/* ─── WARM-UP: canonical SOC run on an exact, fixed drop schedule ───────── */
+/* Two interleaved sources on a diagonal: the older cluster has cooled into the
+   relief palette, the newer one is still burning, so the plate shows both. */
+const WARM = { done:false, k:0, total:0, topples:0, srcA:0, srcB:0, ms:0 };
+function warmReset(){
+  WARM.done = false; WARM.k = 0; WARM.topples = 0;
+  WARM.total = (N * 0.47) | 0;
+  WARM.srcA = ((gh * 0.68) | 0) * gw + ((gw * 0.32) | 0);
+  WARM.srcB = ((gh * SRC_BY) | 0) * gw + ((gw * SRC_BX) | 0);
+  WARM.ms = 0;
+  window.__ready = false; readySet = false;
+}
+function warmStep(budget){
+  const t0 = performance.now();
+  let spent = 0;
+  while(spent < budget && !WARM.done && WARM.topples < 150000000){
+    if(qsp === 0){
+      if(WARM.k >= WARM.total){ WARM.done = true; break; }
+      tick = WARM.k;
+      driveAt(WARM.k < WARM.total * 0.42 ? WARM.srcA : WARM.srcB, WARM_GRAIN);
+      WARM.k++;
+    }
+    const t = relax(Math.min(250000, budget - spent));
+    spent += t; totalTopples += t; WARM.topples += t;
+  }
+  WARM.ms = performance.now() - t0;
+  if(WARM.topples >= 150000000) WARM.done = true;
+  lastQueue = qsp;
+  return WARM.done;
+}
+
+/* ─── LIVE: auto-drive + budgeted relaxation, one fixed-delta tick ──────── */
+let emT = 0, emX = 0, emY = 0, emRng = mulberry32(SEED ^ 0x9E37);
+function emitPos(){
+  emT++;
+  if(CFG.mode === 'core'){
+    emX = (gw * SRC_BX) | 0; emY = (gh * SRC_BY) | 0;
+    return;
+  }
+  if(CFG.mode === 'rain'){
+    emX = (emRng() * gw) | 0;
+    emY = (emRng() * gh) | 0;
+  } else { // orbit — a slow quasi-periodic sweep across the live cluster
+    emX = Math.round((SRC_BX + 0.20 * Math.sin(0.01731 * emT)) * gw);
+    emY = Math.round((SRC_BY + 0.20 * Math.sin(0.01179 * emT * 1.478 + 1.05)) * gh);
+  }
+  emX += ((emRng() * 3) | 0) - 1;
+  emY += ((emRng() * 3) | 0) - 1;
+  if(emX < 0) emX = 0; else if(emX >= gw) emX = gw - 1;
+  if(emY < 0) emY = 0; else if(emY >= gh) emY = gh - 1;
+}
+const hist = new Float32Array(160);
+let histI = 0;
+function simTick(){
+  const before = totalTopples;
+  tick++;
+  if(CFG.auto && CFG.mode !== 'off'){
+    emitPos();
+    drive(emX, emY, Math.max(1, Math.round(CFG.sand / 4)));
+  }
+  const t = relax(LIVE_BUDGET);
+  totalTopples += t;
+  lastTickTopples = totalTopples - before;
+  lastQueue = qsp;
+  hist[histI] = lastTickTopples; histI = (histI + 1) % hist.length;
+}
+
+/* ─── layout: static full-page background + a small dynamic layer ───────── */
+const bgc = document.getElementById('bgc');
+const cv  = document.getElementById('c');
+const ctx = cv.getContext('2d', { alpha:true });
+const lcv = document.createElement('canvas');
+const lctx = lcv.getContext('2d', { alpha:true });
+/* the live front alone, in its own sparse layer — only this gets bloomed */
+const hcv = document.createElement('canvas');
+const hctx = hcv.getContext('2d', { alpha:true });
+let img = null, idata = null, himg = null, hdata = null;
+let VW = 0, VH = 0, lx = 0, ly = 0, lsize = 0, MARGIN = 0;
+let hoverX = -1, hoverY = -1, mouseIn = false;
+
+function fit(){
+  VW = Math.max(660, window.innerWidth);
+  VH = Math.max(420, window.innerHeight);
+  bgc.width = VW; bgc.height = VH;
+  bgc.style.width = VW + 'px'; bgc.style.height = VH + 'px';
+  lsize = Math.round(Math.min(VH * 0.735, VW * 0.445));
+  lx = Math.round(VW * 0.492 - lsize / 2);
+  ly = Math.round(VH * 0.500 - lsize / 2);
+  MARGIN = Math.round(lsize * 0.10) + 4;
+  cv.width = lsize + 2 * MARGIN; cv.height = lsize + 2 * MARGIN;
+  cv.style.left = (lx - MARGIN) + 'px'; cv.style.top = (ly - MARGIN) + 'px';
+  lcv.width = hcv.width = gw; lcv.height = hcv.height = gh;
+  img = lctx.createImageData(gw, gh);  idata = img.data;
+  himg = hctx.createImageData(gw, gh); hdata = himg.data;
+  paintBackground();
+  paintRamp();
+}
+
+function paintBackground(){
+  const g = bgc.getContext('2d');
+  const lin = g.createLinearGradient(0, 0, VW, VH);
+  lin.addColorStop(0, '#0c1526'); lin.addColorStop(0.46, '#070d18'); lin.addColorStop(1, '#03050a');
+  g.fillStyle = lin; g.fillRect(0, 0, VW, VH);
+  const cx = VW * 0.492, cy = VH * 0.5;
+  const rg = g.createRadialGradient(cx, cy, 8, cx, cy, lsize * 1.12);
+  rg.addColorStop(0, 'rgba(104,58,146,.36)');
+  rg.addColorStop(0.42, 'rgba(32,48,112,.18)');
+  rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, VW, VH);
+  // faint rule grid, aligned to the automaton
+  const cell = lsize / gw;
+  g.strokeStyle = 'rgba(150,190,240,.042)'; g.lineWidth = 1; g.beginPath();
+  for(let k = 0; k <= gw; k += 2){
+    const x = Math.round(lx + k * cell) + 0.5, y = Math.round(ly + k * cell) + 0.5;
+    g.moveTo(x, ly); g.lineTo(x, ly + lsize);
+    g.moveTo(lx, y); g.lineTo(lx + lsize, y);
+  }
+  g.stroke();
+  g.strokeStyle = 'rgba(165,205,245,.17)'; g.lineWidth = 1;
+  g.strokeRect(lx - 0.5, ly - 0.5, lsize + 1, lsize + 1);
+  // corner ticks — the plate reads as an instrument, not a crop
+  const T = Math.round(lsize * 0.052);
+  g.strokeStyle = 'rgba(255,179,71,.5)'; g.lineWidth = 2; g.beginPath();
+  g.moveTo(lx - 1, ly + T); g.lineTo(lx - 1, ly - 1); g.lineTo(lx + T, ly - 1);
+  g.moveTo(lx + lsize - T, ly - 1); g.lineTo(lx + lsize + 1, ly - 1); g.lineTo(lx + lsize + 1, ly + T);
+  g.moveTo(lx + lsize + 1, ly + lsize - T); g.lineTo(lx + lsize + 1, ly + lsize + 1); g.lineTo(lx + lsize - T, ly + lsize + 1);
+  g.moveTo(lx + T, ly + lsize + 1); g.lineTo(lx - 1, ly + lsize + 1); g.lineTo(lx - 1, ly + lsize - T);
+  g.stroke();
+  g.fillStyle = 'rgba(125,147,166,.9)'; g.font = '11px ui-monospace,monospace';
+  g.fillText('i →', lx + lsize + 10, ly + lsize + 20);
+  g.fillText('j ↓', lx - 26, ly - 10);
+  // film grain — the void is never a flat fill
+  const r = mulberry32(0xC0FFEE01);
+  for(let i = 0; i < 34000; i++){
+    const x = (r() * VW) | 0, y = (r() * VH) | 0, v = (r() * 26) | 0;
+    g.fillStyle = 'rgba(200,225,255,' + (v / 1400).toFixed(4) + ')';
+    g.fillRect(x, y, 1, 1);
+  }
+  const vg = g.createRadialGradient(VW/2, VH/2, Math.min(VW, VH) * 0.34, VW/2, VH/2, Math.max(VW, VH) * 0.80);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)');
+  g.fillStyle = vg; g.fillRect(0, 0, VW, VH);
+}
+
+/* ─── the colour pass ───────────────────────────────────────────────────── */
+function paintPile(){
+  const H = hgt, T = lastT, J = jit, d = idata, hd = hdata;
+  const mode = CFG.colour, sens = CFG.sens;
+  const ilog = 1 / Math.log(1 + sens);
+  const sl = RAMP[RAMP.length - 1];
+  let p = 0, q = 0;
+  for(let i = 0; i < N; i++){
+    const t0 = T[i], hh = H[i], j = J[i];
+    const dth = ((j & 7) - 4);
+    let r, g, b, a;
+    if(t0 < 0){
+      // never toppled — raw sand sitting on the ruled void
+      const s = SAND[hh > 3 ? 4 : hh];
+      r = s[0]; g = s[1]; b = s[2]; a = s[3];
+    } else {
+      const age = tick - t0;
+      // log age map: S is the age at which the ramp bottoms out
+      let t = Math.log(1 + age) * ilog;
+      if(mode === 0){
+        t += (j - 128) * 0.00034;                    // per-cell texture
+        if(age === 0){
+          // the leading edge, one frame wide — a hairline that traces the
+          // propagation front instead of a fat white blob
+          r = 255; g = 253; b = 240;
+        } else if(t > 0.88){
+          // deep tail → cross-fade to the cooled grain-height relief
+          const u = (t - 0.88) / 0.12, uu = u * u;
+          const rl = RELIEF[hh > 3 ? 3 : hh];
+          r = sl[1] + (rl[0] - sl[1]) * uu;
+          g = sl[2] + (rl[1] - sl[2]) * uu;
+          b = sl[3] + (rl[2] - sl[3]) * uu;
+        } else {
+          const k = (t * 255) | 0, kk = k * 3;
+          r = LUT[kk]; g = LUT[kk + 1]; b = LUT[kk + 2];
+          // height reads as value inside the hot band, so the front keeps its
+          // cell-to-cell texture instead of washing out to a flat sheet
+          const lum = 0.62 + 0.38 * (hh > 3 ? 1 : hh * 0.33333);
+          r *= lum; g *= lum; b *= lum;
+        }
+      } else if(mode === 1){
+        // pure grain-height relief — the classic sandpile mosaic
+        const rl = RELIEF[hh > 3 ? 3 : hh];
+        r = rl[0]; g = rl[1]; b = rl[2];
+      } else {
+        // blend: hue from age, value from height
+        const k = (t * 255) | 0, kk = k * 3;
+        r = LUT[kk]; g = LUT[kk + 1]; b = LUT[kk + 2];
+        const lum = 0.42 + 0.58 * (hh > 3 ? 1 : hh * 0.33333);
+        r *= lum; g *= lum; b *= lum;
+      }
+      a = 255;
+    }
+    d[p] = r + dth; d[p+1] = g + dth; d[p+2] = b + dth; d[p+3] = a;
+    // second pass: only the live front, so the additive glow stays a wavefront
+    const hot = (t0 >= 0 && tick - t0 <= FRONT_AGE) ? 1 : 0;
+    hd[q] = hot * 255; hd[q+1] = hot * 190; hd[q+2] = hot * 120;
+    hd[q+3] = hot * 200;
+    p += 4; q += 4;
+  }
+  lctx.putImageData(img, 0, 0);
+  hctx.putImageData(himg, 0, 0);
+}
+
+function paintRamp(){
+  const c = document.getElementById('ramp');
+  const g = c.getContext('2d');
+  const w = c.width, h = c.height;
+  for(let x = 0; x < w; x++){
+    const k = (x / (w - 1) * 255) | 0, kk = k * 3;
+    g.fillStyle = 'rgb(' + LUT[kk] + ',' + LUT[kk+1] + ',' + LUT[kk+2] + ')';
+    g.fillRect(x, 0, 1, h);
+  }
+  for(let i = 1; i < 4; i++){
+    const x = Math.round(i * w / 4) + 0.5;
+    g.strokeStyle = 'rgba(255,255,255,.20)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+  }
+}
+
+function drawSpark(){
+  const c = document.getElementById('spark');
+  const g = c.getContext('2d');
+  const d = 2;
+  const w = c.width / d, h = c.height / d;   // CSS-space units — ctx is scaled by d
+  g.setTransform(d, 0, 0, d, 0, 0);
+  g.clearRect(0, 0, w, h);
+  let mx = 1;
+  for(let i = 0; i < hist.length; i++) if(hist[i] > mx) mx = hist[i];
+  g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(150,200,235,.22)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
+  // filled area under the curve, then the curve on top — a sparse bar chart
+  // reads as empty whenever one tick spikes, which is most of the time here
+  const n = hist.length, bw = w / n;
+  // log scale — the avalanche-size distribution is power-law, so a linear
+  // axis pins every ordinary tick to the baseline and the trace reads empty
+  // leave a margin at the right so the newest sample is not glued to the border
+  const lg = Math.log(1 + mx);
+  const yOf = (v) => h - 3 - (v > 0 ? Math.log(1 + v) / lg : 0) * (h - 7);
+  g.beginPath(); g.moveTo(0, h - 1);
+  for(let i = 0; i < n; i++) g.lineTo((i + 0.5) * bw, yOf(hist[(histI + i) % n]));
+  g.lineTo(w, h - 1); g.closePath();
+  g.fillStyle = 'rgba(226,104,124,.35)'; g.fill();
+  g.beginPath();
+  for(let i = 0; i < n; i++){
+    const x = (i + 0.5) * bw, y = yOf(hist[(histI + i) % n]);
+    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.strokeStyle = 'rgba(255,196,110,.95)'; g.lineWidth = 1.2; g.stroke();
+  g.fillStyle = 'rgba(125,147,166,.95)'; g.font = '11px ui-monospace,monospace';
+  g.fillText('TOPPLES / TICK', 4, 12);
+  g.fillStyle = 'rgba(255,196,110,.9)';
+  const pk = 'pk ' + fmt(mx);
+  g.fillText(pk, w - 4 - g.measureText(pk).width, 12);
+  g.fillStyle = 'rgba(125,147,166,.8)';
+  g.fillText('log · 160 ticks', w - 4 - g.measureText('log · 160 ticks').width - g.measureText(pk).width - 8, 12);
+}
+
+function draw(){
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.imageSmoothingEnabled = true;
+  // two additive passes so the live wavefront glows
+  ctx.globalCompositeOperation = 'lighter';
+  const b1 = Math.round(lsize * 0.016), b2 = Math.round(lsize * 0.062);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(MARGIN, MARGIN, lsize, lsize); ctx.clip();  // no halo past the plate
+  ctx.globalAlpha = 0.55; ctx.drawImage(hcv, MARGIN - b1, MARGIN - b1, lsize + 2*b1, lsize + 2*b1);
+  ctx.globalAlpha = 0.26; ctx.drawImage(hcv, MARGIN - b2, MARGIN - b2, lsize + 2*b2, lsize + 2*b2);
+  ctx.restore();
+  // crisp cellular core at 1:1 device pixels — never-toppled cells are
+  // transparent, so the ruled background shows through the void
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(lcv, MARGIN, MARGIN, lsize, lsize);
+
+  if(mouseIn && hoverX >= 0){
+    ctx.imageSmoothingEnabled = true;
+    const cs = lsize / gw;
+    const x = MARGIN + hoverX * cs, y = MARGIN + hoverY * cs;
+    ctx.strokeStyle = 'rgba(255,243,216,.85)'; ctx.lineWidth = 1;
+    ctx.strokeRect(Math.round(x) - 0.5, Math.round(y) - 0.5, Math.ceil(cs) + 1, Math.ceil(cs) + 1);
+    ctx.strokeStyle = 'rgba(95,212,230,.30)';
+    ctx.beginPath();
+    ctx.moveTo(x + cs/2, MARGIN - 12); ctx.lineTo(x + cs/2, MARGIN);
+    ctx.moveTo(x + cs/2, MARGIN + lsize); ctx.lineTo(x + cs/2, MARGIN + lsize + 12);
+    ctx.moveTo(MARGIN - 12, y + cs/2); ctx.lineTo(MARGIN, y + cs/2);
+    ctx.moveTo(MARGIN + lsize, y + cs/2); ctx.lineTo(MARGIN + lsize + 12, y + cs/2);
+    ctx.stroke();
+  }
+  drawSpark();
+}
+
+/* ─── HUD ───────────────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+function setText(id, v){ const e = $(id); if(e && e.textContent !== v) e.textContent = v; }
+
+let fpsAcc = 0, fpsN = 0, fpsShown = 0, sum = 0, mxh = 0, front = 0;
+function updateHUD(){
+  setText('m-topples', fmt(totalTopples));
+  setText('m-tick', fmt(lastTickTopples));
+  setText('m-queue', fmt(lastQueue));
+  sum = 0; mxh = 0; front = 0;
+  for(let i = 0; i < N; i++){
+    const v = hgt[i]; sum += v; if(v > mxh) mxh = v;
+    if(lastT[i] >= 0 && tick - lastT[i] < 4) front++;
+  }
+  setText('m-grains', fmt(sum));
+  setText('m-dens', (sum / N).toFixed(3));
+  setText('m-max', String(mxh));
+  setText('m-lost', fmt(escaped));
+  setText('m-front', fmt(front));
+  setText('m-fps', fpsShown.toFixed(1));
+  setText('t-grid', gw + '×' + gh);
+  setText('t-grain', String(CFG.sand));
+  if(mouseIn && hoverX >= 0){
+    const i = hoverY * gw + hoverX, a = tick - lastT[i];
+    setText('t-cell', hoverX + ',' + hoverY + ' h' + hgt[i] + ' ' + (lastT[i] < 0 ? 'new' : a + 'f'));
+  } else setText('t-cell', '—');
+  $('barf').style.width = (Math.min(1, lastTickTopples / 90000) * 100).toFixed(1) + '%';
+  if(!WARM.done) setText('barlab', 'WARM-UP ' + WARM.k + '/' + WARM.total + ' DROPS · ' + fmt(WARM.topples) + ' TOPPLES');
+  else if(CFG.paused) setText('barlab', 'PAUSED — STEP OR SPACE TO ADVANCE');
+  else setText('barlab', 'RUNNING · ' + COLOUR_MODES[CFG.colour] + ' · ' + CFG.mode.toUpperCase() + ' DRIVE');
+  setText('l-sens', fmt(CFG.sens) + 'f');
+  setText('o-sand', String(CFG.sand));
+  setText('o-sens', String(CFG.sens));
+  $('r-sand').style.setProperty('--p', ((CFG.sand - 1) / 199 * 100) + '%');
+  $('r-sens').style.setProperty('--p', ((CFG.sens - 40) / 3960 * 100) + '%');
+  setText('b-pause', CFG.paused ? 'Resume' : 'Pause');
+  $('b-pause').classList.toggle('on', CFG.paused);
+  window.__probe = {
+    ready: window.__ready === true, fps: +fpsShown.toFixed(2),
+    fingerprint: (() => {
+      // FNV-1a over the whole lattice + clock, captured the first time the
+      // live phase reaches this tick — two cold loads must agree exactly.
+      if(tick >= FINGERPRINT_TICK && !FP.done){
+        let hash = 2166136261 >>> 0;
+        for(let i = 0; i < N; i++){
+          hash = (hash ^ (hgt[i] + lastT[i] * 7 + jit[i])) >>> 0;
+          hash = Math.imul(hash, 16777619) >>> 0;
+        }
+        FP.hash = hash.toString(16); FP.done = true;
+      }
+      return FP.hash;
+    })(),
+    histPeak: (() => { let m = 0; for(let i = 0; i < hist.length; i++) if(hist[i] > m) m = hist[i]; return m; })(),
+    ageFrac: (() => { let c = 0; for(let i = 0; i < N; i++) if(lastT[i] >= 0 && tick - lastT[i] <= CFG.sens * 0.5) c++; return +(c / N).toFixed(4); })(),
+    grid: gw + 'x' + gh, topples: totalTopples, topplesPerTick: lastTickTopples,
+    queue: lastQueue, grains: sum, density: +(sum / N).toFixed(4), maxHeight: mxh,
+    escaped, frontCells: front, tick, dropped: totalGrains,
+    warmDrops: WARM.k, warmTopples: WARM.topples, warmMs: +WARM.ms.toFixed(1),
+    warmComplete: WARM.done, paused: CFG.paused, sandPerClick: CFG.sand,
+    sensitivity: CFG.sens, colour: COLOUR_MODES[CFG.colour], drive: CFG.mode, auto: CFG.auto
+  };
+}
+
+/* ─── CONTROLS ──────────────────────────────────────────────────────────── */
+function buildChips(host, items, get, set, cool){
+  const el = $(host);
+  items.forEach((it, idx) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (cool ? ' cool' : '');
+    b.textContent = it;
+    b.onclick = () => { set(idx); refreshChips(); };
+    el.appendChild(b);
+  });
+  function refresh(){
+    const cur = get();
+    for(let i = 0; i < el.children.length; i++) el.children[i].classList.toggle('on', i === cur);
+  }
+  refresh();
+  return refresh;
+}
+const refreshers = [];
+function rebuild(){
+  alloc(CFG.grid, CFG.grid);
+  fit();
+  emRng = mulberry32(SEED ^ 0x9E37); emT = 0;
+  hist.fill(0);
+  warmReset();
+}
+refreshers.push(buildChips('gridsize', ['96²','128²','160²','208²'],
+  () => GRIDS.indexOf(CFG.grid), (i) => { CFG.grid = GRIDS[i]; rebuild(); }));
+refreshers.push(buildChips('emitmode', EMIT_MODES,
+  () => EMIT_MODES.indexOf(CFG.mode), (i) => { CFG.mode = EMIT_MODES[i]; }));
+refreshers.push(buildChips('colour', COLOUR_MODES,
+  () => CFG.colour, (i) => { CFG.colour = i; }, true));
+function refreshChips(){ refreshers.forEach(f => f()); }
+
+$('r-sand').oninput = (e) => { CFG.sand = +e.target.value; };
+$('r-sens').oninput = (e) => { CFG.sens = +e.target.value; };
+$('b-pause').onclick = () => { CFG.paused = !CFG.paused; };
+$('b-step').onclick = () => { simTick(); paintPile(); draw(); updateHUD(); };
+$('b-clear').onclick = () => { clearAll(); };
+$('b-warm').onclick = () => { warmReset(); };
+function clearAll(){
+  hgt.fill(0); inq.fill(0); lastT.fill(-1); qsp = 0;
+  totalTopples = 0; totalGrains = 0; escaped = 0; tick = 0; hist.fill(0);
+  WARM.k = 0; WARM.done = true; WARM.topples = 0;
+  emRng = mulberry32(SEED ^ 0x9E37); emT = 0;
+}
+window.addEventListener('keydown', (e) => {
+  const k = e.key.toLowerCase();
+  if(k === ' '){ e.preventDefault(); CFG.paused = !CFG.paused; }
+  else if(k === 's'){ simTick(); paintPile(); draw(); }
+  else if(k === 'c'){ clearAll(); }
+  else if(k === 'a'){ CFG.auto = !CFG.auto; }
+  else if(k === 'w'){ warmReset(); }
+  else if(k >= '1' && k <= '4'){ CFG.grid = GRIDS[+k - 1]; rebuild(); }
+});
+
+/* ─── INPUT: pour sand at the pointer ───────────────────────────────────── */
+function cellAt(ev){
+  const r = cv.getBoundingClientRect();
+  const x = (ev.clientX - r.left - MARGIN) / lsize * gw;
+  const y = (ev.clientY - r.top - MARGIN) / lsize * gh;
+  if(x < 0 || y < 0 || x >= gw || y >= gh) return null;
+  return [x | 0, y | 0];
+}
+let pouring = false;
+cv.addEventListener('pointerdown', (ev) => {
+  const c = cellAt(ev); if(!c) return;
+  try { cv.setPointerCapture(ev.pointerId); } catch(e){}
+  pouring = true; hoverX = c[0]; hoverY = c[1]; mouseIn = true;
+  tick++; drive(c[0], c[1], CFG.sand);
+  totalTopples += relax(LIVE_BUDGET);
+  paintPile(); draw(); updateHUD();
+});
+cv.addEventListener('pointermove', (ev) => {
+  const c = cellAt(ev);
+  mouseIn = !!c;
+  if(c){ hoverX = c[0]; hoverY = c[1]; }
+  if(pouring && c){ tick++; drive(c[0], c[1], Math.max(1, Math.round(CFG.sand / 4))); totalTopples += relax(LIVE_BUDGET); }
+});
+const stopPour = () => { pouring = false; };
+cv.addEventListener('pointerup', stopPour);
+cv.addEventListener('pointercancel', stopPour);
+cv.addEventListener('pointerleave', () => { mouseIn = false; pouring = false; });
+window.addEventListener('resize', fit);
+
+/* ─── MAIN LOOP — fixed delta, deterministic ────────────────────────────── */
+let last = performance.now();
+let readySet = false, liveFrames = 0;
+function frame(now){
+  const dt = Math.min(400, now - last); last = now;
+  fpsAcc += dt; fpsN++;
+  if(fpsAcc > 420){ fpsShown = 1000 / (fpsAcc / fpsN); fpsAcc = 0; fpsN = 0; }
+
+  if(!WARM.done){ warmStep(WARM_CHUNK); liveFrames = 0; }
+  else if(!CFG.paused){ simTick(); liveFrames++; }
+
+  paintPile();
+  draw();
+  updateHUD();
+
+  if(WARM.done && !readySet && liveFrames >= 2){
+    readySet = true; window.__ready = true;   // a real frame is on screen
+  }
+  requestAnimationFrame(frame);
+}
+
+alloc(CFG.grid, CFG.grid);
+fit();
+warmReset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSP Filter Lab — biquad &amp; comb response</title>
+<style>
+  :root{
+    --bg0:#05070c; --bg1:#0c1320;
+    --panel:rgba(11,17,27,.80);
+    --edge:rgba(120,163,224,.16);
+    --edge2:rgba(120,163,224,.10);
+    --ink:#dbe6f7; --ink2:#93a6c4; --ink3:#61728c;
+    --in:#ffb254;      /* input / dry  — amber */
+    --out:#41e6cf;     /* output / wet — teal */
+    --mag:#a9c9ff;     /* magnitude    — periwinkle */
+    --pha:#c78bff;     /* phase        — violet  */
+    --hot:#ff7a6b;     /* attenuation  — coral  */
+    --ok:#9df06a;      /* markers      — lime   */
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1100px 700px at 12% -8%, #16233a 0%, rgba(11,18,30,0) 62%),
+      radial-gradient(900px 620px at 96% 108%, #10202c 0%, rgba(11,18,30,0) 60%),
+      linear-gradient(180deg,#070a11 0%, #04060a 100%);
+    color:var(--ink);
+    font-family:var(--mono);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;
+    background-image:radial-gradient(rgba(150,190,255,.055) 1px, rgba(0,0,0,0) 1px);
+    background-size:26px 26px;
+  }
+  #app{position:relative;height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr) 104px;gap:10px;padding:12px 15px 13px}
+
+  /* ---------- header ---------- */
+  header{display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center;
+    border-bottom:1px solid var(--edge2);padding-bottom:10px}
+  .brand{display:flex;gap:12px;align-items:center}
+  .idx{font-size:12px;letter-spacing:.16em;color:var(--bg0);background:linear-gradient(180deg,var(--out),#1c9d92);
+    padding:5px 8px;border-radius:5px;font-weight:700}
+  h1{font-size:19px;font-weight:600;letter-spacing:.20em;color:#eaf2ff}
+  .sub{font-size:10.5px;letter-spacing:.20em;color:var(--ink3);margin-top:3px}
+  .tech{font-size:10.5px;line-height:1.65;color:var(--ink2);letter-spacing:.045em;text-align:left;
+    border-left:1px solid var(--edge2);padding-left:16px}
+  .tech b{color:var(--mag);font-weight:600}
+  .stats{font-size:10.5px;line-height:1.7;color:var(--ink3);text-align:right;letter-spacing:.08em;white-space:nowrap}
+  .stats span{color:var(--out)}
+
+  /* ---------- main ---------- */
+  main{display:grid;grid-template-columns:minmax(0,1fr) 318px;gap:10px;min-height:0}
+  #left{display:grid;grid-template-rows:minmax(0,1.12fr) minmax(0,1fr);gap:10px;min-height:0}
+  .card{position:relative;min-width:0;background:var(--panel);border:1px solid var(--edge);border-radius:9px;
+    overflow:hidden;min-height:0;
+    box-shadow:0 12px 34px -22px #000, inset 0 1px 0 rgba(190,220,255,.05)}
+  /* absolutely positioned: a canvas's width/height attributes are its intrinsic
+     size, so a static canvas would feed its own pixel size back into layout. */
+  .card > canvas{position:absolute;inset:0;display:block;width:100%;height:100%}
+
+  /* ---------- side panel ---------- */
+  aside{display:flex;flex-direction:column;gap:7px;min-height:0;overflow:hidden}
+  .box{background:var(--panel);border:1px solid var(--edge);border-radius:9px;padding:7px 10px;flex:none;
+    box-shadow:0 12px 34px -22px #000, inset 0 1px 0 rgba(190,220,255,.05)}
+  .lbl{font-size:9.5px;letter-spacing:.22em;color:var(--ink3);margin-bottom:5px;display:block}
+  .lbl em{font-style:normal;color:var(--ink2);letter-spacing:.10em}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  button{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--ink2);
+    background:rgba(140,180,240,.055);border:1px solid var(--edge2);border-radius:5px;
+    padding:7px 4px;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  button:hover{background:rgba(140,180,240,.12);color:var(--ink)}
+  button.on{background:linear-gradient(180deg,rgba(65,230,207,.24),rgba(65,230,207,.10));
+    border-color:rgba(65,230,207,.55);color:#d8fff7;
+    box-shadow:0 0 14px -4px rgba(65,230,207,.55)}
+  .row{margin-bottom:8px}
+  .row:last-child{margin-bottom:0}
+  .hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+  .hdr span:first-child{font-size:9.5px;letter-spacing:.18em;color:var(--ink3)}
+  .hdr span:last-child{font-size:12px;color:var(--out);letter-spacing:.04em}
+  .hdr.dim span:last-child{color:var(--ink3)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:pointer;display:block}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(65,230,207,.55),rgba(120,163,224,.20))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+    background:#0b1220;border:2px solid var(--out);margin-top:-4.5px;box-shadow:0 0 10px -1px rgba(65,230,207,.9)}
+  input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:rgba(120,163,224,.28)}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#0b1220;border:2px solid var(--out)}
+  input[type=range]:disabled{opacity:.34;cursor:default}
+  .toggles{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:2px}
+  .keys{font-size:9px;letter-spacing:.04em;color:var(--ink3);line-height:1.55;flex:none}
+  .keys b{color:var(--ink2);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:10.5px}
+  td{padding:2px 0;letter-spacing:.04em}
+  td:first-child{color:var(--ink3)}
+  td:nth-child(2){text-align:right;color:var(--ink)}
+  td:last-child{text-align:right;color:var(--mag);width:62px}
+  .coef{font-size:10px;color:var(--ink2);letter-spacing:.01em;line-height:1.5;
+    background:rgba(0,0,0,.28);border:1px solid var(--edge2);border-radius:5px;padding:5px 7px;white-space:pre}
+  .flow .lbl{margin-bottom:4px}
+  .strip{display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:10px}
+  .strip .card{position:relative}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <div class="idx">36</div>
+      <div>
+        <h1>DSP FILTER LAB</h1>
+        <div class="sub">BIQUAD &amp; COMB · RESPONSE + LIVE SPECTRUM</div>
+      </div>
+    </div>
+    <div class="tech">
+      <b>RBJ biquad</b> (LP · HP · BP · notch · peaking) cascaded with an <b>integer-delay comb</b> — analytic
+      H(e<sup>jω</sup>) swept 20 Hz→20 kHz<br>
+      1024-pt Hann FFT · seeded white noise + 4 partial tones · <b>fixed 1024-sample step</b> per frame
+    </div>
+    <div class="stats" id="hstat"></div>
+  </header>
+
+  <main>
+    <section id="left">
+      <div class="card"><canvas id="c-resp"></canvas></div>
+      <div class="card"><canvas id="c-spec"></canvas></div>
+    </section>
+
+    <aside>
+      <div class="box">
+        <span class="lbl">FILTER <em>type</em></span>
+        <div class="btns" id="types"></div>
+      </div>
+
+      <div class="box">
+        <span class="lbl">PARAMETERS</span>
+        <div class="row">
+          <div class="hdr"><span id="l0">CUTOFF f₀</span><span id="v0">—</span></div>
+          <input type="range" id="s0" min="0" max="1000" value="500">
+        </div>
+        <div class="row">
+          <div class="hdr"><span id="l1">RESONANCE Q</span><span id="v1">—</span></div>
+          <input type="range" id="s1" min="0" max="1000" value="450">
+        </div>
+        <div class="row">
+          <div class="hdr dim" id="h2"><span>PEAK GAIN</span><span id="v2">—</span></div>
+          <input type="range" id="s2" min="0" max="1000" value="620">
+        </div>
+        <div class="toggles">
+          <button id="b-bypass" title="Compare: route the analyser pre-filter (key B)">BYPASS</button>
+          <button id="b-sweep" title="Sweep the cutoff (key S)">SWEEP</button>
+        </div>
+        <div class="keys" style="margin-top:6px">
+          <b>1–6</b> type · <b>B</b> bypass · <b>S</b> sweep · drag a plot to retune f₀
+        </div>
+      </div>
+
+      <div class="box">
+        <span class="lbl">TRANSFER FUNCTION <em>b₀…b₂ / a₁,a₂</em></span>
+        <div class="coef" id="coef">—</div>
+      </div>
+
+      <div class="box">
+        <span class="lbl">FILTERED TONE LEVELS <em>dB re full scale</em></span>
+        <table id="tones"></table>
+      </div>
+
+    </aside>
+  </main>
+
+  <footer class="strip">
+    <div class="card"><canvas id="c-wf"></canvas></div>
+    <div class="card"><canvas id="c-scope"></canvas></div>
+  </footer>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   DSP FILTER LAB — RBJ biquads + integer-delay comb, analytic response,
+   live 1024-pt FFT of a deterministic test signal. Fixed 1024-sample step.
+   ========================================================================= */
+
+const SR   = 48000;          // virtual sample rate; Nyquist 24 kHz > FMAX (no aliasing)
+const NFFT = 1024;           // FFT / hop size == one fixed step per frame
+const FMIN = 20, FMAX = 20000;
+const DEC  = Math.log10(FMAX / FMIN);
+const NOISE_AMP = 0.255;
+const TONES = [
+  { f: 120,  a: 0.175, w: 2*Math.PI*120/SR,  p: 0.0 },
+  { f: 700,  a: 0.165, w: 2*Math.PI*700/SR,  p: 1.31 },
+  { f: 2400, a: 0.155, w: 2*Math.PI*2400/SR, p: 2.77 },
+  { f: 5200, a: 0.130, w: 2*Math.PI*5200/SR, p: 4.02 },
+];
+const L2P = Math.log(1000) / 1000;   // log-mapped slider for frequency
+
+const C = {
+  bg:'#070a11', panelTop:'rgba(24,36,56,.55)', panelBot:'rgba(8,12,20,.30)',
+  grid:'rgba(122,160,214,.10)', gridMaj:'rgba(122,160,214,.20)',
+  axis:'rgba(150,185,235,.34)', text:'#93a6c4', textDim:'#5d6e88', textHi:'#dbe6f7',
+  inp:'#ffb254', out:'#41e6cf', mag:'#a9c9ff', pha:'#c78bff', hot:'#ff7a6b', ok:'#9df06a',
+};
+
+/* ---------------- deterministic RNG (the only random source) ------------ */
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------------- FFT: iterative radix-2, precomputed twiddles ----------- */
+const REV = new Uint16Array(NFFT);
+for (let i = 0; i < NFFT; i++){ let r = 0, x = i; for (let b = 0; b < 10; b++){ r = (r << 1) | (x & 1); x >>= 1; } REV[i] = r; }
+const COT = new Float32Array(NFFT >> 1), SIT = new Float32Array(NFFT >> 1);
+for (let i = 0; i < NFFT >> 1; i++){ COT[i] = Math.cos(-2*Math.PI*i/NFFT); SIT[i] = Math.sin(-2*Math.PI*i/NFFT); }
+function fft(re, im){
+  for (let i = 0; i < NFFT; i++){
+    const j = REV[i];
+    if (j > i){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let size = 2; size <= NFFT; size <<= 1){
+    const half = size >> 1, step = NFFT / size;
+    for (let i = 0; i < NFFT; i += size){
+      for (let j = i, k = 0; j < i + half; j++, k += step){
+        const l = j + half;
+        const tre =  re[l]*COT[k] - im[l]*SIT[k];
+        const tim =  re[l]*SIT[k] + im[l]*COT[k];
+        re[l] = re[j] - tre; im[l] = im[j] - tim;
+        re[j] += tre;        im[j] += tim;
+      }
+    }
+  }
+}
+const HANN = new Float32Array(NFFT);
+let HANN_SUM = 0;
+for (let i = 0; i < NFFT; i++){ HANN[i] = 0.5 - 0.5*Math.cos(2*Math.PI*i/(NFFT-1)); HANN_SUM += HANN[i]; }
+const F_NORM = 2 / HANN_SUM;
+
+/* ---------------- filter design (RBJ audio EQ cookbook) ------------------ */
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+
+function designBiquad(type, f0, Q, gainDb){
+  const w0 = 2*Math.PI*clamp(f0, 10, SR*0.48)/SR;
+  const cw = Math.cos(w0), sw = Math.sin(w0);
+  const alpha = sw / (2*Math.max(0.05, Q));
+  const A = Math.pow(10, gainDb/40);
+  let b0, b1, b2, a0, a1, a2;
+  switch (type){
+    case 'lowpass':
+      b0 = (1-cw)/2; b1 = 1-cw; b2 = (1-cw)/2;
+      a0 = 1+alpha; a1 = -2*cw; a2 = 1-alpha; break;
+    case 'highpass':
+      b0 = (1+cw)/2; b1 = -(1+cw); b2 = (1+cw)/2;
+      a0 = 1+alpha; a1 = -2*cw; a2 = 1-alpha; break;
+    case 'bandpass':
+      b0 = alpha; b1 = 0; b2 = -alpha;
+      a0 = 1+alpha; a1 = -2*cw; a2 = 1-alpha; break;
+    case 'notch':
+      b0 = 1; b1 = -2*cw; b2 = 1;
+      a0 = 1+alpha; a1 = -2*cw; a2 = 1-alpha; break;
+    case 'peaking':
+      b0 = 1+alpha*A; b1 = -2*cw; b2 = 1-alpha*A;
+      a0 = 1+alpha/A; a1 = -2*cw; a2 = 1-alpha/A; break;
+    default:
+      b0 = 1; b1 = b2 = a1 = a2 = 0; a0 = 1;
+  }
+  return { kind:'bq', b0:b0/a0, b1:b1/a0, b2:b2/a0, a1:a1/a0, a2:a2/a0, x1:0, x2:0, y1:0, y2:0 };
+}
+
+function designComb(f0, g){
+  const D = clamp(Math.round(SR / clamp(f0, 40, 8000)), 1, 512);
+  return { kind:'comb', D, g, x1:0, x2:0, y1:0, y2:0, buf:new Float32Array(D), wp:0, tooth:SR/D };
+}
+
+function process(c, x){
+  if (c.kind === 'comb'){
+    const y = x + c.g * c.buf[c.wp];
+    c.buf[c.wp] = y;
+    c.wp = (c.wp + 1) % c.D;
+    return y;
+  }
+  const y = c.b0*x + c.b1*c.x1 + c.b2*c.x2 - c.a1*c.y1 - c.a2*c.y2;
+  c.x2 = c.x1; c.x1 = x; c.y2 = c.y1; c.y1 = y;
+  return y;
+}
+
+function resetState(c){
+  c.x1 = c.x2 = c.y1 = c.y2 = 0; c.wp = 0;
+  if (c.buf) c.buf.fill(0);
+}
+
+function respAt(c, f){
+  if (c.kind === 'comb'){
+    // process() runs y[n] = x[n] + g·y[n−D]  ⇒  H(z) = 1 / (1 − g·z⁻ᴰ).
+    // Verified against the measured impulse response of this very loop.
+    const wd = 2*Math.PI*f/SR*c.D;
+    const re = 1 - c.g*Math.cos(wd), im = c.g*Math.sin(wd);
+    const den = Math.hypot(re, im) || 1e-12;
+    return { mag: 1/den, ph: -Math.atan2(im, re) };
+  }
+  const w = 2*Math.PI*f/SR;
+  const c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2*w), s2 = Math.sin(2*w);
+  const nr = c.b0 + c.b1*c1 + c.b2*c2,  ni = -(c.b1*s1 + c.b2*s2);
+  const dr = 1 + c.a1*c1 + c.a2*c2,    di = -(c.a1*s1 + c.a2*s2);
+  const den = Math.hypot(dr, di) || 1e-12;
+  return { mag: Math.hypot(nr, ni)/den, ph: Math.atan2(ni, nr) - Math.atan2(di, dr) };
+}
+
+/* ---------------- app state --------------------------------------------- */
+const TYPES = [
+  { id:'lowpass',  name:'LOW-PASS',  tag:'lp' },
+  { id:'highpass', name:'HIGH-PASS', tag:'hp' },
+  { id:'bandpass', name:'BAND-PASS', tag:'bp' },
+  { id:'notch',    name:'NOTCH',     tag:'nch' },
+  { id:'peaking',  name:'PEAKING',   tag:'pk' },
+  { id:'comb',     name:'COMB',      tag:'cmb' },
+];
+
+const S = {
+  type:'lowpass',
+  f0:1100, q:0.9, gain:9,
+  bypass:false, sweep:false, sweepPhase:0,
+  filt:null, needDesign:true,
+  frame:0, samples:0, fps:0, ms:0,
+};
+
+function rebuild(){
+  if (S.type === 'comb'){
+    const c = designComb(S.f0, combGain());
+    if (S.filt && S.filt.kind === 'comb' && S.filt.D === c.D){
+      S.filt.g = c.g; S.filt.tooth = c.tooth;
+    } else { S.filt = c; }
+  } else {
+    S.filt = designBiquad(S.type, S.f0, S.q, S.gain);
+  }
+  S.needDesign = false;
+  respDirty = true;
+}
+function combGain(){ return (S.slider1 / 1000) * 1.86 - 0.93; }   // -0.93 … +0.93
+
+/* ---------------- audio stream (deterministic, fixed step) --------------- */
+let noise = mulberry32(0x5EEDF117);
+let inRing = new Float32Array(NFFT), outRing = new Float32Array(NFFT);
+let ringPos = 0;
+const inRe = new Float32Array(NFFT), inIm = new Float32Array(NFFT);
+const ouRe = new Float32Array(NFFT), ouIm = new Float32Array(NFFT);
+let inDb = new Float32Array(NFFT/2 + 1), ouDb = new Float32Array(NFFT/2 + 1);
+const block = new Float32Array(NFFT);
+
+function stepAudio(){
+  for (let i = 0; i < NFFT; i++){
+    let s = (noise() * 2 - 1) * NOISE_AMP;
+    for (let k = 0; k < TONES.length; k++){
+      const t = TONES[k];
+      s += t.a * Math.sin(t.p);
+      t.p += t.w; if (t.p > 6.283185307179586) t.p -= 6.283185307179586;
+    }
+    block[i] = s;
+  }
+  for (let i = 0; i < NFFT; i++){
+    inRing[ringPos] = block[i];
+    outRing[ringPos] = process(S.filt, block[i]);
+    ringPos = (ringPos + 1) % NFFT;
+  }
+  for (let i = 0; i < NFFT; i++){
+    const j = (ringPos + i) % NFFT;
+    inRe[i] = inRing[j] * HANN[i];  inIm[i] = 0;
+    ouRe[i] = outRing[j] * HANN[i]; ouIm[i] = 0;
+  }
+  fft(inRe, inIm); fft(ouRe, ouIm);
+  const nb = NFFT / 2 + 1;
+  for (let i = 0; i < nb; i++){
+    const mi = Math.hypot(inRe[i], inIm[i]) * F_NORM;
+    const mo = Math.hypot(ouRe[i], ouIm[i]) * F_NORM;
+    inDb[i] = 20*Math.log10(mi + 1e-9);
+    ouDb[i] = 20*Math.log10(mo + 1e-9);
+  }
+  S.samples += NFFT;
+}
+
+/* ---------------- waterfall state --------------------------------------- */
+const NBAND = 56;
+let wfCols = 0, wfData = null, wfImg = null, wfCv = null, wfCtx = null, wfHead = 0;
+let bandLo = null, bandHi = null;
+const LUT = new Uint8Array(256*3);
+(function(){
+  const stops = [[0.00,[4,6,12]],[0.16,[7,24,46]],[0.36,[11,74,100]],[0.58,[26,178,182]],
+                 [0.78,[116,236,198]],[0.93,[226,240,176]],[1.00,[255,236,196]]];
+  for (let i = 0; i < 256; i++){
+    const t = i/255;
+    let a = stops[0], b = stops[stops.length-1];
+    for (let s = 0; s < stops.length-1; s++) if (t >= stops[s][0] && t <= stops[s+1][0]){ a = stops[s]; b = stops[s+1]; break; }
+    const k = (t - a[0]) / Math.max(1e-6, b[0] - a[0]);
+    for (let c = 0; c < 3; c++) LUT[i*3+c] = Math.round(a[1][c] + (b[1][c] - a[1][c]) * k);
+  }
+})();
+
+function buildBands(){
+  bandLo = new Int32Array(NBAND); bandHi = new Int32Array(NBAND);
+  const half = SR/2, nb = NFFT/2 + 1;
+  for (let b = 0; b < NBAND; b++){
+    const f0 = FMIN*Math.pow(FMAX/FMIN, b/NBAND);
+    const f1 = FMIN*Math.pow(FMAX/FMIN, (b+1)/NBAND);
+    let lo = Math.floor(f0/half*nb), hi = Math.ceil(f1/half*nb);
+    lo = clamp(lo, 1, nb-1); hi = clamp(Math.max(hi, lo+1), 1, nb);
+    bandLo[b] = lo; bandHi[b] = hi;
+  }
+}
+buildBands();
+
+function initWaterfall(w){
+  wfCols = w; wfCv = document.createElement('canvas');
+  wfCv.width = w; wfCv.height = NBAND;
+  wfCtx = wfCv.getContext('2d');
+  wfData = new Float32Array(w*NBAND);
+  wfImg = wfCtx.createImageData(w, NBAND);
+  paintWaterfallColumn(0, 0);
+}
+function paintWaterfallColumn(col, head){
+  const src = S.bypass ? inDb : ouDb;
+  for (let b = 0; b < NBAND; b++){
+    let m = -120;
+    for (let k = bandLo[b]; k < bandHi[b]; k++) if (src[k] > m) m = src[k];
+    const t = clamp((m + 96) / 96, 0, 1);
+    const i = (t*255)|0;
+    const p = ((head*NBAND + b) * 4);
+    wfImg.data[p] = LUT[i*3]; wfImg.data[p+1] = LUT[i*3+1];
+    wfImg.data[p+2] = LUT[i*3+2]; wfImg.data[p+3] = 255;
+  }
+}
+function pushWaterfall(){
+  wfHead = (wfHead + 1) % wfCols;
+  paintWaterfallColumn(wfHead, wfHead);
+  wfCtx.putImageData(wfImg, 0, 0);
+}
+
+/* ---------------- canvas helpers ---------------------------------------- */
+function fit(cv){
+  const r = cv.parentElement.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(80, Math.floor(r.width)), h = Math.max(60, Math.floor(r.height));
+  if (cv.width !== w*dpr || cv.height !== h*dpr){ cv.width = w*dpr; cv.height = h*dpr; }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+function rrect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y); ctx.closePath();
+}
+function fx(f){ return Math.log10(clamp(f, FMIN, FMAX)/FMIN) / DEC; }   // 0..1
+function xf(u){ return FMIN * Math.pow(FMAX/FMIN, clamp(u, 0, 1)); }
+function fmtHz(f){
+  if (f >= 10000) return (f/1000).toFixed(2) + ' kHz';
+  if (f >= 1000)  return (f/1000).toFixed(3) + ' kHz';
+  return f.toFixed(f < 100 ? 1 : 0) + ' Hz';
+}
+function fGrid(x, w, padL, padR){
+  const out = [];
+  for (const f of [20,50,100,200,500,1000,2000,5000,10000,20000]){
+    const px = padL + fx(f)*w;
+    if (px > padL + 2 && px < padL + w - 2) out.push({ f, px, maj: f === 100 || f === 1000 || f === 10000 || f === 20 || f === 20000 });
+  }
+  return out;
+}
+function panelBg(ctx, w, h){
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, C.panelTop); g.addColorStop(1, C.panelBot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+}
+function tag(ctx, x, y, text, col, size){
+  ctx.font = '600 ' + (size||9.5) + 'px ' + 'ui-monospace,Menlo,monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width;
+  ctx.fillStyle = 'rgba(6,10,17,.72)';
+  rrect(ctx, x-4, y-7, w+9, 14, 3); ctx.fill();
+  ctx.fillStyle = col; ctx.fillText(text, x, y);
+  return w;
+}
+
+/* ---------------- response curve panel ---------------------------------- */
+let respDirty = true, respW = 0, respH = 0, respPts = null, respPh = null, respN = 0;
+const RESP_TOP = 24, RESP_BOT = -48;
+function drawResponse(cv){
+  const { ctx, w, h } = fit(cv);
+  ctx.clearRect(0, 0, w, h); panelBg(ctx, w, h);
+  const padL = 46, padR = 46, padT = 30, padB = 26;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const yDb = d => padT + (RESP_TOP - d)/(RESP_TOP - RESP_BOT)*ph;
+
+  if (respDirty || respW !== w || respH !== h || !respPts){
+    respW = w; respH = h;
+    respN = Math.max(64, Math.floor(pw));
+    respPts = new Float32Array(respN); respPh = new Float32Array(respN);
+    respDirty = false;
+  }
+  for (let i = 0; i < respN; i++){
+    const f = xf(i/(respN-1));
+    const r = S.bypass ? { mag:1, ph:0 } : respAt(S.filt, f);
+    respPts[i] = 20*Math.log10(Math.max(1e-6, r.mag));
+    let p = r.ph * 180/Math.PI;
+    if (i > 0){ while (p - respPh[i-1] > 180) p -= 360; while (p - respPh[i-1] < -180) p += 360; }
+    respPh[i] = p;
+  }
+
+  /* grid */
+  ctx.lineWidth = 1;
+  for (let d = -48; d <= 24; d += 6){
+    const y = Math.round(yDb(d)) + .5;
+    ctx.strokeStyle = (d === 0) ? C.gridMaj : C.grid;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+pw, y); ctx.stroke();
+  }
+  for (const g of fGrid(w, pw, padL, 0)){
+    const x = Math.round(g.px) + .5;
+    ctx.strokeStyle = g.maj ? C.gridMaj : C.grid;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT+ph); ctx.stroke();
+  }
+  /* dB-3 reference */
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,122,107,.42)';
+  const y3 = Math.round(yDb(-3)) + .5;
+  ctx.beginPath(); ctx.moveTo(padL, y3); ctx.lineTo(padL+pw, y3); ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* tone guide lines */
+  for (const t of TONES){
+    const x = Math.round(padL + fx(t.f)*pw) + .5;
+    ctx.strokeStyle = 'rgba(255,178,84,.15)';
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT+ph); ctx.stroke();
+  }
+
+  /* stopband shading: area under the curve in a dim coral wash */
+  ctx.beginPath(); ctx.moveTo(padL, yDb(0));
+  for (let i = 0; i < respN; i++) ctx.lineTo(padL + i/(respN-1)*pw, yDb(Math.max(RESP_BOT, respPts[i])));
+  ctx.lineTo(padL+pw, yDb(0)); ctx.closePath();
+  const sg = ctx.createLinearGradient(0, padT, 0, padT+ph);
+  sg.addColorStop(0, 'rgba(169,201,255,.20)'); sg.addColorStop(1, 'rgba(255,122,107,.10)');
+  ctx.fillStyle = sg; ctx.fill();
+
+  /* phase (unwrapped) on the right-hand axis */
+  const yPh = p => padT + (180 - p)/360*ph;
+  ctx.beginPath();
+  for (let i = 0; i < respN; i++){
+    const x = padL + i/(respN-1)*pw, y = yPh(Math.max(-180, Math.min(180, respPh[i])));
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = S.bypass ? 'rgba(199,139,255,.20)' : 'rgba(199,139,255,.72)';
+  ctx.lineWidth = 1.3; ctx.setLineDash([3, 3]); ctx.stroke(); ctx.setLineDash([]);
+
+  /* magnitude curve */
+  ctx.beginPath();
+  for (let i = 0; i < respN; i++){
+    const x = padL + i/(respN-1)*pw, y = yDb(Math.max(RESP_BOT, respPts[i]));
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = S.bypass ? 'rgba(169,201,255,.34)' : C.mag;
+  ctx.lineWidth = S.bypass ? 1.4 : 2.2; ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(169,201,255,.75)'; ctx.shadowBlur = S.bypass ? 0 : 9;
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  /* tone dots on the curve */
+  if (!S.bypass) for (const t of TONES){
+    const r = respAt(S.filt, t.f);
+    const db = clamp(20*Math.log10(Math.max(1e-6, r.mag)), RESP_BOT, RESP_TOP);
+    const x = padL + fx(t.f)*pw, y = yDb(db);
+    ctx.beginPath(); ctx.arc(x, y, 3.1, 0, 6.2832);
+    ctx.fillStyle = C.inp; ctx.fill();
+    ctx.strokeStyle = 'rgba(7,10,17,.9)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  /* f0 marker */
+  const f0d = S.sweep ? S.f0 : S.f0;
+  const x0 = padL + fx(f0d)*pw;
+  ctx.setLineDash([2, 3]); ctx.strokeStyle = S.bypass ? 'rgba(157,240,106,.25)' : 'rgba(157,240,106,.65)';
+  ctx.beginPath(); ctx.moveTo(Math.round(x0)+.5, padT); ctx.lineTo(Math.round(x0)+.5, padT+ph); ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* axes text */
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let d = -48; d <= 24; d += 12) ctx.fillText((d > 0 ? '+' : '') + d, padL - 7, yDb(d));
+  ctx.textAlign = 'left';
+  for (let d = -180; d <= 180; d += 90) ctx.fillText((d > 0 ? '+' : '') + d + '°', padL + pw + 7, yPh(d));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const g of fGrid(w, pw, padL, 0)){
+    if (!g.maj) continue;
+    ctx.fillStyle = C.textDim;
+    ctx.fillText(g.f >= 1000 ? (g.f/1000)+'k' : String(g.f), g.px, padT+ph+6);
+  }
+  ctx.strokeStyle = C.axis; ctx.lineWidth = 1;
+  ctx.strokeRect(padL+.5, padT+.5, pw, ph);
+
+  /* titles + legend */
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '600 10.5px ui-monospace,Menlo,monospace';
+  ctx.fillStyle = C.textHi; ctx.fillText('MAGNITUDE  ·  PHASE  RESPONSE', 13, 15);
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.fillText('dB  |  °  ·  log f  20 Hz → 20 kHz', w - 13, 15);
+  ctx.textAlign = 'left';
+  let lx = 13, ly = h - 10;
+  lx += tag(ctx, lx, ly, '│ MAGNITUDE  ' + (S.bypass ? 'BYPASS 0 dB' : TYPES.find(t=>t.id===S.type).name), C.mag) + 6;
+  lx += tag(ctx, lx, ly, '┄ PHASE', C.pha) + 6;
+  tag(ctx, lx, ly, '· TONE', C.inp);
+  ctx.textAlign = 'center';
+  tag(ctx, padL + pw/2, padT + 11, S.bypass ? 'BYPASSED — unity gain' : (S.type === 'comb'
+      ? 'H(z) = 1 / (1 − g·z⁻ᴰ)   D=' + S.filt.D + '   tooth ' + fmtHz(S.filt.tooth)
+      : 'H(z) = (b₀ + b₁z⁻¹ + b₂z⁻²) / (1 + a₁z⁻¹ + a₂z⁻²)'), C.text, 9.5);
+  ctx.textAlign = 'left';
+  return { padL, pw };
+}
+
+/* ---------------- spectrum panel ---------------------------------------- */
+let specBins = null, specW = 0;
+const SPEC_TOP = 6, SPEC_BOT = -96;
+function drawSpectrum(cv){
+  const { ctx, w, h } = fit(cv);
+  ctx.clearRect(0, 0, w, h); panelBg(ctx, w, h);
+  const padL = 46, padR = 15, padT = 30, padB = 26;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const yDb = d => padT + (SPEC_TOP - d)/(SPEC_TOP - SPEC_BOT)*ph;
+  const cols = Math.max(64, Math.floor(pw));
+
+  if (specW !== w || !specBins){
+    specW = w; specBins = new Int32Array(cols*2);
+    const nb = NFFT/2 + 1;
+    for (let k = 0; k < cols; k++){
+      const f0 = xf(k/cols), f1 = xf((k+1)/cols);
+      let lo = Math.floor(f0/(SR/2)*nb), hi = Math.ceil(f1/(SR/2)*nb);
+      lo = clamp(lo, 1, nb-1); hi = clamp(Math.max(hi, lo+1), 1, nb);
+      specBins[k*2] = lo; specBins[k*2+1] = hi;
+    }
+  }
+  const colIn = new Float32Array(cols), colOut = new Float32Array(cols);
+  for (let k = 0; k < cols; k++){
+    let mi = -120, mo = -120;
+    for (let b = specBins[k*2]; b < specBins[k*2+1]; b++){
+      if (inDb[b] > mi) mi = inDb[b];
+      const o = S.bypass ? inDb[b] : ouDb[b];
+      if (o > mo) mo = o;
+    }
+    colIn[k] = Math.max(SPEC_BOT, mi);
+    colOut[k] = Math.max(SPEC_BOT, mo);
+  }
+
+  /* grid */
+  ctx.lineWidth = 1;
+  for (let d = -96; d <= 0; d += 12){
+    const y = Math.round(yDb(d)) + .5;
+    ctx.strokeStyle = (d === 0) ? C.gridMaj : C.grid;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+pw, y); ctx.stroke();
+  }
+  for (const g of fGrid(w, pw, padL, 0)){
+    const x = Math.round(g.px) + .5;
+    ctx.strokeStyle = g.maj ? C.gridMaj : C.grid;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT+ph); ctx.stroke();
+  }
+  /* tone guides */
+  for (const t of TONES){
+    const x = Math.round(padL + fx(t.f)*pw) + .5;
+    ctx.setLineDash([2, 4]); ctx.strokeStyle = 'rgba(255,178,84,.30)';
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT+ph); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  /* removed-energy band between the two traces */
+  ctx.beginPath();
+  for (let k = 0; k < cols; k++) ctx.lineTo(padL + k/(cols-1)*pw, yDb(colIn[k]));
+  for (let k = cols-1; k >= 0; k--) ctx.lineTo(padL + k/(cols-1)*pw, yDb(Math.max(colIn[k], colOut[k])));
+  ctx.closePath(); ctx.fillStyle = 'rgba(255,122,107,.14)'; ctx.fill();
+
+  /* input spectrum */
+  ctx.beginPath(); ctx.moveTo(padL, yDb(SPEC_BOT));
+  for (let k = 0; k < cols; k++) ctx.lineTo(padL + k/(cols-1)*pw, yDb(colIn[k]));
+  ctx.lineTo(padL+pw, yDb(SPEC_BOT)); ctx.closePath();
+  const ig = ctx.createLinearGradient(0, padT, 0, padT+ph);
+  ig.addColorStop(0, 'rgba(255,178,84,.42)'); ig.addColorStop(1, 'rgba(255,178,84,.06)');
+  ctx.fillStyle = ig; ctx.fill();
+  ctx.beginPath();
+  for (let k = 0; k < cols; k++){
+    const x = padL + k/(cols-1)*pw, y = yDb(colIn[k]);
+    k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = C.inp; ctx.lineWidth = 1.3; ctx.globalAlpha = .95; ctx.stroke(); ctx.globalAlpha = 1;
+
+  /* output spectrum */
+  ctx.beginPath();
+  for (let k = 0; k < cols; k++){
+    const x = padL + k/(cols-1)*pw, y = yDb(colOut[k]);
+    k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = S.bypass ? C.inp : C.out;
+  ctx.lineWidth = S.bypass ? 1.6 : 2.2; ctx.lineJoin = 'round';
+  ctx.shadowColor = S.bypass ? 'rgba(255,178,84,.6)' : 'rgba(65,230,207,.75)';
+  ctx.shadowBlur = S.bypass ? 4 : 10;
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  /* axis */
+  ctx.strokeStyle = C.axis; ctx.lineWidth = 1;
+  ctx.strokeRect(padL+.5, padT+.5, pw, ph);
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let d = -96; d <= 0; d += 24) ctx.fillText(String(d), padL - 7, yDb(d));
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const g of fGrid(w, pw, padL, 0)){
+    if (!g.maj) continue;
+    ctx.fillStyle = C.textDim;
+    ctx.fillText(g.f >= 1000 ? (g.f/1000)+'k' : String(g.f), g.px, padT+ph+6);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '600 10.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textHi;
+  ctx.fillText('SPECTRUM  ·  IN vs OUT', 13, 15);
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right';
+  ctx.fillText('dB  ·  1024-pt Hann FFT  ·  ' + (SR/1000).toFixed(2) + ' kHz', w - 13, 15);
+
+  /* tone level labels along the top */
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const t of TONES){
+    const x = padL + fx(t.f)*pw;
+    if (x > padL + 16 && x < padL + pw - 16){
+      ctx.font = '9px ui-monospace,Menlo,monospace'; ctx.fillStyle = 'rgba(255,178,84,.85)';
+      ctx.fillText(t.f >= 1000 ? (t.f/1000)+'k' : t.f, x, padT + 3);
+    }
+  }
+  /* legend */
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  let lx = 13, ly = h - 10;
+  lx += tag(ctx, lx, ly, S.bypass ? '● IN  ==  OUT (BYPASS)' : '● IN  dry', C.inp) + 6;
+  lx += tag(ctx, lx, ly, S.bypass ? '→ unity' : '● OUT  filtered', S.bypass ? C.hot : C.out) + 6;
+  tag(ctx, lx, ly, '▨ removed energy', C.hot);
+  ctx.textAlign = 'left';
+  return { padL, padR, pw };
+}
+
+/* ---------------- waterfall panel ---------------------------------------- */
+function drawWaterfall(cv){
+  const { ctx, w, h } = fit(cv);
+  if (!wfData || wfCols !== Math.max(40, Math.floor(w))){ initWaterfall(Math.max(40, Math.floor(w))); }
+  ctx.clearRect(0, 0, w, h); panelBg(ctx, w, h);
+  const padL = 46, padR = 15, padT = 30, padB = 8;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(padL, padT, pw, ph); ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  /* wfData is a ring whose newest column is index wfHead. Source order must run
+     oldest -> newest, i.e. (wfHead+1 .. wfCols-1) then (0 .. wfHead). */
+  const tail = wfCols - wfHead - 1;
+  const split = Math.floor(pw * (tail / wfCols));
+  ctx.drawImage(wfCv, wfHead + 1, 0, tail, NBAND, padL, padT, split, ph);
+  ctx.drawImage(wfCv, 0, 0, wfHead + 1, NBAND, padL + split, padT, pw - split, ph);
+  ctx.restore();
+
+  /* frame + axis */
+  ctx.strokeStyle = C.axis; ctx.lineWidth = 1;
+  ctx.strokeRect(padL+.5, padT+.5, pw, ph);
+  for (let b = 0; b <= NBAND; b += 8){
+    const y = Math.round(padT + ph - b/NBAND*ph) + .5;
+    ctx.strokeStyle = 'rgba(122,160,214,.16)';
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+pw, y); ctx.stroke();
+  }
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText('0', padL - 7, padT + ph);
+  ctx.fillText('-48', padL - 7, padT + ph/2);
+  ctx.fillText('-96', padL - 7, padT);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '600 10.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textHi;
+  ctx.fillText('SPECTROGRAM  ·  ' + (S.bypass ? 'DRY' : 'FILTERED') + ' OUTPUT', 13, 15);
+  ctx.font = '9.5px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.fillText('20 Hz → 20 kHz  ·  scrolling, one column per 1024 samples', w - 13, 15);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const g of fGrid(w, pw, padL, 0)){
+    if (!g.maj) continue;
+    ctx.fillStyle = C.textDim;
+    ctx.fillText(g.f >= 1000 ? (g.f/1000)+'k' : String(g.f), g.px, padT + ph + 1);
+  }
+  ctx.textAlign = 'left';
+}
+
+/* ---------------- scope -------------------------------------------------- */
+function drawScope(cv){
+  const { ctx, w, h } = fit(cv);
+  ctx.clearRect(0, 0, w, h); panelBg(ctx, w, h);
+  const M = 512, padY = 8, padX = 4;
+  const y0 = h/2, amp = (h/2 - padY)*0.94;
+  ctx.strokeStyle = C.gridMaj; ctx.lineWidth = 1;
+  const ym = Math.round(y0)+.5;
+  ctx.beginPath(); ctx.moveTo(padX, ym); ctx.lineTo(w - padX, ym); ctx.stroke();
+  for (let i = 1; i <= 3; i++){
+    const y = Math.round(y0 - amp*2*i/7)+.5;
+    ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.moveTo(padX, y); ctx.lineTo(w-padX, y); ctx.stroke();
+  }
+  function trace(buf, col, wid, alpha){
+    ctx.beginPath();
+    for (let i = 0; i < M; i++){
+      const idx = (ringPos + i) % NFFT;
+      const x = padX + i/(M-1)*(w - 2*padX);
+      const y = y0 - clamp(buf[idx], -1.4, 1.4)*amp;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = wid; ctx.globalAlpha = alpha;
+    ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+  trace(inRing, C.inp, 1.1, .8);
+  trace(outRing, S.bypass ? C.inp : C.out, 1.9, 1);
+  ctx.font = '9px ui-monospace,Menlo,monospace'; ctx.fillStyle = C.textDim;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+  ctx.fillText('±1.0', w - 4, 3);
+}
+
+/* ---------------- UI wiring ---------------------------------------------- */
+const el = id => document.getElementById(id);
+const typeWrap = el('types');
+const btns = TYPES.map((t, i) => {
+  const b = document.createElement('button');
+  b.textContent = t.name; b.dataset.id = t.id;
+  b.onclick = () => { S.type = t.id; S.slider0 = Math.log(S.f0)/L2P; syncUI(); rebuild(); resetState(S.filt); };
+  typeWrap.appendChild(b);
+  return b;
+});
+
+const s0 = el('s0'), s1 = el('s1'), s2 = el('s2');
+s0.oninput = () => { S.slider0 = +s0.value; S.f0 = Math.exp(+s0.value * L2P); rebuild(); };
+s1.oninput = () => { S.slider1 = +s1.value; if (S.type === 'comb') rebuild(); else { S.q = 0.2*Math.pow(70, +s1.value/1000); rebuild(); } };
+s2.oninput = () => { S.slider2 = +s2.value; S.gain = -24 + 48*(+s2.value/1000); rebuild(); };
+el('b-bypass').onclick = () => { S.bypass = !S.bypass; syncUI(); };
+el('b-sweep').onclick  = () => { S.sweep = !S.sweep; syncUI(); };
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= '6'){ S.type = TYPES[+k-1].id; S.slider0 = Math.log(S.f0)/L2P; syncUI(); rebuild(); resetState(S.filt); }
+  else if (k === 'b'){ S.bypass = !S.bypass; syncUI(); }
+  else if (k === 's'){ S.sweep = !S.sweep; syncUI(); }
+});
+
+function syncUI(){
+  btns.forEach(b => b.classList.toggle('on', b.dataset.id === S.type));
+  const isComb = S.type === 'comb', isPeak = S.type === 'peaking';
+  el('l0').textContent = isComb ? 'COMB SPACING' : 'CUTOFF f₀';
+  el('v0').textContent = isComb ? (S.filt && S.filt.kind === 'comb' ? fmtHz(S.filt.tooth) : fmtHz(S.f0)) : fmtHz(S.f0);
+  el('l1').textContent = isComb ? 'FEEDBACK g' : 'RESONANCE Q';
+  el('v1').textContent = isComb ? combGain().toFixed(3) : S.q.toFixed(2);
+  el('v2').textContent = (S.gain > 0 ? '+' : '') + S.gain.toFixed(1) + ' dB';
+  el('h2').classList.toggle('dim', !isPeak);
+  s2.disabled = !isPeak;
+  s0.value = Math.round(clamp(S.slider0, 0, 1000));
+  s1.value = Math.round(clamp(S.slider1, 0, 1000));
+  s2.value = Math.round(clamp(S.slider2, 0, 1000));
+  el('b-bypass').classList.toggle('on', S.bypass);
+  el('b-sweep').classList.toggle('on', S.sweep);
+  renderReadouts();
+}
+
+function renderReadouts(){
+  const c = S.filt;
+  el('tones').innerHTML = TONES.map(tt => {
+    const g = S.bypass ? 1 : respAt(c, tt.f).mag;
+    const gainDb = 20*Math.log10(Math.max(1e-6, g));
+    const lvl = 20*Math.log10(tt.a) + gainDb;
+    const w1 = tt.f >= 1000 ? (tt.f/1000)+' kHz' : tt.f+' Hz';
+    return '<tr><td>' + w1 + '</td><td>' + (gainDb>0?'+':'') + gainDb.toFixed(1) + ' dB</td><td>' + lvl.toFixed(0) + ' dBFS</td></tr>';
+  }).join('');
+
+  el('coef').textContent = c.kind === 'comb'
+    ? 'H(z) = 1 / (1 − g·z⁻ᴰ)\ng   = ' + c.g.toFixed(3)
+      + '\nD   = ' + c.D + ' samples'
+      + '\ntooth = ' + fmtHz(c.tooth)
+    : 'b₀ ' + c.b0.toFixed(6).padStart(11)
+      + '\nb₁ ' + c.b1.toFixed(6).padStart(11)
+      + '\nb₂ ' + c.b2.toFixed(6).padStart(11)
+      + '\na₁ ' + c.a1.toFixed(6).padStart(11)
+      + '\na₂ ' + c.a2.toFixed(6).padStart(11);
+}
+
+/* click/drag on a plot retunes f0 */
+function bindPlot(cv, getPad){
+  let dragging = false;
+  const set = ev => {
+    const r = cv.getBoundingClientRect();
+    const { padL, padR, pw } = getPad();
+    const u = (ev.clientX - r.left - padL) / (pw || 1);
+    S.f0 = clamp(xf(u), 20, 18000);
+    S.slider0 = Math.log(S.f0)/L2P;
+    rebuild(); syncUI();
+  };
+  cv.style.cursor = 'ew-resize';
+  cv.addEventListener('pointerdown', e => { dragging = true; cv.setPointerCapture(e.pointerId); set(e); });
+  cv.addEventListener('pointermove', e => { if (dragging) set(e); });
+  cv.addEventListener('pointerup',   e => { dragging = false; });
+  cv.addEventListener('pointercancel', () => { dragging = false; });
+}
+
+/* ---------------- main loop (fixed delta) -------------------------------- */
+const cResp = el('c-resp'), cSpec = el('c-spec'), cWF = el('c-wf'), cScope = el('c-scope');
+let respGeom = { padL: 46, pw: 100 }, specGeom = { padL: 46, pw: 100 };
+let lastT = 0;
+
+function frame(ts){
+  requestAnimationFrame(frame);
+  if (!lastT) lastT = ts;
+  const dt = ts - lastT; lastT = ts;
+  if (dt > 0 && dt < 4000){ S.ms = S.ms ? S.ms*0.7 + dt*0.3 : dt; S.fps = 1000/S.ms; }
+
+  if (S.sweep){
+    S.sweepPhase += NFFT / (SR * 7.5);          // one log sweep per 7.5 s of audio
+    const u = 0.5 - 0.5*Math.cos(2*Math.PI*S.sweepPhase);
+    S.f0 = 220*Math.pow(18000/220, u);
+    S.slider0 = Math.log(S.f0)/L2P;
+    s0.value = Math.round(clamp(S.slider0, 0, 1000));
+    rebuild();
+  }
+
+  stepAudio();
+  pushWaterfall();
+
+  const rg = drawResponse(cResp);   respGeom = rg;
+  const sg = drawSpectrum(cSpec);   specGeom = { padL: sg.padL, pw: sg.pw };
+  drawWaterfall(cWF);
+  drawScope(cScope);
+
+  if (S.frame % 4 === 0){ renderReadouts(); el('v0').textContent = S.type === 'comb'
+      ? (S.filt.kind === 'comb' ? fmtHz(S.filt.tooth) : fmtHz(S.f0)) : fmtHz(S.f0); }
+  el('hstat').innerHTML =
+    'FPS <span>' + S.fps.toFixed(1) + '</span> · ' + S.ms.toFixed(1) + ' ms<br>' +
+    'STEP <span>1024</span> smp · FRAME <span>' + S.frame + '</span><br>' +
+    'TOTAL <span>' + (S.samples/SR).toFixed(2) + ' s</span> @ ' + (SR/1000).toFixed(2) + ' kHz';
+
+  S.frame++;
+  if (S.frame === 1){
+    window.__ready = true;
+  }
+}
+
+/* ---------------- boot --------------------------------------------------- */
+S.slider0 = Math.log(S.f0)/L2P;
+S.slider1 = Math.log(S.q/0.2)/Math.log(70) * 1000;
+S.slider2 = (S.gain + 24)/48 * 1000;
+rebuild();
+syncUI();
+
+/* warm-up: settle the filter state, fill the waterfall and paint every panel
+   once, so __ready is raised on a fully populated screen. */
+(function warmup(){
+  const w0 = el('c-wf').parentElement.getBoundingClientRect().width;
+  initWaterfall(Math.max(40, Math.floor(w0)));
+  stepAudio();                                  // settle filter state
+  for (let i = 0; i < wfCols; i++){ stepAudio(); pushWaterfall(); }
+  respDirty = true;
+  respGeom = drawResponse(cResp);
+  specGeom = drawSpectrum(cSpec);
+  drawWaterfall(cWF);
+  drawScope(cScope);
+})();
+
+bindPlot(cResp, () => respGeom);
+bindPlot(cSpec, () => specGeom);
+
+window.__probe = {
+  get frames(){ return S.frame; },
+  get samples(){ return S.samples; },
+  get fps(){ return +S.fps.toFixed(2); },
+  get type(){ return S.type; },
+  get f0(){ return Math.round(S.f0); },
+  get q(){ return +S.q.toFixed(3); },
+  get gain(){ return +S.gain.toFixed(2); },
+  get bypass(){ return S.bypass; },
+  get sweep(){ return S.sweep; },
+  get bins(){ return NFFT; },
+  get sr(){ return SR; },
+  get waterfallCols(){ return wfCols; },
+  get peakDb(){ return +Math.max(...respPts).toFixed(2); },
+  get cutDb(){ return +Math.min(...respPts).toFixed(2); },
+};
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

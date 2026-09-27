@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boolean SDF 2D — animated constructive solid geometry</title>
+<style>
+  :root{
+    --acc:#5ce1ff;   /* shape A */
+    --acc2:#ff6bd0;  /* shape B */
+    --acc3:#ffcf5c;  /* shape C */
+    --ink:#d6ecf7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#04060c;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+  #cv.drag{cursor:grabbing}
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .panel{position:absolute;left:18px;top:18px;width:292px;padding:13px 15px 12px;border-radius:13px;
+    background:linear-gradient(168deg,rgba(11,20,36,.93),rgba(4,9,17,.87));
+    border:1px solid rgba(92,225,255,.20);
+    box-shadow:0 22px 60px rgba(0,0,0,.62), inset 0 1px 0 rgba(255,255,255,.07);
+    backdrop-filter:blur(10px) saturate(1.25);-webkit-backdrop-filter:blur(10px) saturate(1.25);pointer-events:auto}
+  .ttl{font-size:15px;letter-spacing:.24em;font-weight:700;color:#eaf9ff;text-shadow:0 0 18px rgba(92,225,255,.45)}
+  .sub{margin-top:5px;font-size:8.3px;letter-spacing:.13em;color:rgba(158,204,224,.78);text-transform:uppercase;line-height:1.6}
+  .hr{height:1px;margin:10px 0 8px;background:linear-gradient(90deg,rgba(92,225,255,.52),rgba(92,225,255,0))}
+  .row{display:grid;grid-template-columns:58px 1fr 44px;align-items:center;gap:8px;height:21px}
+  .row label{font-size:8.2px;letter-spacing:.08em;color:rgba(178,214,232,.92);text-transform:uppercase}
+  .row output{font-size:9.2px;text-align:right;color:#eaf9ff;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;outline:none;
+    background:linear-gradient(90deg,var(--acc) var(--p,50%),rgba(255,255,255,.11) var(--p,50%));cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;
+    background:#f2fdff;box-shadow:0 0 0 3px rgba(92,225,255,.20),0 0 12px rgba(92,225,255,.75);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:10px;height:10px;border:none;border-radius:50%;background:#f2fdff;
+    box-shadow:0 0 0 3px rgba(92,225,255,.20),0 0 12px rgba(92,225,255,.75)}
+  .segs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:3px}
+  .segs button{font:inherit;font-size:8px;letter-spacing:.04em;padding:5px 0;border-radius:6px;cursor:pointer;
+    color:rgba(198,232,246,.84);background:rgba(92,225,255,.055);border:1px solid rgba(92,225,255,.2);
+    transition:background .12s,color .12s,border-color .12s;white-space:nowrap;overflow:hidden;text-align:center}
+  .segs button:hover{background:rgba(92,225,255,.2);color:#fff}
+  .segs button.on{background:rgba(92,225,255,.24);color:#fff;border-color:rgba(92,225,255,.62);
+    box-shadow:0 0 12px rgba(92,225,255,.24), inset 0 1px 0 rgba(255,255,255,.14)}
+  .group{margin-top:7px}
+  .glabel{font-size:8.1px;letter-spacing:.12em;color:rgba(150,196,216,.8);text-transform:uppercase;margin-bottom:2px}
+  .sw{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px}
+  .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:10px}
+  .btns button{font:inherit;font-size:8.1px;letter-spacing:.06em;padding:6px 0;border-radius:7px;cursor:pointer;
+    color:rgba(200,235,248,.9);background:rgba(92,225,255,.07);border:1px solid rgba(92,225,255,.24);
+    text-transform:uppercase;transition:background .12s,color .12s}
+  .btns button:hover{background:rgba(92,225,255,.22);color:#fff}
+  .btns button.on{background:rgba(255,107,208,.2);border-color:rgba(255,107,208,.55);color:#fff}
+  .tele{position:absolute;right:18px;top:18px;min-width:208px;padding:11px 13px;border-radius:11px;
+    background:linear-gradient(168deg,rgba(11,20,36,.9),rgba(4,9,17,.82));
+    border:1px solid rgba(92,225,255,.16);box-shadow:0 16px 44px rgba(0,0,0,.55);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:10.1px;line-height:1.72;
+    letter-spacing:.05em;color:rgba(198,228,242,.96);white-space:pre;font-variant-numeric:tabular-nums}
+  .tele b{color:var(--acc);font-weight:600}
+  .tele i{color:var(--acc2);font-style:normal}
+  .tele s{color:var(--acc3);text-decoration:none}
+  .tech{position:absolute;right:18px;bottom:18px;max-width:334px;padding:10px 13px;border-radius:11px;text-align:right;
+    background:linear-gradient(168deg,rgba(11,20,36,.84),rgba(4,9,17,.76));
+    border:1px solid rgba(92,225,255,.14);box-shadow:0 16px 44px rgba(0,0,0,.5);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:9.1px;line-height:1.8;
+    letter-spacing:.04em;color:rgba(180,214,230,.9)}
+  .tech em{color:var(--acc2);font-style:normal}
+  .tech s{color:var(--acc3);text-decoration:none}
+  .hint{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-size:8.5px;letter-spacing:.14em;
+    color:rgba(160,200,220,.6);text-transform:uppercase;text-shadow:0 1px 8px rgba(0,0,0,.85);text-align:center;
+    transition:opacity 1.2s}
+  .hint.fade{opacity:0}
+  .fatal{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+    font-size:12px;letter-spacing:.12em;color:#ff8fc4;text-transform:uppercase;padding:0 40px;line-height:2}
+  @media (max-width:1010px){.tech{display:none}}
+  @media (max-height:600px){.tech{display:none}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="ui">
+
+  <div class="panel">
+    <div class="ttl">BOOLEAN SDF</div>
+    <div class="sub">animated 2D constructive solid geometry</div>
+    <div class="hr"></div>
+
+    <div class="group">
+      <div class="glabel">Operation</div>
+      <div class="segs" id="opSegs"></div>
+    </div>
+    <div class="group">
+      <div class="glabel"><span class="sw" style="background:#5ce1ff"></span>Shape A</div>
+      <div class="segs" id="aSegs"></div>
+    </div>
+    <div class="group">
+      <div class="glabel"><span class="sw" style="background:#ff6bd0"></span>Shape B</div>
+      <div class="segs" id="bSegs"></div>
+    </div>
+    <div class="group">
+      <div class="glabel"><span class="sw" style="background:#ffcf5c"></span>Shape C <span style="opacity:.6">· satellite / 3rd operand</span></div>
+      <div class="segs" id="cSegs"></div>
+    </div>
+
+    <div class="hr"></div>
+    <div class="row"><label>blend k</label><input type="range" id="kSlider"  min="0"  max="120" step="1" value="30"><output  id="kOut">0.30</output></div>
+    <div class="row"><label>speed</label><input type="range" id="spSlider"  min="0"  max="250" step="1" value="100"><output id="spOut">1.00×</output></div>
+    <div class="row"><label>A spin</label><input type="range" id="saSlider" min="0" max="250" step="1" value="100"><output id="saOut">1.00×</output></div>
+    <div class="row"><label>B orbit</label><input type="range" id="sbSlider" min="0" max="250" step="1" value="100"><output id="sbOut">1.00×</output></div>
+    <div class="row"><label>C orbit</label><input type="range" id="scSlider" min="0" max="250" step="1" value="86"><output  id="scOut">0.86×</output></div>
+    <div class="row"><label>outline</label><input type="range" id="olSlider" min="0" max="60"  step="1" value="18"><output  id="olOut">1.8 px</output></div>
+    <div class="row"><label>scale</label><input type="range" id="snSlider" min="45" max="150" step="1" value="100"><output id="snOut">1.00×</output></div>
+
+    <div class="btns">
+      <button id="pauseBtn" class="on">Pause</button>
+      <button id="stepBtn">Step +1</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <div class="tele" id="tele">booting…</div>
+  <div class="tech" id="tech">
+    <em>smin(a,b,k)</em> = <s>clamp(½+½(b−a)/k)</s> → polynomial blend<br>
+    exact booleans from <em>min</em> / <em>max</em> on signed distance<br>
+    shading from the 2D <em>∇d</em> gradient · field 640×400, bilinear upsample
+  </div>
+  <div class="hint" id="hint">drag the field to nudge the shapes</div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   BOOLEAN SDF 2D — animated 2-D constructive solid geometry.
+
+   Two or three signed-distance primitives are combined with exact
+   boolean operators (min / max / negation) and the polynomial
+   smooth-min (quilez smin). The result is an implicit curve whose
+   topology changes under the operators alone: a difference whose hole
+   opens and shuts, an intersection that pinches into two lobes, an xor
+   that fuses and splits. Lighting comes from the analytic gradient of
+   the composed field, so the outline is exact rather than traced.
+
+   Pipeline
+     pass 1 -> RGBA16F field target at 640x400, channels (d, dA, dB, dC)
+     pass 2 -> canvas: bilinear fetch of the field, distance-based AA
+   The field is a true signed distance, so bilinear reconstruction across
+   an edge is linear, the zero crossing lands on the true isoline, and
+   the 2x upsample behaves like free supersampling.
+
+   Time advances by one fixed DT per drawn frame — never by wall clock —
+   so the sequence of scenes is identical on fast and slow machines.
+   ===================================================================== */
+
+/* ---------------- deterministic RNG (mulberry32) ---------------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t) ^ t) | 0;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(0x5EED28);       // fixed seed => identical cold loads
+
+/* ---------------- fixed timestep ---------------- */
+const DT       = 1 / 60;                 // fixed delta, never wall clock
+const WARMUP   = 20;                     // steps run before __ready
+const FW = 640, FH = 400;                // field target, software-raster budget
+const ENC = 0.75;                        // fallback RGBA8 encode range
+
+/* ---------------- catalogues ---------------- */
+const SHAPES = ['circle','box','rbox','hex','star','crescent','slot','spiral'];
+const SNAME  = { circle:'CIRCLE', box:'BOX', rbox:'R-BOX', hex:'HEX', star:'STAR',
+                 crescent:'CRESC', slot:'SLOT', spiral:'SPIRAL' };
+
+/* Eight operators. `c:1` -> shape C is an independent satellite orbiting
+   outside the boolean; `c:0` -> shape C is a third operand. */
+const OPS = [
+  { id:'union',  name:'UNION',   desc:'A ∪ B',             c:1 },
+  { id:'inter',  name:'INTER',   desc:'A ∩ B',             c:1 },
+  { id:'diff',   name:'DIFF',    desc:'A − B',             c:1 },
+  { id:'sdiff',  name:'DIFF S',  desc:'A − B  ·  smax(k)', c:1 },
+  { id:'cut2',   name:'CUT 2',   desc:'A − (B ∪ C)',       c:0 },
+  { id:'int3',   name:'INT 3',   desc:'A ∩ B ∩ C',         c:0 },
+  { id:'unionS', name:'UNION S', desc:'(A ∪ B ∪ C) · smin',c:0 },
+  { id:'xor',    name:'XOR',     desc:'A ⊕ B',             c:1 },
+];
+
+/* ---------------- initial phase state (a composed opening frame) ---- */
+/* One loop = 12 s of fixed steps. phB is tuned so the hole is fully open
+   for a good third of the beat: the topology change is the subject, so it
+   has to be watchable, not a flutter. */
+const T0   = { home: 0.62, phB: 1.05, phC: 2.60, spin: 0.00 };
+const RATE = { home: 0.52, phB: 0.55, phC: 0.55, spin: 0.34 };
+
+/* ---------------- state ---------------- */
+const S = {
+  op: 2, a: 3, b: 0, c: 7,               // diff · hex · circle · spiral
+  k: 0.30, speed: 1.0, spinA: 1.0, spinB: 1.0, spinC: 0.86,
+  outline: 1.8, scale: 1.0,
+  paused: false, hold: false, t: 0, frames: 0, stepOnce: false,
+  cIn: false,                            // shape C is a 3rd operand, not a satellite
+  nudge: [0, 0], dragging: false, dragPx: [0, 0], dragBase: [0, 0],
+};
+const M = { home: T0.home, phB: T0.phB, phC: T0.phC, spin: T0.spin };
+
+const PAL = {
+  a: [0.361, 0.882, 1.000],   // #5ce1ff
+  b: [1.000, 0.420, 0.816],   // #ff6bd0
+  c: [0.988, 0.808, 0.357],   // #ffcf5c
+};
+
+/* =====================================================================
+   CPU mirror of the SDF primitives and the operators.
+   The topology scanner below uses it to report components and holes;
+   it sits adjacent to the GLSL so the two stay in step.
+   ===================================================================== */
+function rot(x, y, a){ const c = Math.cos(a), s = Math.sin(a); return [c*x - s*y, s*x + c*y]; }
+function smin(a, b, k){
+  if (k <= 1e-5) return Math.min(a, b);
+  const h = Math.max(0, Math.min(1, 0.5 + 0.5*(b - a)/k));
+  return b + (a - b)*h - k*h*(1 - h);
+}
+function smax(a, b, k){
+  if (k <= 1e-5) return Math.max(a, b);
+  const h = Math.max(0, Math.min(1, 0.5 - 0.5*(b - a)/k));
+  return b + (a - b)*h + k*h*(1 - h);
+}
+function sdBox(x, y, bx, by){
+  const dx = Math.abs(x) - bx, dy = Math.abs(y) - by;
+  return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0);
+}
+function sdHex(x, y, r){
+  const kx = -0.866025404, ky = 0.5, kz = 0.577350269;
+  x = Math.abs(x); y = Math.abs(y);
+  const dp = kx*x + ky*y;
+  if (dp < 0){ x -= 2*dp*kx; y -= 2*dp*ky; }
+  const cx = x - Math.max(-kz*r, Math.min(kz*r, x)), cy = y - r;
+  return Math.hypot(cx, cy) * (cy < 0.0 ? -1.0 : 1.0);
+}
+function sdStar5(px, py, r, rf){
+  const k1x = 0.809016994, k1y = -0.587785252, k2x = -k1x, k2y = k1y;
+  let x = Math.abs(px), y = py;
+  const d1 = k1x*x + k1y*y; if (d1 > 0){ x -= 2*d1*k1x; y -= 2*d1*k1y; }
+  const d2 = k2x*x + k2y*y; if (d2 > 0){ x -= 2*d2*k2x; y -= 2*d2*k2y; }
+  x = Math.abs(x); y -= r;
+  const bax = rf*(-k1y), bay = rf*k1x - 1.0;
+  const h = Math.max(0, Math.min(r, (x*bax + y*bay)/(bax*bax + bay*bay)));
+  const ex = x - bax*h, ey = y - bay*h;
+  return Math.hypot(ex, ey) * (ey*bax - ex*bay < 0.0 ? -1.0 : 1.0);
+}
+function sdCrescent(x, y, r){
+  // recentred on its own area centroid, so the shape is filled at (0,0)
+  const u = x - 0.478*r;
+  return Math.max(Math.hypot(u, y) - r, -(Math.hypot(u - r*0.46, y) - r*0.90));
+}
+function sdSpiral(px, py, r, spin){
+  // two interleaved arms, four beads each, smooth-unioned
+  const a = 0.15*Math.sin(spin*0.62);
+  let d = 1e9;
+  for (let arm = 0; arm < 2; arm++){
+    for (let i = 0; i < 4; i++){
+      const ang = arm*Math.PI + a + i*(Math.PI/2)/3;
+      const rad = r*(0.22 + 0.20*i);
+      d = smin(d, Math.hypot(px - rad*Math.cos(ang), py - rad*Math.sin(ang)) - r*0.23, r*0.24);
+    }
+  }
+  return d;
+}
+function shapeDist(id, px, py, r, spin){
+  switch (id){
+    case 0: return Math.hypot(px, py) - r;
+    case 1: return sdBox(px, py, r*0.80, r*0.80);
+    case 2: return sdBox(px, py, r*0.78 - r*0.30, r*0.78 - r*0.30) - r*0.30;
+    case 3: return sdHex(px, py, r*0.95);
+    case 4: return sdStar5(px, py, r, r*0.44);
+    case 5: return sdCrescent(px, py, r);
+    case 6: { const q = rot(px, py, 0.62); return sdBox(q[0], q[1], r*1.02 - r*0.30, r*0.42 - r*0.30) - r*0.30; }
+    default: return sdSpiral(px, py, r, spin);
+  }
+}
+function opDist(op, dA, dB, dC, k){
+  switch (op){
+    case 0: return Math.min(dA, dB);
+    case 1: return Math.max(dA, dB);
+    case 2: return Math.max(dA, -dB);
+    case 3: return smax(dA, -dB, k);
+    case 4: return Math.max(dA, -Math.min(dB, dC));
+    case 5: return Math.max(Math.max(dA, dB), dC);
+    case 6: return smin(smin(dA, dB, k), dC, k);
+    default: return Math.max(Math.min(dA, dB), -Math.max(dA, dB));
+  }
+}
+
+/* ---------------- body placement (closed form of the phase state) ---- */
+/* The beat that opens and closes the hole: one slow envelope `w` drives both
+   the cutter's orbit radius and its size. At w=0 the cutter is a speck at the
+   centre (the hole is gone); at w=1 it is a fat disc set well inside the
+   boundary (the hole is fully enclosed). Both the position and the radius
+   are pure functions of w, so the transition cannot be jittery. */
+function bodies(){
+  const w  = 0.5 - 0.5*Math.cos(M.phB);            // 0 -> 1 -> 0 over one beat
+  const hx = 0.105 + 0.055*Math.sin(M.home) + S.nudge[0];
+  const hy = 0.075 + 0.040*Math.sin(2*M.home + 0.7) + S.nudge[1];
+  const rA = 0.500*S.scale;
+  /* One beat walks the cutter through three topology phases. It starts as a
+     fat disc at the centre (a fully enclosed hole), travels outward, and
+     shrinks as it goes, so it opens the boundary into a notch and then leaves
+     the body entirely. Both radius and size move together, which is what makes
+     the transition read as one continuous event rather than two unrelated ones. */
+  const d  = (0.03 + 0.67*w)*S.scale;              // orbit radius: centre -> outside
+  const rc = (0.200 - 0.155*w)*S.scale;            // disc radius: fat -> a speck
+  const th = M.phB + 0.6;
+  /* Shape C plays one of two roles. As a satellite it orbits on its own path
+     well outside A. As a third operand it rides the cutter's orbit with a
+     small angular lag, so B ∩ C is a lens that travels with the cut instead of
+     two discs that happen to miss each other. */
+  const Rs = (S.cIn ? d : (0.66*S.scale));
+  const thC = S.cIn ? (th + 0.62) : (-M.phC + 2.1);
+  const rC = (S.cIn ? 0.160 : 0.115)*S.scale;
+  return {
+    a: { x: hx, y: hy, r: rA, spin: M.spin, w: w },
+    b: { x: hx + d*Math.cos(th), y: hy + 0.72*d*Math.sin(th), r: rc, spin: M.phB*0.55, w: w },
+    c: { x: hx + Rs*Math.cos(thC), y: hy + 0.72*Rs*Math.sin(thC), r: rC, spin: -M.phC*1.10, w: w },
+  };
+}
+
+/* ---------------- topology scan: solid components + holes -------------- */
+const TN = 132, TM = 82, TCELL = TN*TM;
+const tmask  = new Uint8Array(TCELL);
+const tlab   = new Int32Array(TCELL);
+const tstack = new Int32Array(TCELL);
+let topo = { comps: 1, holes: 0, fill: 0 };
+
+function scanTopology(){
+  const B = bodies();
+  // sample a window comfortably larger than anything the choreography can
+  // reach (cutter orbit 0.70 + r), so no operand falls off the scan
+  const hw = 1.75, hh = 1.20;
+  let area = 0;
+  for (let j = 0; j < TM; j++){
+    const y = (j/(TM-1) - 0.5)*2*hh, row = j*TN;
+    for (let i = 0; i < TN; i++){
+      const x = (i/(TN-1) - 0.5)*2*hw;
+      const pa = rot(x - B.a.x, y - B.a.y, B.a.spin);
+      const pb = rot(x - B.b.x, y - B.b.y, B.b.spin);
+      const pc = rot(x - B.c.x, y - B.c.y, B.c.spin);
+      const dA = shapeDist(S.a, pa[0], pa[1], B.a.r, M.spin);
+      const dB = shapeDist(S.b, pb[0], pb[1], B.b.r, M.spin);
+      const dC = shapeDist(S.c, pc[0], pc[1], B.c.r, M.spin);
+      const m = opDist(S.op, dA, dB, dC, S.k) < 0 ? 1 : 0;
+      tmask[row + i] = m; area += m;
+    }
+  }
+  tlab.fill(0);
+  let comps = 0, sp = 0;
+  for (let s = 0; s < TCELL; s++){
+    if (!tmask[s] || tlab[s]) continue;
+    comps++; tstack[sp++] = s; tlab[s] = comps;
+    while (sp > 0){
+      const p = tstack[--sp], i = p % TN, j = (p/TN)|0;
+      if (i > 0    && tmask[p-1]  && !tlab[p-1])  { tlab[p-1]  = comps; tstack[sp++] = p-1;  }
+      if (i < TN-1 && tmask[p+1]  && !tlab[p+1])  { tlab[p+1]  = comps; tstack[sp++] = p+1;  }
+      if (j > 0    && tmask[p-TN] && !tlab[p-TN]) { tlab[p-TN] = comps; tstack[sp++] = p-TN; }
+      if (j < TM-1 && tmask[p+TN] && !tlab[p+TN]) { tlab[p+TN] = comps; tstack[sp++] = p+TN; }
+    }
+  }
+  // background components that never reach the border are enclosed holes
+  const bl = new Uint8Array(TCELL), out = new Uint8Array(TCELL);
+  sp = 0;
+  const seed = (p) => { if (!tmask[p] && !bl[p]){ bl[p] = 1; tstack[sp++] = p; } };
+  for (let i = 0; i < TN; i++){ seed(i); seed((TM-1)*TN + i); }
+  for (let j = 0; j < TM; j++){ seed(j*TN); seed(j*TN + TN-1); }
+  while (sp > 0){
+    const p = tstack[--sp]; out[p] = 1;
+    const i = p % TN, j = (p/TN)|0;
+    if (i > 0)    seed(p-1);
+    if (i < TN-1) seed(p+1);
+    if (j > 0)    seed(p-TN);
+    if (j < TM-1) seed(p+TN);
+  }
+  let holes = 0;
+  for (let p = 0; p < TCELL; p++) if (!tmask[p] && !out[p]) holes++;
+  topo = { comps: comps, holes: holes, fill: area / TCELL };
+}
+
+/* =====================================================================
+   GLSL
+   ===================================================================== */
+const VERT = `#version 300 es
+void main(){
+  vec2 v = vec2(float((gl_VertexID & 1) << 2) - 1.0, float((gl_VertexID >> 1) << 2) - 1.0);
+  gl_Position = vec4(v, 0.0, 1.0);
+}`;
+
+/* ---- pass 1: the boolean distance field ---- */
+const FRAG_FIELD = `#version 300 es
+precision highp float;
+out vec4 outField;
+
+uniform vec2  uHalf;      // world half-extents (x = aspect, y = 1)
+uniform float uHome, uPhB, uPhC, uSpin, uK, uScale, uCIn;
+uniform vec2  uNudge;
+uniform int   uOp, uShapeA, uShapeB, uShapeC;
+uniform float uEncMul, uEncAdd;   // RGBA8 fallback encode, identity when float
+
+vec2 rot(vec2 p, float a){ float c = cos(a), s = sin(a); return vec2(c*p.x - s*p.y, s*p.x + c*p.y); }
+
+float smin(float a, float b, float k){
+  if (k <= 1e-5) return min(a, b);
+  float h = clamp(0.5 + 0.5*(b - a)/k, 0.0, 1.0);
+  return mix(b, a, h) - k*h*(1.0 - h);
+}
+float smax(float a, float b, float k){
+  if (k <= 1e-5) return max(a, b);
+  float h = clamp(0.5 - 0.5*(b - a)/k, 0.0, 1.0);
+  return mix(b, a, h) + k*h*(1.0 - h);
+}
+
+float sdBox(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+
+float sdHex(vec2 p, float r){
+  const vec3 k = vec3(-0.866025404, 0.5, 0.577350269);
+  p = abs(p);
+  p -= 2.0*min(dot(k.xy, p), 0.0)*k.xy;
+  p -= vec2(clamp(p.x, -k.z*r, k.z*r), r);
+  return length(p) * (p.y < 0.0 ? -1.0 : 1.0);
+}
+
+float sdStar5(vec2 p, float r, float rf){
+  const vec2 k1 = vec2(0.809016994, -0.587785252);
+  const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x);
+  p -= 2.0*max(dot(k1, p), 0.0)*k1;
+  p -= 2.0*max(dot(k2, p), 0.0)*k2;
+  p.x = abs(p.x);
+  p.y -= r;
+  vec2 ba = rf*vec2(-k1.y, k1.x) - vec2(0.0, 1.0);
+  float h = clamp(dot(p, ba)/dot(ba, ba), 0.0, r);
+  vec2 e = p - ba*h;
+  return length(e) * (e.y*ba.x - e.x*ba.y < 0.0 ? -1.0 : 1.0);
+}
+
+float sdCrescent(vec2 p, float r){
+  vec2 u = vec2(p.x - 0.478*r, p.y);      // recentred on the area centroid
+  return max(length(u) - r, -(length(u - vec2(r*0.46, 0.0)) - r*0.90));
+}
+
+float sdSpiral(vec2 p, float r, float spin){
+  float a = 0.15*sin(spin*0.62);
+  float d = 1e9;
+  for (int arm = 0; arm < 2; arm++){
+    for (int i = 0; i < 4; i++){
+      float fi = float(i);
+      float ang = float(arm)*3.14159265 + a + fi*0.52359878;
+      float rad = r*(0.22 + 0.20*fi);
+      d = smin(d, length(p - vec2(rad*cos(ang), rad*sin(ang))) - r*0.23, r*0.24);
+    }
+  }
+  return d;
+}
+
+float shapeDist(int id, vec2 p, float r, float spin){
+  if (id == 0) return length(p) - r;
+  if (id == 1) return sdBox(p, vec2(r*0.80));
+  if (id == 2) return sdBox(p, vec2(r*0.78 - r*0.30)) - r*0.30;
+  if (id == 3) return sdHex(p, r*0.95);
+  if (id == 4) return sdStar5(p, r, r*0.44);
+  if (id == 5) return sdCrescent(p, r);
+  if (id == 6){ vec2 q = rot(p, 0.62); return sdBox(q, vec2(r*1.02 - r*0.30, r*0.42 - r*0.30)) - r*0.30; }
+  return sdSpiral(p, r, spin);
+}
+
+float opDist(int op, float dA, float dB, float dC, float k){
+  if (op == 0) return min(dA, dB);
+  if (op == 1) return max(dA, dB);
+  if (op == 2) return max(dA, -dB);
+  if (op == 3) return smax(dA, -dB, k);
+  if (op == 4) return max(dA, -min(dB, dC));
+  if (op == 5) return max(max(dA, dB), dC);
+  if (op == 6) return smin(smin(dA, dB, k), dC, k);
+  return max(min(dA, dB), -max(dA, dB));
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / vec2(${FW}.0, ${FH}.0);
+  vec2 p  = (uv - 0.5) * 2.0 * uHalf;
+
+  float w  = 0.5 - 0.5*cos(uPhB);                 // the beat: hole -> notch -> gone
+  float hx = 0.105 + 0.055*sin(uHome) + uNudge.x;
+  float hy = 0.075 + 0.040*sin(2.0*uHome + 0.7) + uNudge.y;
+  float rA = 0.500*uScale;
+
+  float th = uPhB + 0.6;
+  float d  = (0.03 + 0.67*w)*uScale;
+  vec2  bp = vec2(hx + d*cos(th), hy + 0.72*d*sin(th));
+  float br = (0.200 - 0.155*w)*uScale;
+
+  // C as a third operand rides the cutter's orbit with a small angular lag
+  float Rs  = (uCIn > 0.5 ? d : 0.66*uScale);
+  float thC = (uCIn > 0.5 ? th + 0.62 : (-uPhC + 2.1));
+  vec2  cp  = vec2(hx + Rs*cos(thC), hy + 0.72*Rs*sin(thC));
+  float cr  = (uCIn > 0.5 ? 0.160 : 0.115)*uScale;
+
+  float dA = shapeDist(uShapeA, rot(p - vec2(hx, hy), uSpin),       rA, uSpin);
+  float dB = shapeDist(uShapeB, rot(p - bp,            uPhB*1.25),  br,  uSpin);
+  float dC = shapeDist(uShapeC, rot(p - cp,           -uPhC*1.10),  cr,  uSpin);
+
+  vec4 f = vec4(opDist(uOp, dA, dB, dC, uK), dA, dB, dC);
+  outField = f*uEncMul + uEncAdd;
+}`;
+
+/* ---- pass 2: shade the field ---- */
+const FRAG_SHADE = `#version 300 es
+precision highp float;
+out vec4 outColor;
+
+uniform sampler2D uField;
+uniform vec2  uRes, uFRes, uHalf;
+uniform vec3  uColA, uColB, uColC;
+uniform float uOutline, uCdraw, uSeed, uEncMul, uEncAdd;
+
+const vec3 L    = vec3(-0.4264, 0.5889, 0.6852);
+const vec3 V    = vec3(0.0, 0.0, 1.0);
+const vec3 BG0  = vec3(0.010, 0.017, 0.036);
+const vec3 BG1  = vec3(0.030, 0.055, 0.104);
+
+float hash21(vec2 p){
+  p = fract(p*vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x*p.y);
+}
+
+vec4 fld(vec2 uv){ return (texture(uField, uv) - uEncAdd)*(1.0/max(uEncMul, 1e-6)); }
+
+vec2 gradOf(vec2 uv, vec2 tx, int ch){
+  return vec2(fld(uv + vec2(tx.x, 0.0))[ch] - fld(uv - vec2(tx.x, 0.0))[ch],
+              fld(uv + vec2(0.0, tx.y))[ch] - fld(uv - vec2(0.0, tx.y))[ch]);
+}
+
+/* A broad flat face with a tight rim bevel. The bevel band has to stay narrow:
+   a wide one reads as a second, inset shape rather than as the edge of this one. */
+vec3 litBody(float d, vec2 n, vec3 base, float depth, float bevel, float spec){
+  float q  = clamp(-d/depth, 0.0, 1.0);
+  float sl = 2.0*sqrt(max(q*(1.0 - q), 0.0));
+  vec3  N  = normalize(vec3(n*sl*bevel, 1.0));
+  float dif = max(dot(N, L), 0.0);
+  float spc = pow(max(dot(reflect(-L, N), V), 0.0), 64.0);
+  float rim = pow(1.0 - N.z, 2.6);
+  vec3 c = base*(0.62 + 0.16*q + 0.42*dif) + vec3(1.0, 0.97, 0.93)*spc*spec;
+  c += mix(base, vec3(1.0), 0.70)*rim*0.70;
+  return c;
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 p  = (uv - 0.5) * 2.0 * uHalf;
+  vec2 tx = 1.0 / uFRes;
+  float tw = 2.0*uHalf.x/uFRes.x;              // world size of one field texel
+
+  vec4  F  = fld(uv);
+  float d = F.x, dA = F.y, dB = F.z, dC = F.w;
+
+  /* ---------------------------- background ---------------------------- */
+  vec2  q0 = p - vec2(0.02, 0.02);
+  float gr = clamp(0.5 + 0.5*(-q0.y*0.50 + q0.x*0.20), 0.0, 1.0);
+  vec3  col = mix(BG0, BG1, gr);
+
+  float pool = exp(-dot(q0*vec2(0.80, 0.95), q0*vec2(0.80, 0.95))*1.10);
+  col += (uColA*0.075 + uColB*0.040)*pool;
+
+  // iso-contours of the live boolean field — the operator made visible
+  float ring = abs(fract(d*7.0) - 0.5);
+  col += uColA*smoothstep(0.42, 0.5, ring)*0.034*smoothstep(0.0, 0.22, d);
+
+  // measurement grid
+  vec2 gq = p*2.6;
+  vec2 gg = abs(fract(gq) - 0.5)/max(fwidth(gq), vec2(1e-5));
+  col += vec3(0.075, 0.125, 0.195)*(1.0 - min(min(gg.x, gg.y), 1.0))*0.60;
+
+  // sparse deterministic field nodes
+  vec2  cell = p*31.0;
+  float hs   = hash21(floor(cell) + uSeed);
+  float spk  = step(0.9950, hs)*exp(-dot(fract(cell) - 0.5, fract(cell) - 0.5)*220.0);
+  col += vec3(0.50, 0.72, 1.0)*spk*(0.30 + 0.70*hs)*0.60;
+
+  col *= 1.0 - 0.82*smoothstep(0.05, 0.68, dot(uv - 0.5, uv - 0.5));
+
+  /* --------------------- the boolean result ------------------------- */
+  float aw = max(fwidth(d), 1e-5);
+  float solid = 1.0 - smoothstep(-aw, aw, d);
+
+  vec2 n = gradOf(uv, tx, 0);
+  float nl = length(n);
+  n = nl > 1e-9 ? n/nl : vec2(0.0, 1.0);
+
+  float ia = 1.0 - smoothstep(-aw, aw, dA);
+  float ib = 1.0 - smoothstep(-aw, aw, dB);
+  float ic = 1.0 - smoothstep(-aw, aw, dC);
+  vec3  src = (uColA*ia + uColB*ib + uColC*ic)/max(ia + ib + ic, 1e-3);
+
+  // cavity: inside an operand yet excluded by the operator — a real hole
+  float cav = (1.0 - solid)*min(1.0, ia*(ib + ic));
+  col = mix(col, col*0.13 + uColB*0.060, cav*0.94);
+
+  col = mix(col, litBody(d, n, src, 0.038, 0.62, 0.75), solid);
+
+  /* --------------------- satellite shape C -------------------------- */
+  if (uCdraw > 0.5){
+    float awc = max(fwidth(dC), 1e-5);
+    float solc = 1.0 - smoothstep(-awc, awc, dC);
+    if (solc > 0.002){
+      vec2 nc = gradOf(uv, tx, 3);
+      float nlc = length(nc);
+      nc = nlc > 1e-9 ? nc/nlc : vec2(0.0, 1.0);
+      col = mix(col, litBody(dC, nc, uColC, 0.030, 0.60, 0.60), solc*0.95);
+    }
+  }
+
+  /* --------------------------- outline ------------------------------ */
+  float ow   = uOutline*tw;
+  float band = 1.0 - smoothstep(ow*0.50, ow*1.45 + aw, abs(d));
+  col = mix(col, mix(vec3(0.90, 0.97, 1.0), src, 0.32)*1.22, band*0.93);
+
+  /* ------------------- ghost contours of operands ------------------- */
+  float lw = tw*0.90;
+  col += uColA*(1.0 - smoothstep(lw*0.5, lw*1.6 + aw, abs(dA)))*0.17*(1.0 - solid*0.60);
+  col += uColB*(1.0 - smoothstep(lw*0.5, lw*1.6 + aw, abs(dB)))*0.17*(1.0 - solid*0.60);
+  if (uCdraw < 0.5)
+    col += uColC*(1.0 - smoothstep(lw*0.5, lw*1.6 + aw, abs(dC)))*0.17*(1.0 - solid*0.60);
+
+  /* ---------------------------- glow -------------------------------- */
+  col += src*exp(-max(d, 0.0)/0.028)*0.44;
+  col += mix(src, vec3(1.0), 0.5)*exp(-max(d, 0.0)/0.0065)*0.22;
+
+  /* ------------------------- tone + dither -------------------------- */
+  col = 1.0 - exp(-max(col, 0.0)*1.44);
+  col += (hash21(gl_FragCoord.xy + uSeed) - 0.5)*(1.7/255.0);
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+/* =====================================================================
+   WebGL
+   ===================================================================== */
+const cv = document.getElementById('cv');
+const gl = cv.getContext('webgl2', { antialias:false, alpha:false, depth:false,
+                                     stencil:false, powerPreference:'high-performance' });
+
+window.__probe = { ok:false };
+window.__ready = false;
+
+function fatal(msg){
+  const d = document.createElement('div');
+  d.className = 'fatal'; d.textContent = msg;
+  document.body.appendChild(d);
+  window.__probe = { ok:false, fatal:msg };
+  window.__ready = true;                     // let the harness stop waiting
+  throw new Error(msg);
+}
+if (!gl) fatal('webgl2 unavailable — this demo needs a WebGL2 context');
+
+function compile(type, src){
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src); gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(sh);
+    fatal('shader compile failed: ' + String(log).slice(0, 160));
+  }
+  return sh;
+}
+function program(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    fatal('link failed: ' + String(gl.getProgramInfoLog(p)).slice(0, 160));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++){ const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
+  return { p: p, u: u };
+}
+
+const progField = program(FRAG_FIELD);
+const progShade = program(FRAG_SHADE);
+const vao = gl.createVertexArray();          // no attributes; ids drive the strip
+
+/* EXT_color_buffer_float must be requested before any float FBO exists */
+const extCBF = gl.getExtension('EXT_color_buffer_float');
+const extLin = gl.getExtension('OES_texture_float_linear');
+
+/* --- field render target: RGBA16F when complete, else RGBA8 encoded --- */
+let fbo = null, ftex = null, fFmt = null, encMul = 1, encAdd = 0, fmtName = 'none';
+
+function makeTarget(ifmt, type, fmt, packed){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, FW, FH, 0, fmt, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (ok){ fbo = f; ftex = t; fFmt = ifmt; fmtName = packed ? 'RGBA8' : 'RGBA16F';
+           encMul = packed ? 1/ENC : 1; encAdd = packed ? 0.5 : 0; return true; }
+  gl.deleteTexture(t); gl.deleteFramebuffer(f);
+  return false;
+}
+if (extCBF){
+  if (!makeTarget(gl.RGBA16F, gl.HALF_FLOAT, gl.RGBA, false)) fmtName = 'none';
+} else fmtName = 'none';
+if (!fbo && !makeTarget(gl.RGBA8, gl.UNSIGNED_BYTE, gl.RGBA, true)) fatal('no usable field target');
+
+function delTarget(){
+  if (fbo) gl.deleteFramebuffer(fbo);
+  if (ftex) gl.deleteTexture(ftex);
+  fbo = ftex = null;
+}
+function rebuildTarget(){
+  delTarget();
+  if (extCBF) makeTarget(gl.RGBA16F, gl.HALF_FLOAT, gl.RGBA, false);
+  if (!fbo) makeTarget(gl.RGBA8, gl.UNSIGNED_BYTE, gl.RGBA, true);
+}
+
+let viewW = 0, viewH = 0, dpr = 1;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const w = Math.max(320, Math.round(window.innerWidth  * dpr));
+  const h = Math.max(240, Math.round(window.innerHeight * dpr));
+  if (w === viewW && h === viewH) return;
+  viewW = w; viewH = h;
+  cv.width = w; cv.height = h;
+}
+window.addEventListener('resize', () => { resize(); rebuildTarget(); });
+
+/* =====================================================================
+   Controls
+   ===================================================================== */
+const el = (id) => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+
+function buildSegs(host, items, current, onPick){
+  host.innerHTML = '';
+  const btns = [];
+  items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.textContent = it; b.title = it;
+    b.onclick = () => { onPick(i); paint(); };
+    host.appendChild(b); btns.push(b);
+  });
+  function paint(){
+    btns.forEach((b, i) => b.classList.toggle('on', i === current()));
+  }
+  paint();
+  return paint;
+}
+const paintOps   = buildSegs(el('opSegs'), OPS.map(o => o.name),  () => S.op,    i => {
+  S.op = i;
+  // the three-operand operators need shape C inside the boolean; the
+  // two-operand ones send C out to orbit as an independent satellite
+  S.cIn = !OPS[i].c;
+  scanTopology();
+});
+const paintAs    = buildSegs(el('aSegs'),  SHAPES.map(s => SNAME[s]), () => S.a,  i => { S.a = i;  S.touched = true; scanTopology(); });
+const paintBs    = buildSegs(el('bSegs'),  SHAPES.map(s => SNAME[s]), () => S.b,  i => { S.b = i;  S.touched = true; scanTopology(); });
+const paintCs    = buildSegs(el('cSegs'),  SHAPES.map(s => SNAME[s]), () => S.c,  i => { S.c = i;  S.touched = true; scanTopology(); });
+function repaintAll(){ paintOps(); paintAs(); paintBs(); paintCs(); }
+
+function slider(id, out, key, fmt, scale){
+  const s = el(id), o = el(out);
+  const sync = () => {
+    const v = +s.value;
+    s.style.setProperty('--p', ((v - s.min)/(s.max - s.min)*100).toFixed(1) + '%');
+    o.textContent = fmt(v*scale);
+  };
+  s.addEventListener('input', () => { S[key] = +s.value*scale; sync(); });
+  sync();
+  return s;
+}
+const slK  = slider('kSlider',  'kOut',  'k',       v => v.toFixed(2), 0.01);
+const slSp = slider('spSlider', 'spOut', 'speed',   v => v.toFixed(2) + '×', 0.01);
+const slSa = slider('saSlider', 'saOut', 'spinA',   v => v.toFixed(2) + '×', 0.01);
+const slSb = slider('sbSlider', 'sbOut', 'spinB',   v => v.toFixed(2) + '×', 0.01);
+const slSc = slider('scSlider', 'scOut', 'spinC',   v => v.toFixed(2) + '×', 0.01);
+const slOl = slider('olSlider', 'olOut', 'outline', v => v.toFixed(1) + ' px', 0.1);
+const slSn = slider('snSlider', 'snOut', 'scale',   v => v.toFixed(2) + '×', 0.01);
+
+const pauseBtn = el('pauseBtn');
+pauseBtn.onclick = () => {
+  S.paused = !S.paused;
+  // a paused frame is worth keeping: redrawing an identical image only burns
+  // fill rate on a software rasteriser, and it makes a paused shot unstable
+  S.hold = S.paused;
+  pauseBtn.textContent = S.paused ? 'Resume' : 'Pause';
+  pauseBtn.classList.toggle('on', S.paused);
+  if (!S.paused) requestAnimationFrame(frame);   // resume the loop
+};
+el('stepBtn').onclick = () => {
+  if (!S.paused) pauseBtn.click();       // pause first, then step
+  S.stepOnce = true; advance(); S.stepOnce = false; render();
+  updateTele();
+};
+el('resetBtn').onclick = () => {
+  S.op = 2; S.a = 3; S.b = 0; S.c = 7; S.cIn = false;
+  S.k = 0.30; S.speed = 1.0; S.spinA = 1.0; S.spinB = 1.0; S.spinC = 0.86;
+  S.outline = 1.8; S.scale = 1.0; S.nudge = [0, 0];
+  M.home = T0.home; M.phB = T0.phB; M.phC = T0.phC; M.spin = T0.spin; S.t = 0;
+  if (S.hold){ S.hold = false; S.paused = false; pauseBtn.textContent = 'Pause'; pauseBtn.classList.remove('on'); requestAnimationFrame(frame); }
+  slK.value = 30; slSp.value = 100; slSa.value = 100; slSb.value = 100;
+  slSc.value = 86; slOl.value = 18; slSn.value = 100;
+  [slK, slSp, slSa, slSb, slSc, slOl, slSn].forEach(s => s.dispatchEvent(new Event('input')));
+  repaintAll(); scanTopology();
+};
+
+/* drag the field to nudge the whole arrangement */
+cv.addEventListener('pointerdown', (e) => {
+  S.dragging = true; S.dragPx = [e.clientX, e.clientY]; S.dragBase = S.nudge.slice();
+  cv.classList.add('drag'); cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', (e) => {
+  if (!S.dragging) return;
+  const dx = (e.clientX - S.dragPx[0]) / (window.innerWidth  * 0.5);
+  const dy = -(e.clientY - S.dragPx[1]) / (window.innerHeight * 0.5);
+  S.nudge = [S.dragBase[0] + dx, S.dragBase[1] + dy];
+});
+const endDrag = () => { S.dragging = false; cv.classList.remove('drag'); };
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space'){ e.preventDefault(); pauseBtn.click(); }
+  else if (e.code === 'KeyR') el('resetBtn').click();
+});
+
+/* =====================================================================
+   Simulation + render
+   ===================================================================== */
+const tele = el('tele'), hint = el('hint');
+let fpsEMA = 0, topoTick = 0, ditherSeed = 0;
+
+function advance(){
+  const s = S.speed;
+  M.home += RATE.home*DT*s;
+  M.phB  += RATE.phB *DT*s*S.spinB;
+  M.phC  += RATE.phC *DT*s*S.spinC;
+  M.spin += RATE.spin*DT*s*S.spinA;
+  S.t    += DT*s;
+}
+
+function render(){
+  resize();
+  const aspect = viewW/viewH;
+  const ZOOM = 1.34;              // world half-height in view units
+  const half = [aspect/ZOOM, 1.0/ZOOM];
+
+  /* ---- pass 1: field -> RGBA16F ---- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, FW, FH);
+  gl.useProgram(progField.p);
+  const uf = progField.u;
+  gl.uniform2f(uf.uHalf, half[0], half[1]);
+  gl.uniform1f(uf.uHome, M.home);
+  gl.uniform1f(uf.uPhB,  M.phB);
+  gl.uniform1f(uf.uPhC,  M.phC);
+  gl.uniform1f(uf.uSpin, M.spin);
+  gl.uniform1f(uf.uK,    S.k);
+  gl.uniform1f(uf.uScale, S.scale);
+  gl.uniform1f(uf.uCIn, S.cIn ? 1 : 0);
+  gl.uniform2f(uf.uNudge, S.nudge[0], S.nudge[1]);
+  gl.uniform1i(uf.uOp, S.op);
+  gl.uniform1i(uf.uShapeA, S.a);
+  gl.uniform1i(uf.uShapeB, S.b);
+  gl.uniform1i(uf.uShapeC, S.c);
+  gl.uniform1f(uf.uEncMul, encMul);
+  gl.uniform1f(uf.uEncAdd, encAdd);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  /* ---- pass 2: shade -> canvas ---- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, viewW, viewH);
+  gl.useProgram(progShade.p);
+  const us = progShade.u;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, ftex);
+  gl.uniform1i(us.uField, 0);
+  gl.uniform2f(us.uRes,  viewW, viewH);
+  gl.uniform2f(us.uFRes, FW, FH);
+  gl.uniform2f(us.uHalf, half[0], half[1]);
+  gl.uniform3f(us.uColA, PAL.a[0], PAL.a[1], PAL.a[2]);
+  gl.uniform3f(us.uColB, PAL.b[0], PAL.b[1], PAL.b[2]);
+  gl.uniform3f(us.uColC, PAL.c[0], PAL.c[1], PAL.c[2]);
+  gl.uniform1f(us.uOutline, S.outline);
+  gl.uniform1f(us.uCdraw, OPS[S.op].c ? 1 : 0);
+  gl.uniform1f(us.uSeed, ditherSeed);
+  gl.uniform1f(us.uEncMul, encMul);
+  gl.uniform1f(us.uEncAdd, encAdd);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+}
+
+function updateTele(){
+  const B = bodies();
+  const op = OPS[S.op];
+  const B0 = B.b, RA = B.a.r;
+  const dC = Math.hypot(B0.x - B.a.x, B0.y - B.a.y);
+  const inR = RA*Math.sqrt(3)/2;
+  const state = (dC + B0.r < inR - 0.015) ? '<b>HOLE OPEN</b>'
+              : (dC - B0.r > RA + 0.015) ? '<i>NO CUT</i>' : '<s>NOTCH</s>';
+  tele.innerHTML =
+    'op     <b>' + op.desc + '</b>\n' +
+    'A      ' + SNAME[SHAPES[S.a]] + '   r ' + B.a.r.toFixed(3) + '\n' +
+    'B      ' + SNAME[SHAPES[S.b]] + '   r ' + B.b.r.toFixed(3) + '\n' +
+    'C      ' + SNAME[SHAPES[S.c]] + (op.c ? '  <i>satellite</i>' : '  <s>operand</s>') + '\n' +
+    'k      ' + S.k.toFixed(2) + '   speed ' + S.speed.toFixed(2) + '×\n' +
+    'field  ' + FW + '×' + FH + ' ' + fmtName + '\n' +
+    'topo   <b>' + topo.comps + '</b> comp · <i>' + topo.holes + '</i> hole  ' + state + '\n' +
+    'fill   ' + (topo.fill*100).toFixed(1) + '%   t ' + S.t.toFixed(2) + 's\n' +
+    'fps    ' + (fpsEMA > 0 ? fpsEMA.toFixed(1) : '—') + (S.paused ? '  <i>paused</i>' : '');
+}
+
+/* the field pass is the expensive part; dither seed is drawn once, up front */
+ditherSeed = rand()*137.0;
+const glErr = gl.getError();
+
+let last = 0;
+function frame(now){
+  if (!S.hold) requestAnimationFrame(frame);
+  if (!last) last = now;
+  const wall = Math.min((now - last)/1000, 0.5);
+  last = now;
+  if (wall > 0) fpsEMA = fpsEMA ? fpsEMA*0.82 + (1/wall)*0.18 : 1/wall;
+
+  if (!S.paused || S.stepOnce) advance();
+  if (S.stepOnce) S.stepOnce = false;
+  render();
+  S.frames++;
+
+  if (S.frames % 3 === 0) scanTopology();
+  if (S.frames % 3 === 0 || S.frames === 1) updateTele();
+
+  if (S.frames > 30 && !hintDone){ hint.classList.add('fade'); hintDone = true; }
+
+  window.__probe = {
+    ok: true, ready: window.__ready, frames: S.frames, t: +S.t.toFixed(3),
+    dt: DT, fps: +fpsEMA.toFixed(2),
+    op: OPS[S.op].id, opDesc: OPS[S.op].desc,
+    shapeA: SHAPES[S.a], shapeB: SHAPES[S.b], shapeC: SHAPES[S.c],
+    cIsSatellite: !!OPS[S.op].c, k: S.k, speed: S.speed, scale: S.scale,
+    outline: S.outline, paused: S.paused,
+    components: topo.comps, holes: topo.holes, fill: +topo.fill.toFixed(4),
+    fieldRes: FW + 'x' + FH, fieldFormat: fmtName, canvas: viewW + 'x' + viewH,
+    glError: glErr,
+  };
+}
+let hintDone = false;
+
+/* A small inspection handle: the contract's __probe reports live stats, and
+   this exposes the same state for scripted verification (sweeping time and
+   operators and reading the topology scanner). Read-only in practice. */
+window.__app = { S, M, RATE, OPS, SHAPES, bodies, advance, render, scanTopology, seek,
+                 get hold(){ return S.hold; }, set hold(v){ S.hold = !!v; },
+                 get topo(){ return topo; }, setOp: (i) => { S.op = i; S.cIn = !OPS[i].c; repaintAll(); scanTopology(); } };
+
+/* ---- warm-up: advance the simulation so the very first drawn frame is a
+        composed scene, never a mid-formation one. Deterministic by
+        construction: a fixed step count from a fixed initial phase. ---- */
+resize();
+rebuildTarget();
+function seek(steps){
+  M.home = T0.home; M.phB = T0.phB; M.phC = T0.phC; M.spin = T0.spin; S.t = 0;
+  S.nudge[0] = 0; S.nudge[1] = 0;
+  for (let i = 0; i < steps; i++) advance();
+  scanTopology();
+}
+seek(WARMUP);
+render();                       // the first drawn frame is the seeded scene
+window.__ready = true;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fourier Drawing — 2-D DFT term reduction</title>
+<style>
+  :root{
+    --bg0:#04050b; --bg1:#0a0c18;
+    --ink:#c9d5ec; --dim:#6b7a9c; --faint:#414d68;
+    --warm:#ffb347; --cyan:#5ad9ea; --mag:#ff5fa8; --gold:#ffd98a;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    background: radial-gradient(130% 95% at 28% 12%, #141a30 0%, #0a0d1c 44%, #04050b 100%);
+    color:var(--ink); font-family:var(--mono); overflow:hidden;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  #app{
+    height:100vh; display:grid;
+    grid-template-rows:auto minmax(0,1fr) auto;
+    padding:14px 18px 14px; gap:12px;
+  }
+
+  /* ---------- header ---------- */
+  #hdr{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
+  .brand h1{
+    font-size:22px; letter-spacing:.30em; font-weight:600;
+    background:linear-gradient(92deg,var(--gold) 0%,var(--warm) 38%,var(--mag) 72%,var(--cyan) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .brand .tech{ margin-top:5px; font-size:11.5px; letter-spacing:.055em; color:var(--dim); }
+  .brand .tech b{ color:var(--cyan); font-weight:500; }
+  .brand .tech i{ color:var(--warm); font-style:normal; }
+
+  .stats{ display:flex; gap:0; align-items:flex-end; }
+  .st{ padding:0 13px; border-left:1px solid rgba(90,217,234,.16); text-align:right; }
+  .st:first-child{ border-left:none; }
+  .st .k{ font-size:9.5px; letter-spacing:.17em; color:var(--faint); }
+  .st .v{ font-size:16px; letter-spacing:.02em; color:var(--gold); font-variant-numeric:tabular-nums; }
+  .st .v small{ font-size:10px; color:var(--dim); letter-spacing:.06em; }
+
+  /* ---------- main ---------- */
+  #main{ display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:14px; min-height:0; }
+  #stagewrap{
+    position:relative; min-width:0; min-height:0;
+    display:flex; align-items:center; justify-content:center;
+    border:1px solid rgba(90,217,234,.13); border-radius:3px;
+    background:linear-gradient(160deg, rgba(20,26,48,.55), rgba(6,8,16,.55));
+    box-shadow: inset 0 0 60px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.35);
+    overflow:hidden;
+  }
+  #stage{ width:100%; height:auto; display:block; }
+
+  /* ---------- rail ---------- */
+  #rail{ display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:10px; min-height:0; }
+  .card{
+    border:1px solid rgba(90,217,234,.13); border-radius:3px;
+    background:linear-gradient(160deg, rgba(20,26,48,.5), rgba(6,8,16,.5));
+    padding:9px 11px 10px; min-height:0; display:flex; flex-direction:column;
+  }
+  .card-h{
+    font-size:9.5px; letter-spacing:.19em; color:var(--faint);
+    border-bottom:1px solid rgba(90,217,234,.13); padding-bottom:5px; margin-bottom:7px;
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .card-h span{ color:var(--cyan); letter-spacing:.1em; }
+  .big{ font-size:26px; color:var(--gold); letter-spacing:.01em; font-variant-numeric:tabular-nums; line-height:1.05; }
+  .big em{ font-size:12px; font-style:normal; color:var(--dim); letter-spacing:.1em; }
+  .kv{ display:flex; justify-content:space-between; font-size:11px; color:var(--dim); margin-top:4px; }
+  .kv b{ color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums; }
+
+  table.led{ width:100%; border-collapse:collapse; font-size:10.5px; font-variant-numeric:tabular-nums; }
+  table.led th{ color:var(--faint); font-weight:400; letter-spacing:.12em; font-size:9px; text-align:right; padding-bottom:3px; }
+  table.led th:first-child{ text-align:left; }
+  table.led td{ padding:1.5px 0; text-align:right; color:var(--ink); }
+  table.led td:first-child{ text-align:left; color:var(--warm); }
+  table.led tr.off td{ color:var(--faint); }
+  table.led td .bar{ display:inline-block; height:4px; vertical-align:middle; background:linear-gradient(90deg,var(--mag),var(--warm)); }
+
+  .steps{ font-size:10.5px; color:var(--dim); line-height:1.62; }
+  .steps div{ display:flex; gap:7px; }
+  .steps i{ color:var(--cyan); font-style:normal; flex:0 0 15px; }
+  .steps em{ color:var(--gold); font-style:normal; }
+
+  /* ---------- controls ---------- */
+  #ctl{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    border:1px solid rgba(90,217,234,.13); border-radius:3px;
+    background:linear-gradient(160deg, rgba(20,26,48,.5), rgba(6,8,16,.5));
+    padding:9px 14px;
+  }
+  .grp{ display:flex; align-items:center; gap:8px; }
+  .grp>label{ font-size:9.5px; letter-spacing:.19em; color:var(--faint); }
+  .sep{ width:1px; align-self:stretch; background:rgba(90,217,234,.14); }
+
+  button{
+    font-family:var(--mono); font-size:11px; letter-spacing:.12em; color:var(--dim);
+    background:rgba(90,217,234,.05); border:1px solid rgba(90,217,234,.2);
+    border-radius:2px; padding:5px 10px; cursor:pointer; transition:all .12s;
+  }
+  button:hover{ color:var(--ink); border-color:rgba(90,217,234,.45); background:rgba(90,217,234,.11); }
+  button.on{
+    color:#0a0c18; background:linear-gradient(180deg,var(--gold),var(--warm));
+    border-color:var(--warm); font-weight:600;
+  }
+  button.warm.on{ background:linear-gradient(180deg,var(--mag),#d63d84); border-color:var(--mag); color:#14040c; }
+  #sweep{ min-width:104px; }
+
+  #terms{ -webkit-appearance:none; appearance:none; width:300px; height:16px; background:transparent; cursor:pointer; }
+  #terms::-webkit-slider-runnable-track{
+    height:4px; border-radius:2px;
+    background:linear-gradient(90deg,var(--mag) 0%,var(--warm) var(--p,40%),rgba(90,217,234,.16) var(--p,40%));
+  }
+  #terms::-webkit-slider-thumb{
+    -webkit-appearance:none; width:11px; height:15px; margin-top:-5.5px; border-radius:2px;
+    background:var(--gold); box-shadow:0 0 8px rgba(255,217,138,.65); border:none;
+  }
+  #terms::-moz-range-track{ height:4px; border-radius:2px; background:rgba(90,217,234,.16); }
+  #terms::-moz-range-thumb{ width:11px; height:15px; border-radius:2px; background:var(--gold); border:none; }
+  #termVal{ font-size:12px; color:var(--gold); min-width:132px; font-variant-numeric:tabular-nums; }
+
+  #src{
+    position:absolute; left:-4096px; top:0; width:128px; height:128px;
+    pointer-events:none; opacity:0;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="hdr">
+    <div class="brand">
+      <h1>FOURIER DRAWING</h1>
+      <p class="tech">2-D <b>discrete Fourier transform</b> of a 128&times;128 raster &middot; separable O(N<sup>3</sup>) forward + inverse &middot;
+        conjugate pairs <i>(&plusmn;k)</i> kept, the rest zeroed &middot; a few hundred terms still read as the original</p>
+    </div>
+    <div class="stats">
+      <div class="st"><div class="k">PAIRS KEPT</div><div class="v" id="sPairs">—</div></div>
+      <div class="st"><div class="k">OF 8194</div><div class="v" id="sFrac">—<small> %</small></div></div>
+      <div class="st"><div class="k">ENERGY</div><div class="v" id="sEnergy">—<small> %</small></div></div>
+      <div class="st"><div class="k">PSNR</div><div class="v" id="sPsnr">—<small> dB</small></div></div>
+      <div class="st"><div class="k">MAX k</div><div class="v" id="sK">—</div></div>
+      <div class="st"><div class="k">FRAME</div><div class="v" id="sMs">—<small> ms</small></div></div>
+    </div>
+  </header>
+
+  <main id="main">
+    <div id="stagewrap">
+      <canvas id="stage" width="640" height="400"></canvas>
+    </div>
+
+    <aside id="rail">
+      <div class="card">
+        <div class="card-h">RETAINED SPECTRUM <span id="rMode">LARGEST |C|</span></div>
+        <div class="big" id="rBig">—<em> pairs</em></div>
+        <div class="kv"><span>coefficients (incl. conjugates)</span><b id="rCof">—</b></div>
+        <div class="kv"><span>energy captured</span><b id="rE">—</b></div>
+        <div class="kv"><span>terms for 99% energy</span><b id="r99">—</b></div>
+      </div>
+      <div class="card">
+        <div class="card-h">DOMINANT TERMS <span>k = (kx,ky)</span></div>
+        <table class="led">
+          <thead><tr><th>#</th><th>k</th><th>|C|</th><th>share</th></tr></thead>
+          <tbody id="led"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-h">PIPELINE</div>
+        <div class="steps">
+          <div><i>1</i><span>rasterise target into a hidden 128&times;128 canvas, read luminance</span></div>
+          <div><i>2</i><span>forward DFT along rows, then columns &rarr; complex spectrum</span></div>
+          <div><i>3</i><span>order the 8194 conjugate pairs, keep the first N</span></div>
+          <div><i>4</i><span>inverse DFT of the masked spectrum</span></div>
+          <div><i>5</i><span>duotone map, ringing kept visible &rarr; <em>drawing</em></span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer id="ctl">
+    <div class="grp">
+      <label>TERMS</label>
+      <input id="terms" type="range" min="0" max="1000" value="800" step="1">
+      <div id="termVal">—</div>
+    </div>
+    <div class="sep"></div>
+    <div class="grp"><label>TARGET</label><span id="targets" style="display:flex;gap:6px"></span></div>
+    <div class="sep"></div>
+    <div class="grp">
+      <label>KEEP</label>
+      <button id="mMag" class="on">LARGEST |C|</button>
+      <button id="mFreq">LOW-FREQUENCY</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <label>PLATE</label>
+      <button id="vRecon" class="on">RECON</button>
+      <button id="vSplit">SPLIT</button>
+      <button id="vSrc">SOURCE</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button id="sweep" class="warm">▶ SWEEP</button>
+      <button id="reset">RESET</button>
+    </div>
+  </footer>
+</div>
+
+<canvas id="src" width="128" height="128"></canvas>
+
+<script>
+"use strict";
+(function(){
+
+/* ════════════════════════════════════════════════════════════════════════
+   0.  constants
+   ════════════════════════════════════════════════════════════════════════ */
+const G    = 128;            // raster / spectrum grid (N x N)
+const GH   = G >> 1;
+const GN   = G * G;          // 16384 complex bins
+const NP   = GH + 1 + (GH - 1) * G + GH + 1;   // 8194 conjugate-pair reps
+const DEFAULTS = 512;        // pairs shown after the opening reveal
+const TAU  = Math.PI * 2;
+
+const stage  = document.getElementById('stage');
+const sctx   = stage.getContext('2d', { alpha:false });
+const srcCv  = document.getElementById('src');
+const sctx2  = srcCv.getContext('2d', { alpha:false, willReadFrequently:true });
+
+/* offscreen buffers: the reconstruction is composited at its native 128x128
+   and then upscaled by the stage, so per-frame image work stays tiny. */
+function buf(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+const plateCv = buf(G,G),     plateCx = plateCv.getContext('2d');
+const specCv  = buf(G,G),     specCx  = specCv.getContext('2d');
+const srcCv2  = buf(G,G),     srcCx   = srcCv2.getContext('2d');
+plateCx.imageSmoothingEnabled = true;  plateCx.imageSmoothingQuality = 'high';
+srcCx.imageSmoothingEnabled   = true;  srcCx.imageSmoothingQuality   = 'high';
+const plateImg = plateCx.createImageData(G,G);
+const specImg  = specCx.createImageData(G,G);
+const srcImg   = srcCx.createImageData(G,G);
+
+/* ════════════════════════════════════════════════════════════════════════
+   1.  deterministic noise  (grain tile + any dither) — mulberry32
+   ════════════════════════════════════════════════════════════════════════ */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const grainCv = buf(160,160);
+{
+  const g = grainCv.getContext('2d'), img = g.createImageData(160,160), d = img.data;
+  const rnd = mulberry32(0x5EED30F1);
+  for (let i = 0; i < 160*160; i++){
+    const v = rnd()*255|0;
+    d[i*4] = d[i*4+1] = d[i*4+2] = v; d[i*4+3] = 255;
+  }
+  g.putImageData(img,0,0);
+}
+const grainPat = sctx.createPattern(grainCv,'repeat');
+
+/* ════════════════════════════════════════════════════════════════════════
+   2.  tone ramps (LUTs) — duotone ink, and a cool log-magnitude ramp
+   ════════════════════════════════════════════════════════════════════════ */
+function lut(stops, lo, hi){
+  const n = 1024, out = new Uint8Array(n*3);
+  for (let i = 0; i < n; i++){
+    const v = lo + (hi-lo) * i/(n-1);
+    let c = stops[stops.length-1].c;
+    for (let s = 0; s < stops.length-1; s++){
+      const A = stops[s], B = stops[s+1];
+      if (v >= A.v && v <= B.v){
+        let u = (v - A.v) / (B.v - A.v || 1);
+        u = u < 0 ? 0 : u > 1 ? 1 : u;
+        u = u*u*(3-2*u);                     // smoothstep between stops
+        c = [A.c[0]+(B.c[0]-A.c[0])*u, A.c[1]+(B.c[1]-A.c[1])*u, A.c[2]+(B.c[2]-A.c[2])*u];
+        break;
+      }
+    }
+    out[i*3] = c[0]|0; out[i*3+1] = c[1]|0; out[i*3+2] = c[2]|0;
+  }
+  const scale = (n-1) / (hi - lo);
+  // t() returns a BYTE offset into .out (3 per LUT entry). Call sites use it
+  // directly — multiplying by 3 again would overshoot the table.
+  return { t: (x) => { const k = (x - lo) * scale | 0; return (k < 0 ? 0 : k > n-1 ? n-1 : k) * 3; }, out, n };
+}
+const INK = lut([
+  { v:-0.62, c:[ 26, 74,122] },   // ringing undershoot reads as cool halo
+  { v:-0.34, c:[ 18, 44, 84] },
+  { v:-0.16, c:[ 12, 22, 46] },
+  { v:-0.02, c:[  9, 11, 24] },
+  { v: 0.13, c:[ 27, 33, 62] },
+  { v: 0.30, c:[ 74, 55, 96] },
+  { v: 0.46, c:[150, 78, 84] },
+  { v: 0.62, c:[235,133, 60] },
+  { v: 0.80, c:[255,199,112] },
+  { v: 0.98, c:[255,238,208] },
+  { v: 1.30, c:[255,255,250] },
+], -0.62, 1.30);
+
+const SPEC = lut([
+  { v:0.00, c:[  5,  7, 15] },
+  { v:0.20, c:[ 15, 26, 58] },
+  { v:0.42, c:[ 30, 88,140] },
+  { v:0.62, c:[ 54,158,196] },
+  { v:0.80, c:[124,214,232] },
+  { v:1.00, c:[226,246,255] },
+], 0, 1);
+
+/* ════════════════════════════════════════════════════════════════════════
+   3.  twiddle tables
+   ════════════════════════════════════════════════════════════════════════ */
+const TWC = new Float64Array(G*G), TWS = new Float64Array(G*G);
+for (let k = 0; k < G; k++)
+  for (let n = 0; n < G; n++){
+    const t = TAU * k * n / G;
+    TWC[k*G+n] = Math.cos(t); TWS[k*G+n] = Math.sin(t);
+  }
+
+/* ════════════════════════════════════════════════════════════════════════
+   4.  separable 2-D DFT / inverse DFT
+       row pass then column pass; O(N^3), 2 * G^3 complex mults.
+       Sign conventions: forward uses e^{-i.}, inverse uses e^{+i.} — with
+       the sign flipped on BOTH axes, which is what makes a conjugate
+       pair (k, -k) exactly real and lets one stored coefficient stand in
+       for two bins.
+   ════════════════════════════════════════════════════════════════════════ */
+const tA = new Float64Array(GN), tB = new Float64Array(GN);
+
+function dft2(a, re, im){
+  for (let y = 0; y < G; y++){
+    const b0 = y * G;
+    for (let kx = 0; kx < G; kx++){
+      let sr = 0, si = 0;
+      for (let x = 0; x < G; x++){
+        const v = a[b0+x], p = kx*G+x;
+        sr += v * TWC[p]; si -= v * TWS[p];
+      }
+      tA[b0+kx] = sr; tB[b0+kx] = si;
+    }
+  }
+  for (let kx = 0; kx < G; kx++){
+    for (let ky = 0; ky < G; ky++){
+      let sr = 0, si = 0;
+      for (let y = 0; y < G; y++){
+        const p = y*G+kx, q = ky*G+y, ar = tA[p], ai = tB[p];
+        sr += ar*TWC[q] + ai*TWS[q];
+        si += ai*TWC[q] - ar*TWS[q];
+      }
+      re[kx*G+ky] = sr; im[kx*G+ky] = si;
+    }
+  }
+}
+
+function idft2(re, im, out){
+  for (let kx = 0; kx < G; kx++){
+    for (let y = 0; y < G; y++){
+      let sr = 0, si = 0;
+      for (let ky = 0; ky < G; ky++){
+        const p = kx*G+ky, q = ky*G+y, ar = re[p], ai = im[p];
+        sr += ar*TWC[q] - ai*TWS[q];
+        si += ar*TWS[q] + ai*TWC[q];
+      }
+      tA[y*G+kx] = sr; tB[y*G+kx] = si;
+    }
+  }
+  for (let y = 0; y < G; y++){
+    const b0 = y * G;
+    for (let x = 0; x < G; x++){
+      let sr = 0, si = 0;
+      for (let kx = 0; kx < G; kx++){
+        const p = b0+kx, q = kx*G+x, ar = tA[p], ai = tB[p];
+        sr += ar*TWC[q] - ai*TWS[q];
+        si += ar*TWS[q] + ai*TWC[q];
+      }
+      out[b0+x] = sr / GN;
+    }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   5.  targets — drawn into the hidden 128x128 canvas, read back as luminance
+   ════════════════════════════════════════════════════════════════════════ */
+function stroke(g, pts, lw){
+  g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.stroke();
+}
+function arc(g, cx, cy, r, a0, a1, lw){
+  g.lineWidth = lw; g.lineCap = 'round';
+  g.beginPath(); g.arc(cx, cy, r, a0, a1); g.stroke();
+}
+function bez(g, p0,p1,p2,p3, lw){
+  g.lineWidth = lw; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(p0[0], p0[1]);
+  g.bezierCurveTo(p1[0],p1[1], p2[0],p2[1], p3[0],p3[1]);
+  g.stroke();
+}
+
+const TARGETS = [
+  { key:'A', label:'A', draw(g){
+      const m = 19, b = G - 19, t = 25, s = G - 2*m;
+      stroke(g, [[m,b],[G/2,t]], 14);
+      stroke(g, [[G/2,t],[G-m,b]], 14);
+      stroke(g, [[m + s*0.205, b - (b-t)*0.45], [G-m - s*0.205, b - (b-t)*0.45]], 11.5);
+    } },
+  { key:'omega', label:'Ω', draw(g){
+      const cx = G/2, cy = 72, r = 41;
+      arc(g, cx, cy, r, Math.PI, 0, 14);
+      stroke(g, [[cx-r, cy], [cx-r, G-25]], 14);
+      stroke(g, [[cx+r, cy], [cx+r, G-25]], 14);
+      stroke(g, [[cx-r+3, G-25], [cx+r-3, G-25]], 14);
+      stroke(g, [[cx-29, G-31], [cx+15, G-46]], 12.5);
+    } },
+  { key:'S', label:'S', draw(g){
+      stroke(g, [[92,30]], 0.1);
+      g.beginPath(); g.moveTo(92, 32);
+      g.bezierCurveTo(86, 14, 48, 12, 36, 28);
+      g.bezierCurveTo(27, 40, 33, 50, 54, 55);
+      g.bezierCurveTo(76, 60, 100, 70, 92, 96);
+      g.bezierCurveTo(85, 112, 46, 112, 35, 96);
+      g.lineWidth = 13.5; g.lineCap = 'round'; g.lineJoin = 'round'; g.stroke();
+    } },
+  { key:'heart', label:'♥', draw(g){
+      const cx = G/2, cy = 42, k = 1.36;
+      bez(g, [cx, G-22], [cx-74*k, cy+46], [cx-52*k, cy-46], [cx, cy-6], 12.5);
+      bez(g, [cx, cy-6],  [cx+52*k, cy-46], [cx+74*k, cy+46], [cx, G-22], 12.5);
+    } },
+  { key:'star', label:'★', draw(g){
+      const cx = G/2, cy = G/2 + 3, R = 47, r = 20.5, p = [];
+      for (let i = 0; i < 10; i++){
+        const a = -Math.PI/2 + i * Math.PI/5, rad = (i & 1) ? r : R;
+        p.push([cx + rad*Math.cos(a), cy + rad*Math.sin(a)]);
+      }
+      p.push(p[0]);
+      stroke(g, p, 11);
+    } },
+];
+
+/* ════════════════════════════════════════════════════════════════════════
+   6.  per-target analysis: raster -> DFT -> two orderings of the reps
+   ════════════════════════════════════════════════════════════════════════ */
+const work = {
+  src:  new Float32Array(GN),
+  re:   new Float64Array(GN),
+  im:   new Float64Array(GN),
+  mre:  new Float64Array(GN),
+  mim:  new Float64Array(GN),
+  active: new Uint8Array(GN),
+  field: new Float64Array(GN),
+  logMag: new Float32Array(GN),
+  byMag:  null, byFreq: null,
+  eTot: 0, n99: NP, energyPrefix: null,
+  key: null,
+};
+
+function buildTarget(idx){
+  const T = TARGETS[idx];
+  // rasterise into the hidden canvas
+  sctx2.fillStyle = '#000'; sctx2.fillRect(0,0,G,G);
+  sctx2.strokeStyle = '#fff'; sctx2.fillStyle = '#fff';
+  T.draw(sctx2);
+  const px = sctx2.getImageData(0,0,G,G).data;
+  const src = work.src;
+  let ink = 0;
+  for (let i = 0; i < GN; i++){ const v = px[i*4] / 255; src[i] = v; ink += v; }
+  work.ink = ink / GN;
+
+  // source plate (for SPLIT / SOURCE views)
+  const sd = srcImg.data;
+  for (let i = 0; i < GN; i++){
+    const j = INK.t(src[i]);
+    sd[i*4] = INK.out[j]; sd[i*4+1] = INK.out[j+1]; sd[i*4+2] = INK.out[j+2]; sd[i*4+3] = 255;
+  }
+  srcCx.putImageData(srcImg, 0, 0);
+
+  dft2(src, work.re, work.im);
+
+  // representatives: kx in [0, GH], ky over all G, plus kx = GH column
+  const byMag = [], byFreq = [];
+  const add = (kx, m) => {
+    const pk = (G - kx) % G, pm = (G - m) % G;
+    const self = (pk === kx && pm === m);
+    const a = work.re[kx*G+m], b = work.im[kx*G+m];
+    const mag = Math.hypot(a, b);
+    const rad = Math.max(kx, m > GH ? G - m : m);        // Chebyshev radius
+    const rep = { kx, ky: m > GH ? m - G : m, m, pk, pm, w: self ? 1 : 2, mag, rad, e: (self ? 1 : 2) * mag * mag };
+    byMag.push(rep); byFreq.push(rep);   // same objects, two orderings
+  };
+  for (let m = 0; m <= GH; m++) add(0, m);
+  for (let kx = 1; kx < GH; kx++) for (let m = 0; m < G; m++) add(kx, m);
+  for (let m = 0; m <= GH; m++) add(GH, m);
+
+  byMag.sort((p, q) => q.mag - p.mag);
+  // nested ideal low-pass: grow a Chebyshev-radius window, strongest first
+  byFreq.sort((p, q) => (p.rad - q.rad) || (q.mag - p.mag));
+
+  work.byMag = byMag; work.byFreq = byFreq;
+  work.key = T.key;
+
+  // total energy first, then the prefix count that reaches 99% of it
+  let etot = 0;
+  for (let i = 0; i < NP; i++) etot += byMag[i].e;
+  let run = 0, n99 = NP;
+  for (let i = 0; i < NP; i++){
+    run += byMag[i].e;
+    if (n99 === NP && run / etot > 0.99){ n99 = i + 1; break; }
+  }
+  work.eTot = etot; work.n99 = n99;
+  work.energyPrefix = new Float64Array(NP + 1);
+  run = 0;
+  for (let i = 0; i < NP; i++){ run += byMag[i].e; work.energyPrefix[i+1] = run / etot; }
+
+  // log magnitude for the spectrum panel (normalised)
+  let mx = 0;
+  for (let i = 0; i < GN; i++){ const m = Math.hypot(work.re[i], work.im[i]); if (m > mx) mx = m; }
+  const inv = 1 / Math.log1p(mx * 0.9);
+  for (let i = 0; i < GN; i++){
+    work.logMag[i] = Math.log1p(Math.hypot(work.re[i], work.im[i]) * 0.9) * inv;
+  }
+  return work;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   7.  truncation state
+   ════════════════════════════════════════════════════════════════════════ */
+let mode = 'mag';         // 'mag' | 'freq'
+let view = 'recon';       // 'recon' | 'split' | 'src'
+let curN = 0;             // pairs currently active
+let energy = 0, psnr = 0, maxK = 0;
+
+function order(){ return mode === 'mag' ? work.byMag : work.byFreq; }
+
+function enable(r){
+  const p = r.kx*G + r.m, q = r.pk*G + r.pm;
+  work.mre[p] = work.re[p];  work.mim[p] = work.im[p];
+  work.mre[q] = work.re[q];  work.mim[q] = work.im[q];
+  work.active[p] = 1; work.active[q] = 1;
+}
+function disable(r){
+  const p = r.kx*G + r.m, q = r.pk*G + r.pm;
+  work.mre[p] = 0; work.mim[p] = 0; work.active[p] = 0;
+  work.mre[q] = 0; work.mim[q] = 0; work.active[q] = 0;
+}
+
+function setPairs(n, force){
+  n = Math.max(0, Math.min(NP, n | 0));
+  const o = order();
+  // An ordering change swaps the array the active prefix refers to, so the
+  // disable() pass must never run past the end of the new one.
+  if (force || n === curN || o.length !== NP){ if (o.length !== NP) curN = 0; }
+  if (!force && n === curN) return;
+  if (force) {                       // ordering changed: rebuild from scratch
+    for (let i = 0; i < NP; i++) disable(o[i]);
+    curN = 0;
+  }
+  if (n > curN) for (let i = curN; i < n; i++) enable(o[i]);
+  else          for (let i = n; i < curN; i++) disable(o[i]);
+  curN = n;
+  refresh();
+}
+
+function refresh(){
+  idft2(work.mre, work.mim, work.field);
+
+  const f = work.field, src = work.src;
+  let se = 0, s1 = 0, ea = 0, s2 = 0, mk = 0;
+  for (let i = 0; i < GN; i++){
+    const v = f[i], d = v - src[i];
+    se += d*d; ea += v*v; s1 += v*src[i]; s2 += src[i]*src[i];
+    if (Math.abs(v) > mk) mk = Math.abs(v);
+  }
+  psnr = 10 * Math.log10(1 / Math.max(Math.sqrt(se / GN), 1e-12));
+  corr = s1 / Math.sqrt(Math.max(ea * s2, 1e-30));
+
+  const o = order();
+  let e = 0, k = 0;
+  for (let i = 0; i < curN; i++){ e += o[i].e; if (o[i].rad > k) k = o[i].rad; }
+  energy = work.eTot > 0 ? e / work.eTot : 0;
+  maxK = k;
+
+  // ---- plate pixels ----
+  const d4 = plateImg.data, T = INK.t, O = INK.out;
+  for (let i = 0; i < GN; i++){ const j = T(f[i]), p = i*4;
+    d4[p] = O[j]; d4[p+1] = O[j+1]; d4[p+2] = O[j+2]; d4[p+3] = 255; }
+  plateCx.putImageData(plateImg, 0, 0);
+
+  // ---- spectrum pixels: kept bins bright, discarded bins dimmed ----
+  const s4 = specImg.data, lm = work.logMag, act = work.active;
+  const ST = SPEC.t, SO = SPEC.out;
+  for (let i = 0; i < GN; i++){
+    const j = ST(lm[i]), p = i*4;
+    const k = act[i] ? 1 : 0.22;
+    s4[p]   = SO[j]   * k + 6  * (1 - k);
+    s4[p+1] = SO[j+1] * k + 8  * (1 - k);
+    s4[p+2] = SO[j+2] * k + 16 * (1 - k);
+    s4[p+3] = 255;
+  }
+  specCx.putImageData(specImg, 0, 0);
+
+  paint();
+  syncUI();
+}
+let corr = 0;
+
+/* ════════════════════════════════════════════════════════════════════════
+   8.  stage painting — 640x400 internal, fixed
+   ════════════════════════════════════════════════════════════════════════ */
+const W = 640, H = 400;
+const PLATE = { x: 7,  y: 7,  w: 336, h: 336 };
+const SPECP = { x: 352,y: 7,  w: 281, h: 244 };
+const CURVE = { x: 352,y: 285,w: 281, h: 108 };
+
+const UI = {
+  ink:'#c9d5ec', dim:'#6b7a9c', faint:'#3d4760',
+  warm:'#ffb347', cyan:'#5ad9ea', gold:'#ffd98a', mag:'#ff5fa8',
+};
+function mono(size, weight, colour){ sctx.font = (weight||400)+' '+size+'px '+
+  'ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace'; if (colour) sctx.fillStyle = colour; }
+function label(str, x, y, size, colour, align, tracking){
+  mono(size, 400, colour);
+  sctx.textAlign = align || 'left'; sctx.textBaseline = 'alphabetic';
+  if (!tracking){ sctx.fillText(str, x, y); return; }
+  let w = 0; for (const ch of str) w += sctx.measureText(ch).width + tracking;
+  w -= tracking;
+  let cx = align === 'right' ? x - w : align === 'center' ? x - w/2 : x;
+  for (const ch of str){ sctx.fillText(ch, cx, y); cx += sctx.measureText(ch).width + tracking; }
+}
+function panelFrame(x, y, w, h, accent){
+  // border only — the opaque backing fill belongs to each panel, drawn
+  // *before* its content, otherwise it washes the content out.
+  sctx.save();
+  sctx.strokeStyle = 'rgba(90,217,234,0.20)'; sctx.lineWidth = 1;
+  sctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  sctx.strokeStyle = accent || 'rgba(90,217,234,0.45)';
+  const c = 11;
+  sctx.beginPath();
+  sctx.moveTo(x+0.5, y+c); sctx.lineTo(x+0.5, y+0.5); sctx.lineTo(x+c, y+0.5);
+  sctx.moveTo(x+w-c, y+0.5); sctx.lineTo(x+w-0.5, y+0.5); sctx.lineTo(x+w-0.5, y+c);
+  sctx.moveTo(x+0.5, y+h-c); sctx.lineTo(x+0.5, y+h-0.5); sctx.lineTo(x+c, y+h-0.5);
+  sctx.moveTo(x+w-c, y+h-0.5); sctx.lineTo(x+w-0.5, y+h-0.5); sctx.lineTo(x+w-0.5, y+h-c);
+  sctx.stroke();
+  sctx.restore();
+}
+
+function drawPlate(){
+  const P = PLATE;
+  sctx.save();
+  sctx.fillStyle = 'rgba(3,4,10,0.55)';
+  sctx.fillRect(P.x, P.y, P.w, P.h);
+  sctx.beginPath(); sctx.rect(P.x, P.y, P.w, P.h); sctx.clip();
+  sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = 'high';
+  if (view === 'src'){
+    sctx.drawImage(srcCv2, P.x, P.y, P.w, P.h);
+  } else if (view === 'split'){
+    sctx.drawImage(srcCv2,  P.x, P.y, P.w/2, P.h);
+    sctx.drawImage(plateCv, P.x + P.w/2, P.y, P.w/2, P.h);
+    sctx.strokeStyle = 'rgba(255,217,138,0.85)'; sctx.lineWidth = 1;
+    sctx.beginPath(); sctx.moveTo(P.x + P.w/2 + 0.5, P.y); sctx.lineTo(P.x + P.w/2 + 0.5, P.y + P.h); sctx.stroke();
+    sctx.font = '10px ui-monospace, monospace';
+    sctx.fillStyle = UI.gold; sctx.textAlign = 'center';
+    sctx.fillText('SOURCE', P.x + P.w*0.25, P.y + 16);
+    sctx.fillStyle = UI.cyan; sctx.fillText('RECON', P.x + P.w*0.75, P.y + 16);
+  } else {
+    sctx.drawImage(plateCv, P.x, P.y, P.w, P.h);
+  }
+  // slight inner vignette so the plate sits in the frame
+  const g = sctx.createRadialGradient(P.x+P.w/2, P.y+P.h/2, P.w*0.34, P.x+P.w/2, P.y+P.h/2, P.w*0.82);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.22)');
+  sctx.fillStyle = g; sctx.fillRect(P.x, P.y, P.w, P.h);
+  sctx.restore();
+
+  panelFrame(P.x, P.y, P.w, P.h, 'rgba(255,179,71,0.5)');
+
+  // caption under the plate
+  const y = P.y + P.h + 17;
+  label(view === 'src' ? 'SOURCE RASTER — 128×128 LUMINANCE' :
+        view === 'split' ? 'SOURCE  |  RECONSTRUCTION FROM ' + curN + ' PAIRS' :
+        'RECONSTRUCTION FROM ' + curN + ' CONJUGATE PAIRS', P.x+2, y, 10.5, UI.cyan, 'left', 0.9);
+  label('k ≤ ' + maxK, P.x + P.w - 2, y, 10.5, UI.warm, 'right', 0.9);
+}
+
+function drawSpectrum(){
+  const S = SPECP;
+  sctx.save();
+  sctx.fillStyle = 'rgba(3,4,10,0.55)';
+  sctx.fillRect(S.x, S.y, S.w, S.h);
+  sctx.beginPath(); sctx.rect(S.x, S.y, S.w, S.h); sctx.clip();
+  sctx.imageSmoothingEnabled = true;
+  sctx.drawImage(specCv, S.x, S.y, S.w, S.h);
+
+  // crosshair through DC, and a ring at the current max Chebyshev radius
+  const cx = S.x + S.w/2, cy = S.y + S.h/2;
+  sctx.strokeStyle = 'rgba(255,95,168,0.30)'; sctx.lineWidth = 1;
+  sctx.beginPath();
+  sctx.moveTo(cx, S.y); sctx.lineTo(cx, S.y + S.h);
+  sctx.moveTo(S.x, cy); sctx.lineTo(S.x + S.w, cy);
+  sctx.stroke();
+  if (curN > 0 && maxK > 0){
+    const rad = (maxK + 0.5) / GH * (S.w/2);
+    if (rad > 2 && rad < S.w){
+      sctx.strokeStyle = 'rgba(255,95,168,0.34)'; sctx.setLineDash([2,3]);
+      sctx.beginPath(); sctx.arc(cx, cy, rad, 0, TAU); sctx.stroke();
+      sctx.setLineDash([]);
+    }
+  }
+  sctx.restore();
+  panelFrame(S.x, S.y, S.w, S.h, 'rgba(90,217,234,0.5)');
+
+  const y = S.y + S.h + 16;
+  label('LOG MAGNITUDE  |F(kx,ky)|', S.x+2, y, 10.5, UI.cyan, 'left', 0.9);
+  label('DC', cx, S.y + S.h - 6, 9, 'rgba(255,95,168,0.8)', 'center');
+  // legend: bright = kept
+  const lx = S.x + S.w - 4;
+  sctx.fillStyle = 'rgba(124,214,232,0.95)'; sctx.fillRect(lx - 96, y - 7, 8, 8);
+  label('KEPT', lx - 84, y, 9, UI.dim, 'left', 0.7);
+  sctx.fillStyle = 'rgba(30,88,140,0.5)'; sctx.fillRect(lx - 46, y - 7, 8, 8);
+  label('DISCARDED', lx, y, 9, UI.dim, 'right', 0.7);
+}
+
+function drawCurve(){
+  const C = CURVE;
+  sctx.save();
+  sctx.fillStyle = 'rgba(3,4,10,0.62)'; sctx.fillRect(C.x, C.y, C.w, C.h);
+  const px = 34, py = 10, pw = C.w - px - 10, ph = C.h - py - 16;
+
+  // grid + 90/99% rules
+  sctx.strokeStyle = 'rgba(90,217,234,0.10)'; sctx.lineWidth = 1;
+  sctx.beginPath();
+  for (let i = 1; i <= 3; i++){ const y = Math.round(C.y + py + ph*i/4) + 0.5; sctx.moveTo(C.x+px, y); sctx.lineTo(C.x+px+pw, y); }
+  sctx.stroke();
+  sctx.setLineDash([2,3]); sctx.strokeStyle = 'rgba(255,95,168,0.34)';
+  sctx.beginPath();
+  const y99 = C.y + py + ph*(1-0.99), y90 = C.y + py + ph*(1-0.90);
+  sctx.moveTo(C.x+px, y99); sctx.lineTo(C.x+px+pw, y99);
+  sctx.moveTo(C.x+px, y90); sctx.lineTo(C.x+px+pw, y90);
+  sctx.stroke(); sctx.setLineDash([]);
+  label('90%', C.x+px-4, y90+3, 8, 'rgba(255,95,168,0.75)', 'right');
+  label('99%', C.x+px-4, y99+3, 8, 'rgba(255,95,168,0.75)', 'right');
+  label('0', C.x+px-4, C.y+py+ph+3, 8, UI.faint, 'right');
+  label('1', C.x+px-4, C.y+py+8, 8, UI.faint, 'right');
+
+  // energy curve, log-x
+  const ep = work.energyPrefix;
+  const xOf = (n) => C.x + px + pw * Math.log10(Math.max(n,1)) / Math.log10(NP);
+  sctx.beginPath();
+  const SAMP = 160;
+  for (let i = 0; i <= SAMP; i++){
+    const n = Math.max(1, Math.round(Math.pow(NP, i/SAMP)));
+    const xx = xOf(n), yy = C.y + py + ph * (1 - ep[Math.min(n,NP)]);
+    i ? sctx.lineTo(xx, yy) : sctx.moveTo(xx, yy);
+  }
+  sctx.strokeStyle = UI.cyan; sctx.lineWidth = 1.6; sctx.stroke();
+  sctx.lineTo(C.x+px+pw, C.y+py+ph); sctx.lineTo(C.x+px, C.y+py+ph); sctx.closePath();
+  sctx.fillStyle = 'rgba(90,217,234,0.10)'; sctx.fill();
+
+  // current marker
+  const mx2 = xOf(Math.max(curN,1)), my2 = C.y + py + ph * (1 - Math.max(energy,0));
+  sctx.strokeStyle = 'rgba(255,179,71,0.55)'; sctx.lineWidth = 1;
+  sctx.beginPath(); sctx.moveTo(mx2, C.y+py); sctx.lineTo(mx2, C.y+py+ph); sctx.stroke();
+  sctx.fillStyle = UI.gold;
+  sctx.beginPath(); sctx.arc(mx2, my2, 3, 0, TAU); sctx.fill();
+
+  label('ENERGY RETAINED  vs  #PAIRS  (log)', C.x+px, C.y+C.h-4, 9, UI.dim, 'left', 0.6);
+  label('8194', C.x+px+pw, C.y+C.h-4, 8.5, UI.faint, 'right');
+  sctx.restore();
+  panelFrame(C.x, C.y, C.w, C.h, 'rgba(90,217,234,0.35)');
+}
+
+function paint(){
+  sctx.save();
+  sctx.fillStyle = '#04050b'; sctx.fillRect(0,0,W,H);
+  sctx.globalAlpha = 0.030; sctx.globalCompositeOperation = 'lighter';
+  sctx.fillStyle = grainPat; sctx.fillRect(0,0,W,H);
+  sctx.restore();
+
+  drawPlate();
+  drawSpectrum();
+  drawCurve();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   9.  DOM sync
+   ════════════════════════════════════════════════════════════════════════ */
+const $ = (id) => document.getElementById(id);
+const el = {
+  terms:$('terms'), termVal:$('termVal'), sweep:$('sweep'),
+  sPairs:$('sPairs'), sFrac:$('sFrac'), sEnergy:$('sEnergy'),
+  sPsnr:$('sPsnr'), sK:$('sK'), sMs:$('sMs'),
+  rBig:$('rBig'), rCof:$('rCof'), rE:$('rE'), r99:$('r99'), rMode:$('rMode'),
+  led:$('led'), targets:$('targets'),
+  mMag:$('mMag'), mFreq:$('mFreq'),
+  vRecon:$('vRecon'), vSplit:$('vSplit'), vSrc:$('vSrc'),
+};
+
+TARGETS.forEach((T, i) => {
+  const b = document.createElement('button');
+  b.textContent = T.label; b.dataset.i = i;
+  if (i === 0) b.className = 'on';
+  b.title = 'draw target: ' + T.key;
+  b.onclick = () => {
+    [...el.targets.children].forEach(c => c.className = '');
+    b.className = 'on';
+    buildTarget(i);
+    setPairs(DEFAULTS, true);
+    // re-apply the in-flight sweep position for the new target
+    if (anim.on) setPairs(animTarget(), true); else syncSlider();
+  };
+  el.targets.appendChild(b);
+});
+
+const ledRows = [];
+for (let i = 0; i < 6; i++){
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td>0</td><td>0,0</td><td>0</td><td>0</td>';
+  el.led.appendChild(tr);
+  ledRows.push(tr);
+}
+
+const pct = (v) => (v*100).toFixed(v >= 0.9995 ? 2 : 1);
+function syncSlider(){
+  const p = Math.log10(Math.max(curN,1)) / Math.log10(NP);
+  el.terms.value = String(Math.round(p * 1000));
+  el.terms.style.setProperty('--p', (p*100).toFixed(1) + '%');
+}
+function syncUI(){
+  el.termVal.textContent = curN.toLocaleString('en-US') + ' / 8194 pairs';
+  el.sPairs.textContent = curN.toLocaleString('en-US');
+  el.sFrac.innerHTML = (curN / NP * 100).toFixed(curN ? 1 : 1) + '<small> %</small>';
+  el.sEnergy.innerHTML = pct(energy) + '<small> %</small>';
+  el.sPsnr.innerHTML = (psnr > 90 ? 'exact' : psnr.toFixed(1)) + (psnr > 90 ? '' : '<small> dB</small>');
+  el.sK.textContent = String(maxK);
+  el.rBig.innerHTML = curN.toLocaleString('en-US') + '<em> pairs</em>';
+  el.rCof.textContent = (curN * 2 - 0).toLocaleString('en-US');
+  el.rE.textContent = pct(energy) + ' %';
+  el.r99.textContent = work.n99.toLocaleString('en-US') + ' pairs';
+  el.rMode.textContent = mode === 'mag' ? 'LARGEST |C|' : 'LOW-FREQUENCY';
+
+  const o = order();
+  for (let i = 0; i < 6; i++){
+    const r = o[i], tr = ledRows[i];
+    if (!r){ tr.className = 'off'; continue; }
+    const share = r.e / work.eTot;
+    const on = i < curN;
+    tr.className = on ? '' : 'off';
+    tr.children[0].textContent = String(i+1);
+    tr.children[1].textContent = r.ky === 0 ? r.kx + ',0' : r.kx + ',' + r.ky;
+    tr.children[2].textContent = r.mag.toFixed(0);
+    tr.children[3].innerHTML = (share*100).toFixed(2) + '% <span class="bar" style="width:' +
+      Math.min(26, Math.max(1, share*900)).toFixed(0) + 'px"></span>';
+  }
+}
+
+let frameMs = 0;
+setInterval(() => { el.sMs.innerHTML = frameMs.toFixed(0) + '<small> ms</small>'; }, 500);
+
+/* ════════════════════════════════════════════════════════════════════════
+   10.  animation — fixed per-frame advance, no wall clock
+   ════════════════════════════════════════════════════════════════════════ */
+const anim = { on:false, phase:0, dir:0, hold:0, live:false };
+const RAMP = 74, HOLD_HI = 46, HOLD_LO = 22;
+
+function animTarget(){
+  // geometric ramp so the interesting 1..2000 range is not crushed
+  const t = anim.dir > 0 ? anim.phase / RAMP : 1 - anim.phase / RAMP;
+  return Math.max(1, Math.round(Math.pow(NP, t)) - 1);
+}
+function step(){
+  if (!anim.on) return;
+  if (anim.hold > 0){ anim.hold--; }
+  else {
+    anim.phase += anim.dir;
+    if (anim.phase >= RAMP){ anim.phase = RAMP; anim.dir = -1; anim.hold = HOLD_HI; }
+    else if (anim.phase <= 0){ anim.phase = 0; anim.dir = 1; anim.hold = HOLD_LO; }
+  }
+  setPairs(animTarget(), true);
+  syncSlider();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   11.  controls
+   ════════════════════════════════════════════════════════════════════════ */
+el.terms.addEventListener('input', () => {
+  anim.on = false; el.sweep.textContent = '▶ SWEEP'; el.sweep.classList.remove('on');
+  const p = +el.terms.value / 1000;
+  setPairs(Math.round(Math.pow(NP, p)) - 1, true);
+  el.terms.style.setProperty('--p', (p*100).toFixed(1) + '%');
+});
+el.sweep.onclick = () => {
+  anim.on = !anim.on;
+  el.sweep.textContent = anim.on ? '■ STOP' : '▶ SWEEP';
+  el.sweep.classList.toggle('on', anim.on);
+  if (anim.on){ anim.phase = 0; anim.dir = 1; anim.hold = 0; }
+  ensureLoop();
+};
+$('reset').onclick = () => {
+  anim.on = false; el.sweep.textContent = '▶ SWEEP'; el.sweep.classList.remove('on');
+  setPairs(DEFAULTS, true); syncSlider();
+};
+function setMode(m){
+  mode = m;
+  el.mMag.classList.toggle('on', m === 'mag');
+  el.mFreq.classList.toggle('on', m === 'freq');
+  const n = curN;
+  setPairs(0, true);
+  setPairs(n, true);
+  if (anim.on) setPairs(animTarget(), true);
+  else syncSlider();
+}
+el.mMag.onclick   = () => setMode('mag');
+el.mFreq.onclick  = () => setMode('freq');
+function setView(v){
+  view = v;
+  el.vRecon.classList.toggle('on', v === 'recon');
+  el.vSplit.classList.toggle('on', v === 'split');
+  el.vSrc.classList.toggle('on',   v === 'src');
+  paint();
+}
+el.vRecon.onclick = () => setView('recon');
+el.vSplit.onclick = () => setView('split');
+el.vSrc.onclick   = () => setView('src');
+
+/* ════════════════════════════════════════════════════════════════════════
+   12.  boot
+   ════════════════════════════════════════════════════════════════════════ */
+buildTarget(0);
+setPairs(DEFAULTS, true);
+syncSlider();
+
+let tPrev = performance.now(), loopLive = false;
+/* The loop is kept alive permanently but is a no-op when nothing is
+   animating: a rAF that early-returns costs microseconds, and it means
+   SWEEP can start on the very next frame instead of needing a kick. */
+function frame(){
+  loopLive = false;
+  const t0 = performance.now();
+  step();
+  const dt = t0 - tPrev; tPrev = t0;
+  if (dt > 0) frameMs = frameMs ? frameMs*0.7 + dt*0.3 : dt;
+  loopLive = true;
+  requestAnimationFrame(frame);
+}
+function ensureLoop(){ if (!loopLive) requestAnimationFrame(frame); }
+
+// opening reveal: reveal coefficients progressively, then settle at DEFAULTS
+(function openingReveal(){
+  const steps = 42;
+  let i = 0;
+  const tick = () => {
+    const t = i / steps;
+    const n = Math.max(1, Math.round(Math.pow(DEFAULTS, t)) - 1);
+    setPairs(Math.min(n, DEFAULTS), true);
+    syncSlider();
+    i++;
+    if (i <= steps) requestAnimationFrame(tick);
+    else {
+      setPairs(DEFAULTS, true);
+      syncSlider();
+      window.__probe = {
+        ready:true, target:work.key, pairs:curN, totalPairs:NP, grid:G,
+        energy:+energy.toFixed(4), psnrDb:+psnr.toFixed(2), corr:+corr.toFixed(4),
+        maxK, dof:GN, frames:1, frameMs:+frameMs.toFixed(1), dft:'O(N^3) separable 128^2',
+        reps:NP, ink:+work.ink.toFixed(4)
+      };
+      window.__ready = true;
+      tPrev = performance.now();
+      ensureLoop();
+    }
+  };
+  requestAnimationFrame(tick);
+})();
+
+/* probe access for the harness at any time */
+window.__probe = { ready:false, target:null, pairs:0, totalPairs:NP, grid:G };
+setInterval(() => {
+  window.__probe = {
+    ready: !!window.__ready, target: work.key, pairs: curN, totalPairs: NP, grid: G,
+    energy:+energy.toFixed(4), psnrDb:+psnr.toFixed(2), corr:+corr.toFixed(4),
+    maxK, dof: GN, sweeping: anim.on, frameMs:+frameMs.toFixed(1)
+  };
+}, 400);
+
+/* internal handle: lets a harness read the reconstruction and drive the
+   controls directly, instead of inferring correctness from pixels. */
+window.__dbg = {
+  get field(){ return work.field; },
+  get src(){ return work.src; },
+  get curN(){ return curN; },
+  get mode(){ return mode; },
+  get view(){ return view; },
+  get energy(){ return energy; },
+  get psnr(){ return psnr; },
+  get corr(){ return corr; },
+  get target(){ return work.key; },
+  get orderLen(){ return order().length; },
+  get n99(){ return work.n99; },
+  get grid(){ return G; },
+  get reps(){ return NP; },
+  INK, SPEC, plateCv,
+  setPairs: (n) => { setPairs(n, true); syncSlider(); },
+  setMode, setView, buildTarget,
+};
+
+})();
+</script>
+</body>
+</html>

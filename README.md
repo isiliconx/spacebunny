@@ -1,9 +1,58 @@
 # spacebunny
 
 A space bunny exploring the Moon, rendered with three.js on the **WebGPU**
-backend, plus eight GPU graphics demos collected in `demos/`.
+backend, eight GPU graphics demos in `demos/`, and fifty more self-contained
+projects in `projects/`.
 
 **[Open the site](https://isiliconx.github.io/spacebunny/)**
+
+---
+
+## The projects
+
+Fifty more single-file pieces, one per agent, each with its own renderer,
+controls, and a `window.__probe` diagnostics object. Every one is offline: no
+CDN, no build step, no network access at runtime.
+
+| Group | Count | What is in it |
+| --- | --- | --- |
+| Volumetrics & SDF | 8 | Raymarched clouds, SDF composition, caustics, dispersion, Mandelbulb, Menger sponge, a procedural exoplanet, a nebula |
+| Physics & Simulation | 8 | Integrator comparison, tearing cloth, impulse rigid bodies, double pendulum, sandpile, cellular automata, a CPU-only fluid solver, a spring lattice |
+| Generative Geometry | 10 | L-system flora, marching cubes, sampling comparison, IFS chaos game, fractal flames, Ising, diffusion-limited aggregation, quadtrees, Wang tiles, parametric surfaces |
+| Field & Mathematics | 8 | 2D SDF, boolean SDF, Collatz, Fourier drawing, harmonograph, OKLab colour theory, phase portraits, least-squares fitting |
+| Audio & Signal | 4 | Spectrogram waterfall, DSP filters, wave interference, a subtractive synthesiser |
+| Tools & Type | 7 | Bézier editor, type specimen, generative poster, wave function collapse, tilemap autotiling, pixel painter, SDF text |
+| Rendering & 3D | 5 | A CPU raytracer in Web Workers, a procedurally generated model viewer, a generated city, 3D CSG, a fragment-shader playground |
+
+Every project exposes `window.__ready === true` once its scene is live, and
+`window.__probe` with real internal numbers, so the harness can wait for a
+settled frame and assert on physics rather than on a screenshot's appearance.
+
+### Verifying them
+
+```bash
+demos/tools/verify_projects.sh    # render all 50, check health, promote previews
+demos/tools/audit_projects.sh     # static: no external refs, no fetch, parses, has __ready
+demos/tools/check-random.mjs      # classify every Math.random() call
+demos/tools/fractal-check.py <png>          # is that render a fractal or a solid block?
+demos/tools/fractal-check.py --self-test   # prove the check can tell them apart
+demos/tools/check-filters.mjs <url>         # click every dashboard filter, assert its count
+demos/tools/capture-full.mjs <url> <out>    # full-page capture, reports the page's real height
+node demos/tools/build-project-data.mjs     # regenerate js/projects-data.js
+```
+
+`fractal-check.py` exists because the Menger sponge shipped a distance estimator
+that rendered a solid cube, and every check in the pipeline passed it: the
+script parsed, the render gate saw a healthy image, and the image was a box.
+Measuring a copy of the shader is what hid the bug — the copy and the original
+drift apart, so the check now measures the PNG the browser actually produced.
+Its self-test accepts a voxelised sponge and rejects both a solid cube and a
+scatter of disconnected blocks.
+
+`check-filters.mjs` counts *visible* cards, not elements in the DOM. The
+filters set `card.hidden` correctly, but `.card { display: flex }` outranks the
+UA's `[hidden] { display: none }`, so all fifty cards stayed on screen while the
+hash and the pill counts both looked right.
 
 ---
 

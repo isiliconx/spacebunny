@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Collatz Phase Portrait · 3n+1 basins</title>
+<style>
+  :root{
+    --ink:#dce8f1; --dim:#7b93a6; --dimmer:#4e6376;
+    --acc:#6ef0c4; --amb:#ffc266; --ros:#ff6a8e; --blu:#8ab4ff;
+    --panel:rgba(7,12,19,.82); --edge:rgba(126,190,214,.18); --edge2:rgba(126,190,214,.10);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#04070c; overflow:hidden;
+    font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    color:var(--ink); -webkit-font-smoothing:antialiased; }
+  #cv{ position:fixed; inset:0; width:100%; height:100%; display:block; }
+  .panel{ position:fixed; background:var(--panel); border:1px solid var(--edge);
+    border-radius:9px; padding:11px 13px; z-index:3;
+    box-shadow:0 14px 44px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.035); }
+  .panel h2{ margin:0 0 9px; font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--dim); font-weight:600; display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .panel h2 em{ font-style:normal; letter-spacing:.03em; color:var(--dimmer); text-transform:none;
+    font-size:9.5px; white-space:nowrap; }
+
+  #head{ display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 15px; }
+  #head .hl{ display:flex; align-items:baseline; gap:12px; min-width:0; }
+  #head .num{ font-size:10px; letter-spacing:.18em; color:#04070c; background:var(--acc);
+    padding:2px 7px; border-radius:4px; font-weight:700; }
+  #head h1{ margin:0; font-size:14px; letter-spacing:.15em; text-transform:uppercase; font-weight:600;
+    color:#fff; white-space:nowrap; }
+  #head h1 b{ color:var(--acc); font-weight:600; }
+  #head .hr{ text-align:right; color:var(--dim); font-size:10.5px; line-height:1.45; min-width:0; }
+  #head .hr b{ color:#a9c6d8; font-weight:600; }
+  #head .hr .v{ color:var(--amb); }
+
+  .ctl{ margin-bottom:9px; }
+  .ctl .top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:1px; gap:6px; }
+  .ctl label{ font-size:10.5px; color:var(--dim); }
+  .ctl output{ font-size:11px; color:var(--acc); font-weight:600; white-space:nowrap; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:13px;
+    background:transparent; cursor:ew-resize; display:block; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(110,240,196,.95) var(--p,50%),rgba(255,255,255,.11) var(--p,50%)); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background:#eafff7; margin-top:-4px; box-shadow:0 0 0 3px rgba(110,240,196,.2),0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-moz-range-track{ height:3px; border-radius:2px; background:rgba(255,255,255,.11); }
+  input[type=range]::-moz-range-progress{ height:3px; border-radius:2px; background:rgba(110,240,196,.95); }
+  input[type=range]::-moz-range-thumb{ width:11px; height:11px; border:0; border-radius:50%; background:#eafff7; }
+  input[type=number]{ font:inherit; font-size:11px; padding:3px 6px; color:var(--ink);
+    background:rgba(255,255,255,.05); border:1px solid var(--edge); border-radius:5px; }
+  input[type=number]:focus{ outline:none; border-color:rgba(110,240,196,.55); }
+  .inline{ display:flex; align-items:center; gap:8px; }
+  .inline input[type=number]{ width:100%; }
+  .inline .unit{ font-size:10px; color:var(--dimmer); white-space:nowrap; }
+
+  .chips{ display:flex; flex-wrap:wrap; gap:4px; }
+  .chip{ cursor:pointer; font:inherit; font-size:10.5px; padding:3px 8px; border-radius:20px;
+    color:var(--dim); background:rgba(255,255,255,.05); border:1px solid var(--edge2);
+    transition:.13s; user-select:none; }
+  .chip:hover{ color:#fff; background:rgba(255,255,255,.12); }
+  .chip.on{ color:#04121a; background:linear-gradient(180deg,#a5f5d9,#3fc9a4); border-color:transparent; font-weight:600; }
+  .btnrow{ display:flex; gap:5px; margin-top:9px; }
+  .btn{ cursor:pointer; font:inherit; font-size:10.5px; padding:5px 0; border-radius:6px; color:var(--ink);
+    background:rgba(255,255,255,.05); border:1px solid var(--edge); transition:.13s; flex:1; }
+  .btn:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  .btn.primary{ color:#04121a; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    background:linear-gradient(180deg,#a5f5d9,#3ec39e); border-color:transparent; }
+  .btn.primary:hover{ filter:brightness(1.1); }
+  .btn.sq{ flex:0 0 32px; }
+  hr.sep{ border:0; border-top:1px solid var(--edge2); margin:10px 0 9px; }
+
+  #census .stack{ display:flex; height:13px; border-radius:3px; overflow:hidden; margin-bottom:9px;
+    background:rgba(255,255,255,.05); }
+  #census .stack i{ display:block; height:100%; transition:width .25s ease; }
+  .row{ display:flex; align-items:center; gap:7px; padding:2.5px 0; font-size:10.5px; }
+  .row .dot{ width:7px; height:7px; border-radius:2px; flex:0 0 7px; }
+  .row .k{ color:var(--dim); flex:1; }
+  .row .v{ color:var(--ink); font-weight:600; }
+  .row .p{ color:var(--dimmer); width:42px; text-align:right; }
+  #census .note{ margin:9px 0 0; font-size:10px; line-height:1.6; color:var(--dimmer); }
+  #census .note b{ color:var(--dim); font-weight:600; }
+
+  #stats .hero{ font-size:21px; line-height:1.1; color:#fff; letter-spacing:.01em; }
+  #stats .hero small{ font-size:9.5px; letter-spacing:.16em; color:var(--dim); }
+  table{ width:100%; border-collapse:collapse; margin-top:8px; }
+  td{ padding:2px 0; font-size:10.5px; }
+  td:first-child{ color:var(--dim); }
+  td:last-child{ text-align:right; color:var(--ink); font-weight:600; }
+  tr.rule td{ border-top:1px solid var(--edge2); padding-top:5px; }
+  #drift{ margin-top:9px; padding-top:8px; border-top:1px solid var(--edge2); }
+  #drift .lab{ font-size:9.5px; letter-spacing:.1em; color:var(--dimmer); text-transform:uppercase; }
+  #drift .g{ height:4px; border-radius:2px; background:rgba(255,255,255,.09); margin:6px 0 4px; position:relative; }
+  #drift .g i{ position:absolute; top:-2px; bottom:-2px; width:2px; background:#fff; border-radius:1px; }
+  #drift .g u{ position:absolute; top:-2px; bottom:-2px; width:1px; background:rgba(255,194,102,.85); }
+  #drift .sc{ display:flex; justify-content:space-between; gap:8px; font-size:9.5px; color:var(--dimmer); }
+
+  #board .lb{ display:grid; grid-template-columns:14px 1fr 42px 48px; gap:6px; align-items:center;
+    padding:3.5px 5px; border-radius:5px; cursor:pointer; font-size:10.5px; }
+  #board .lb:hover{ background:rgba(255,255,255,.07); }
+  #board .lb.sel{ background:rgba(110,240,196,.12); box-shadow:inset 0 0 0 1px rgba(110,240,196,.3); }
+  #board .lb .r{ color:var(--dimmer); }
+  #board .lb .s{ color:var(--dim); text-align:right; }
+  #board .hd{ display:grid; grid-template-columns:14px 1fr 42px 48px; gap:6px; padding:0 5px 4px;
+    font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--dimmer);
+    border-bottom:1px solid var(--edge2); margin-bottom:3px; }
+  #board .hd span:nth-child(3),#board .hd span:nth-child(4){ text-align:right; }
+
+  @media (max-width:980px){ #ctl,#census,#stats,#board{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+
+<header id="head" class="panel">
+  <div class="hl">
+    <span class="num">29</span>
+    <h1>Collatz <b>Phase Portrait</b></h1>
+  </div>
+  <div class="hr">
+    f(x) = x/2 &nbsp;(x even)&nbsp;·&nbsp;f(x) = 3x+1 &nbsp;(x odd) &nbsp;·&nbsp; axes <b>log₁₀ value</b> × <b>step</b>
+    &nbsp;·&nbsp; float64, arithmetic stops at <span class="v">2⁵³</span> &nbsp;·&nbsp; ensemble seeded <b>mulberry32</b>
+  </div>
+</header>
+
+<section id="ctl" class="panel">
+  <h2>Hero trajectory <em>— redraws everything</em></h2>
+
+  <div class="ctl">
+    <div class="top"><label>start n</label><output id="o-start">27</output></div>
+    <div class="inline">
+      <input id="s-start" type="range" min="0" max="1400" step="1" value="143">
+      <input id="n-start" type="number" min="1" step="1" value="27">
+    </div>
+  </div>
+
+  <div class="ctl">
+    <div class="top"><label>step budget</label><output id="o-steps">300</output></div>
+    <div class="inline">
+      <input id="s-steps" type="range" min="64" max="1200" step="8" value="300">
+      <span class="unit">steps</span>
+    </div>
+  </div>
+
+  <div class="chips" id="presets">
+    <span class="chip" data-n="27">27</span>
+    <span class="chip" data-n="97">97</span>
+    <span class="chip" data-n="871">871</span>
+    <span class="chip" data-n="6171">6171</span>
+    <span class="chip" data-n="837799">837799</span>
+  </div>
+
+  <hr class="sep">
+  <h2>Ensemble <em>— seeded random starts</em></h2>
+
+  <div class="ctl">
+    <div class="top"><label>simultaneous starts</label><output id="o-n">160</output></div>
+    <input id="s-n" type="range" min="24" max="256" step="8" value="160">
+  </div>
+  <div class="ctl">
+    <div class="top"><label>top start 10<sup>e</sup></label><output id="o-top">16.0</output></div>
+    <input id="s-top" type="range" min="60" max="160" step="2" value="160">
+  </div>
+  <div class="ctl">
+    <div class="top"><label>start span</label><output id="o-span">6 decades</output></div>
+    <div class="inline">
+      <input id="s-span" type="range" min="2" max="16" step="1" value="6">
+      <span class="unit">10<sup>e</sup> … 10<sup>e+6</sup></span>
+    </div>
+  </div>
+  <div class="ctl">
+    <div class="top"><label>basin centre 10<sup>e</sup></label><output id="o-bcen">14.5</output></div>
+    <input id="s-bcen" type="range" min="100" max="158" step="1" value="145">
+  </div>
+  <div class="ctl">
+    <div class="top"><label>seed</label></div>
+    <div class="inline">
+      <input id="n-seed" type="number" min="0" step="1" value="1337">
+      <button class="btn sq" id="b-seed" title="next seed">⟳</button>
+    </div>
+  </div>
+
+  <div class="btnrow">
+    <button class="btn primary" id="b-launch">Launch</button>
+    <button class="btn" id="b-replay" title="replay the draw-in">Replay</button>
+  </div>
+
+  <hr class="sep">
+  <h2>View</h2>
+  <div class="chips">
+    <span class="chip" data-y="6">y ≤ 10⁶</span>
+    <span class="chip" data-y="10">y ≤ 10¹⁰</span>
+    <span class="chip on" data-y="17">y ≤ 10¹⁷</span>
+    <span class="chip on" id="t-branch">3n+1 / n÷2</span>
+    <span class="chip on" id="t-ribbon">fate bands</span>
+  </div>
+</section>
+
+<section id="census" class="panel">
+  <h2>Fate census <em>— this ensemble</em></h2>
+  <div class="stack"><i id="st-one"></i><i id="st-open"></i><i id="st-ceil"></i></div>
+  <div class="row"><span class="dot" style="background:#6ef0c4"></span><span class="k">reaches 1</span><span class="v" id="v-one">—</span><span class="p" id="p-one">—</span></div>
+  <div class="row"><span class="dot" style="background:#ffc266"></span><span class="k">budget spent</span><span class="v" id="v-open">—</span><span class="p" id="p-open">—</span></div>
+  <div class="row"><span class="dot" style="background:#ff6a8e"></span><span class="k">past 2⁵³</span><span class="v" id="v-ceil">—</span><span class="p" id="p-ceil">—</span></div>
+  <p class="note">
+    Fate is classified, not conjectured: <b>reaches 1</b> when it lands on the
+    4-2-1 attractor, <b>budget spent</b> when the step count runs out, and
+    <b>past 2⁵³</b> when 3x+1 leaves the safe-integer range. The structure worth
+    reading is <b>where the excursions peak</b> — every integer below
+    2<sup>68</sup> is verified to reach 1.
+  </p>
+</section>
+
+<section id="stats" class="panel">
+  <h2>Hero <em id="s-fate">reaches 1</em></h2>
+  <div class="hero"><span id="s-peak">—</span><br><small>PEAK VALUE</small></div>
+  <table>
+    <tr><td>start n</td><td id="s-n0">—</td></tr>
+    <tr><td>steps to 1</td><td id="s-tts">—</td></tr>
+    <tr class="rule"><td>peak at step</td><td id="s-pk">—</td></tr>
+    <tr><td>3n+1 steps</td><td id="s-up">—</td></tr>
+    <tr><td>n÷2 steps</td><td id="s-dn">—</td></tr>
+    <tr class="rule"><td>plot axis</td><td id="s-axis">—</td></tr>
+    <tr><td>2⁵³ headroom</td><td id="s-hd">—</td></tr>
+    <tr class="rule"><td>draw-in</td><td id="s-fps">—</td></tr>
+    <tr><td>collatz steps / frame</td><td id="s-work">—</td></tr>
+  </table>
+  <div id="drift">
+    <div class="lab">Odd-step frequency</div>
+    <div class="g"><u id="drift-thr"></u><i id="drift-now"></i></div>
+    <div class="sc"><span id="drift-txt">—</span><span>threshold ln2/ln3 = 0.631</span></div>
+  </div>
+</section>
+
+<section id="board" class="panel">
+  <h2>Peak holders <em>— click to load</em></h2>
+  <div class="hd"><span>#</span><span>start</span><span>steps</span><span>peak</span></div>
+  <div id="lbrows"></div>
+</section>
+
+<script>
+"use strict";
+/* ════════════════════════════════════════════════════════════════════════
+   29 · COLLATZ PHASE PORTRAIT
+     f(x) = x/2  (x even)
+          = 3x+1 (x odd)
+   Deterministic: mulberry32 seeds the ensemble, the basin window derives from
+   the same parameters, and the draw-in advances a fixed delta per frame.
+   ════════════════════════════════════════════════════════════════════════ */
+
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const CEIL  = 9007199254740991;             // 2^53 - 1, largest safe integer
+const YRANGE= [6, 10, 17];                  // decades of the y axis: tight → full
+const DRIFT = Math.log(2) / Math.log(3);    // 0.6309 — odd-step drift threshold
+const NFATE = 3;
+const NB    = 320;                         // basin columns
+
+const COL = {
+  one:'#6ef0c4', open:'#ffc266', ceil:'#ff6a8e',
+  up:'#ffc266', dn:'#8ab4ff',
+  dim:'#7b93a6', dimmer:'#4e6376',
+  grid:'rgba(140,190,220,.075)', gridM:'rgba(150,200,225,.17)',
+};
+const FATE_COL = [COL.one, COL.open, COL.ceil];
+const FATE_TXT = ['reaches 1', 'budget spent', 'past 2⁵³'];
+
+/* ---------- one trajectory: hard budget + safe-integer ceiling ---------- */
+function runTrajectory(start, maxSteps){
+  const cap = maxSteps + 1;
+  const vals = new Float64Array(cap);
+  const br   = new Uint8Array(cap);        // branch taken FROM index i: 1 = 3n+1
+  let n = start, i = 0, peak = start, peakStep = 0, up = 0, dn = 0, fate = 0;
+  vals[0] = start;
+  while (i < maxSteps && n !== 1){
+    let t;
+    if ((n & 1) === 0){ t = n * 0.5; br[i] = 0; dn++; }
+    else {
+      t = 3 * n + 1;
+      if (!(t <= CEIL)){ fate = 2; vals[i + 1] = CEIL; i++; break; }
+      br[i] = 1; up++;
+    }
+    n = t; i++; vals[i] = n;
+    if (n > peak){ peak = n; peakStep = i; }
+  }
+  if (fate === 0 && n !== 1) fate = 1;
+  // group consecutive same-branch steps into runs → few polyline ops when drawing
+  const runs = [];
+  let s = 0;
+  for (let k = 1; k <= i; k++){
+    if (k === i || br[k] !== br[s]){ runs.push(s, k, br[s]); s = k; }
+  }
+  return { start, n:i, vals, br, runs, peak, peakStep, up, dn, fate };
+}
+
+/* ---------- formatting ---------- */
+function sci(v){
+  if (!isFinite(v) || v <= 0) return '—';
+  const e = Math.floor(Math.log10(v)), m = v / Math.pow(10, e);
+  const s = (Math.abs(m - 1) < 0.05) ? '1' : (Math.abs(m - 10) < 0.5 ? '10' : m.toFixed(1));
+  return s + 'e' + e;
+}
+function grp(n){ n = Math.round(n); return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+const SUP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+function sup(e){ return String(e).split('').map(c => SUP[c] || c).join(''); }
+function nice(x){                                  // 1 / 2 / 2.5 / 5 ladder
+  if (!(x > 0)) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(x))), n = x / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+}
+
+/* ════════════════════ state ════════════════════ */
+const S = {
+  start:27, steps:300, nEnt:160,
+  eTop:16, span:6, bCen:14.5, seed:1337,
+  yMax:17, branch:true, ribbon:true,
+};
+let D = null, L = null, bg = null, bands = null, dpr = 1;
+
+const cv = document.getElementById('cv');
+const g  = cv.getContext('2d', { alpha:false });
+
+/* ════════════════════ layout ════════════════════ */
+function computeLayout(W, H){
+  const M = Math.round(W * 0.0172), G = Math.round(W * 0.01875);
+  const lw = Math.round(W * 0.213), cw = Math.round(W * 0.474);
+  const rw = W - 2 * M - 2 * G - lw - cw;
+  const yTop = Math.round(H * 0.108), yMid = Math.round(H * 0.645),
+        yLow = Math.round(H * 0.665), yBot = Math.round(H * 0.9725);
+  const px = M, cx = M + lw + G, rx = M + lw + G + cw + G, h1 = Math.round(H * 0.355);
+  return {
+    W, H, M, G,
+    head:  { x:px, y:M, w:W - 2 * M, h:Math.round(H * 0.0575) },
+    ctl:   { x:px, y:yTop, w:lw, h:yMid - yTop },
+    cens:  { x:px, y:yLow, w:lw, h:yBot - yLow },
+    port:  { x:cx, y:yTop, w:cw, h:yMid - yTop },
+    bas:   { x:cx, y:yLow, w:cw, h:yBot - yLow },
+    stat:  { x:rx, y:yTop, w:rw, h:h1 },
+    board: { x:rx, y:yLow, w:rw, h:yBot - yLow },
+  };
+}
+function place(el, r){
+  el.style.left = r.x + 'px'; el.style.top = r.y + 'px';
+  el.style.width = r.w + 'px'; el.style.height = r.h + 'px';
+}
+function plotRect(r){
+  return { x:r.x + 48, y:r.y + 30, w:r.w - 62, h:r.h - 30 - 32 };
+}
+
+/* ════════════════════ background (cached, dithered) ════════════════════ */
+function buildBackground(W, H){
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(W * dpr));
+  c.height = Math.max(1, Math.round(H * dpr));
+  const b = c.getContext('2d');
+  b.scale(dpr, dpr);
+
+  const lg = b.createLinearGradient(0, 0, W * 0.28, H);
+  lg.addColorStop(0.00, '#0c1622'); lg.addColorStop(0.40, '#070e17'); lg.addColorStop(1.00, '#04070c');
+  b.fillStyle = lg; b.fillRect(0, 0, W, H);
+
+  const p = L.port;
+  const rg = b.createRadialGradient(p.x + p.w * 0.40, p.y + p.h * 0.72, 8,
+                                    p.x + p.w * 0.40, p.y + p.h * 0.72, p.w * 1.30);
+  rg.addColorStop(0, 'rgba(56,124,158,.22)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  b.fillStyle = rg; b.fillRect(0, 0, W, H);
+
+  const q = L.bas;
+  const rg2 = b.createRadialGradient(q.x + q.w * 0.55, q.y + q.h * 0.9, 8,
+                                     q.x + q.w * 0.55, q.y + q.h * 0.9, q.w * 1.15);
+  rg2.addColorStop(0, 'rgba(140,90,46,.18)'); rg2.addColorStop(1, 'rgba(0,0,0,0)');
+  b.fillStyle = rg2; b.fillRect(0, 0, W, H);
+
+  b.strokeStyle = 'rgba(150,200,225,.055)'; b.lineWidth = 1;
+  for (let i = 1; i < 6; i++){
+    const y = Math.round(H * i / 6) + 0.5;
+    b.beginPath(); b.moveTo(0, y); b.lineTo(W, y); b.stroke();
+  }
+
+  const img = b.getImageData(0, 0, c.width, c.height), d = img.data;
+  let s = 0x9E3779B9;
+  for (let i = 0; i < d.length; i += 4){              // kills banding, adds tonal variety
+    s = (s * 1664525 + 1013904223) >>> 0;
+    const n = ((s >>> 16) & 7) - 3;
+    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+  }
+  b.putImageData(img, 0, 0);
+  return c;
+}
+
+/* ════════════════════ compute ════════════════════ */
+function build(){
+  const rnd = mulberry32(S.seed >>> 0);
+  const H = S.steps;
+  const hero = runTrajectory(S.start, H);
+
+  // x axis fits the hero plus most of the ensemble so neither is cropped away
+  let longest = hero.n;
+  const axisMax = Math.max(64, nice(Math.max(hero.n * 1.10, H * 0.62)));
+
+  // seeded ensemble, log-uniform across the start window
+  const eLo = S.eTop - S.span, eHi = S.eTop;
+  const ent = new Array(S.nEnt), counts = [0, 0, 0];
+  for (let i = 0; i < S.nEnt; i++){
+    const s = Math.max(3, Math.round(Math.pow(10, eLo + rnd() * S.span)));
+    const t = runTrajectory(s, H);
+    counts[t.fate]++;
+    ent[i] = t;
+  }
+  longest = 0;
+  for (const t of ent) if (t.n > longest) longest = t.n;
+
+  // contiguous basin window centred on the chosen magnitude
+  const n0 = Math.max(2, Math.round(Math.pow(10, S.bCen)) - (NB >> 1));
+  const bas = new Float64Array(NB), basF = new Uint8Array(NB);
+  const cands = new Array(NB);
+  let maxTts = 1, sumTts = 0, res = 0;
+  for (let i = 0; i < NB; i++){
+    const t = runTrajectory(n0 + i, H);
+    bas[i] = t.n; basF[i] = t.fate;
+    cands[i] = { n:n0 + i, steps:t.n, peak:t.peak, fate:t.fate };
+    if (t.fate === 0){ if (t.n > maxTts) maxTts = t.n; sumTts += t.n; res++; }
+  }
+  cands.sort((a, b) => b.peak - a.peak);
+
+  // total Collatz steps solved this run — a deterministic stand-in for "work"
+  let solved = hero.up + hero.dn;
+  for (const t of ent) solved += t.up + t.dn;
+  for (let i = 0; i < NB; i++) solved += bas[i];
+
+  D = { hero, axisMax, ent, counts, bas, basF, n0, NB, maxTts, longest,
+        meanTts: res ? sumTts / res : 0, resolved: res,
+        board: cands.slice(0, 7), H, eLo, eHi, hi: n0 + NB - 1, solved };
+}
+
+/* Per-column min / max / mean log-value envelope, one set per fate class.
+   A column loop rather than a trajectory loop: three luminous ribbons instead
+   of 160 hairlines, and the fate basins stay readable when they overlap. */
+function buildBands(p){
+  const cols = Math.max(32, Math.round(p.w));
+  const mn = [], mx = [], sm = [], ct = [];
+  for (let k = 0; k < NFATE; k++){
+    mn.push(new Float32Array(cols).fill(NaN));
+    mx.push(new Float32Array(cols).fill(NaN));
+    sm.push(new Float32Array(cols));
+    ct.push(new Uint32Array(cols));
+  }
+  for (const tr of D.ent){
+    const k = tr.fate, a = mn[k], b = mx[k], s = sm[k], c = ct[k];
+    // a trajectory contributes only over the steps it actually lives; past its
+    // end it drops out, so the ribbon tapers instead of flooding the axis floor
+    for (let col = 0; col <= tr.n && col < cols; col++){
+      const lv = Math.log10(Math.max(1, tr.vals[col]));
+      if (Number.isNaN(a[col])){ a[col] = lv; b[col] = lv; }
+      else { if (lv < a[col]) a[col] = lv; if (lv > b[col]) b[col] = lv; }
+      s[col] += lv; c[col]++;
+    }
+  }
+  bands = { cols, mn, mx, sm, ct };
+}
+
+/* ════════════════════ render ════════════════════ */
+let reveal = 1, animating = false;
+const REVEAL_FRAMES = 42;
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function panelChrome(r, label, sub){
+  g.save();
+  g.fillStyle = 'rgba(6,11,18,.80)';
+  g.strokeStyle = 'rgba(126,190,214,.16)'; g.lineWidth = 1;
+  roundRect(g, r.x + .5, r.y + .5, r.w - 1, r.h - 1, 9); g.fill(); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,.05)';
+  g.beginPath(); g.moveTo(r.x + 10, r.y + 1.5); g.lineTo(r.x + r.w - 10, r.y + 1.5); g.stroke();
+  const tx = r.x + 13, ty = r.y + 8;
+  g.font = '600 9.5px ' + MONO; g.fillStyle = COL.dim;
+  g.textAlign = 'left'; g.textBaseline = 'top';
+  g.fillText(label.toUpperCase(), tx, ty);
+  if (sub){
+    g.font = '9.5px ' + MONO; g.fillStyle = COL.dimmer; g.textAlign = 'right';
+    g.fillText(sub, r.x + r.w - 13, ty);
+  }
+  g.strokeStyle = 'rgba(126,190,214,.13)';
+  g.beginPath(); g.moveTo(tx, ty + 14.5); g.lineTo(r.x + r.w - 13, ty + 14.5); g.stroke();
+  g.restore();
+}
+
+function drawPortrait(r, p){
+  const hero = D.hero, axisMax = D.axisMax, cols = bands.cols, yTop = S.yMax;
+  const X   = s => p.x + p.w * (s / axisMax);
+  const Y   = v => p.y + p.h * (1 - Math.log10(Math.max(v, 1)) / yTop);
+  const cut = axisMax * reveal;
+
+  g.save();
+  g.beginPath(); roundRect(g, r.x, r.y, r.w, r.h, 9); g.clip();
+
+  // ceiling band — top of the log range is where 3x+1 gives out
+  if (S.yMax >= 16){
+    const cTop = Y(CEIL);
+    const cg = g.createLinearGradient(0, p.y, 0, cTop);
+    cg.addColorStop(0, 'rgba(255,106,142,.17)'); cg.addColorStop(1, 'rgba(255,106,142,.02)');
+    g.fillStyle = cg; g.fillRect(p.x, p.y, p.w, cTop - p.y);
+    g.strokeStyle = 'rgba(255,106,142,.40)'; g.lineWidth = 1; g.setLineDash([4, 4]);
+    g.beginPath(); g.moveTo(p.x, Math.round(cTop) + .5);
+    g.lineTo(p.x + p.w, Math.round(cTop) + .5); g.stroke();
+    g.setLineDash([]);
+  }
+
+  // attractor band 1 … 10
+  const a1 = Y(10), a2 = Y(1);
+  const ag = g.createLinearGradient(0, a1, 0, a2);
+  ag.addColorStop(0, 'rgba(110,240,196,0)'); ag.addColorStop(1, 'rgba(110,240,196,.16)');
+  g.fillStyle = ag; g.fillRect(p.x, a1, p.w, a2 - a1);
+
+  // ---- grid ----
+  g.lineWidth = 1; g.font = '9.5px ' + MONO; g.textBaseline = 'middle';
+  for (let d = 0; d <= yTop; d += (yTop > 12 ? 2 : 1)){
+    const y = Math.round(Y(Math.pow(10, d))) + .5;
+    if (y < p.y || y > p.y + p.h) continue;
+    g.strokeStyle = d === 0 ? 'rgba(110,240,196,.32)' : COL.grid;
+    g.beginPath(); g.moveTo(p.x, y); g.lineTo(p.x + p.w, y); g.stroke();
+    g.fillStyle = d === 0 ? 'rgba(110,240,196,.85)' : COL.dim; g.textAlign = 'right';
+    g.fillText('10' + sup(d), p.x - 6, y);
+  }
+  const xt = nice(axisMax / 6);
+  g.textBaseline = 'top';
+  for (let s = 0; s <= axisMax + .5; s += xt){
+    const x = Math.round(X(s)) + .5;
+    if (x < p.x - .5 || x > p.x + p.w) continue;
+    g.strokeStyle = s === 0 ? COL.gridM : COL.grid;
+    g.beginPath(); g.moveTo(x, p.y); g.lineTo(x, p.y + p.h); g.stroke();
+    g.fillStyle = COL.dim; g.textAlign = 'center';
+    g.fillText(grp(s), x, p.y + p.h + 6);
+  }
+  g.textAlign = 'left'; g.fillStyle = COL.dim;
+  g.fillText('step', p.x + p.w - 28, p.y + p.h + 6);
+
+  // ---- fate ribbons: min…max envelope + mean line, per fate class ----
+  if (S.ribbon){
+    const lim = Math.max(1, Math.round(cols * reveal));
+    const yFloor = p.y + p.h + 1;                    // everything above yMax is off-frame
+    const yv = lv => p.y + p.h * (1 - lv / yTop);
+    for (let k = NFATE - 1; k >= 0; k--){
+      const a = bands.mn[k], b = bands.mx[k], s = bands.sm[k], c = bands.ct[k];
+      if (!c[0]) continue;
+      g.beginPath();
+      let started = false;
+      for (let col = 0; col < lim; col++){
+        if (!c[col] || Number.isNaN(a[col])) continue;
+        const x = p.x + (col / (cols - 1)) * p.w, y = yv(b[col]);
+        if (!started){ g.moveTo(x, y); started = true; } else g.lineTo(x, y);
+      }
+      for (let col = lim - 1; col >= 0; col--){
+        if (!c[col] || Number.isNaN(a[col])) continue;
+        g.lineTo(p.x + (col / (cols - 1)) * p.w, yv(a[col]));
+      }
+      if (started){
+        g.closePath();
+        const grd = g.createLinearGradient(0, p.y, 0, p.y + p.h);
+        grd.addColorStop(0, FATE_COL[k] + '26');
+        grd.addColorStop(1, FATE_COL[k] + '05');
+        g.fillStyle = grd; g.fill();
+        g.strokeStyle = FATE_COL[k] + '55'; g.lineWidth = 0.8;
+        g.beginPath();
+        for (let col = 0; col < lim; col++){
+          if (!c[col] || Number.isNaN(b[col])) continue;
+          const x = p.x + (col / (cols - 1)) * p.w, y = yv(b[col]);
+          if (col === 0 || !c[col-1] || Number.isNaN(b[col-1])) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        g.stroke();
+      }
+      g.beginPath(); started = false;
+      for (let col = 0; col < lim; col++){
+        if (!c[col]) continue;
+        const y = yv(s[col] / c[col]);
+        if (y < yFloor) continue;
+        const x = p.x + (col / (cols - 1)) * p.w;
+        if (!started){ g.moveTo(x, y); started = true; } else g.lineTo(x, y);
+      }
+      g.strokeStyle = FATE_COL[k]; g.globalAlpha = .62; g.lineWidth = 1.1;
+      g.lineJoin = 'round'; g.stroke(); g.globalAlpha = 1;
+    }
+  }
+
+  // ---- hero ----
+  if (hero.n >= 1 && cut >= 1){
+    const lim = Math.min(hero.n, cut);
+    for (let pass = 0; pass < 2; pass++){
+      g.globalAlpha = pass === 0 ? .10 : .18;
+      g.lineWidth = pass === 0 ? 5 : 2.2;
+      g.strokeStyle = pass === 0 ? '#3fd0ff' : '#a8ecff';
+      g.beginPath();
+      g.moveTo(X(0), Y(hero.vals[0]));
+      for (let i = 1; i <= lim; i++) g.lineTo(X(i), Y(hero.vals[i]));
+      g.stroke();
+    }
+    g.globalAlpha = 1; g.lineWidth = 1.3; g.lineJoin = 'round';
+    if (S.branch){
+      for (let k = 0; k < hero.runs.length; k += 3){
+        const a = hero.runs[k], b = hero.runs[k + 1], br = hero.runs[k + 2];
+        if (a > lim) break;
+        const e = Math.min(b, lim);
+        if (e <= a) continue;
+        g.strokeStyle = br ? COL.up : COL.dn;
+        g.beginPath();
+        g.moveTo(X(a), Y(hero.vals[a]));
+        for (let i = a + 1; i <= e; i++) g.lineTo(X(i), Y(hero.vals[i]));
+        g.stroke();
+      }
+    } else {
+      g.strokeStyle = '#eaf7ff';
+      g.beginPath();
+      g.moveTo(X(0), Y(hero.vals[0]));
+      for (let i = 1; i <= lim; i++) g.lineTo(X(i), Y(hero.vals[i]));
+      g.stroke();
+    }
+    if (hero.peakStep > 0 && hero.peakStep <= lim){
+      const hx = X(hero.peakStep), hy = Y(hero.peak);
+      g.strokeStyle = '#fff'; g.lineWidth = 1.2;
+      g.beginPath(); g.arc(hx, hy, 3.6, 0, 6.2832); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.92)'; g.font = '10px ' + MONO;
+      g.textAlign = hx > p.x + p.w * .6 ? 'right' : 'left'; g.textBaseline = 'bottom';
+      g.fillText('peak ' + sci(hero.peak), hx + (hx > p.x + p.w * .6 ? -8 : 8), hy - 3);
+    }
+    if (hero.fate === 0 && hero.n <= lim){
+      const tx = X(hero.n), ty = Y(1);
+      g.strokeStyle = COL.one; g.lineWidth = 1.4;
+      g.beginPath(); g.arc(tx, ty, 5, 0, 6.2832); g.stroke();
+      g.beginPath(); g.arc(tx, ty, 1.6, 0, 6.2832); g.stroke();
+      g.fillStyle = COL.one; g.font = '10px ' + MONO;
+      g.textAlign = 'center'; g.textBaseline = 'bottom';
+      g.fillText('1', tx, ty - 9);
+    } else if (hero.fate === 2 && lim >= hero.n){
+      const tx = X(hero.n), ty = Y(hero.vals[hero.n]);
+      g.strokeStyle = COL.ceil; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(tx - 5, ty - 5); g.lineTo(tx + 5, ty + 5);
+      g.moveTo(tx + 5, ty - 5); g.lineTo(tx - 5, ty + 5); g.stroke();
+    }
+  }
+
+  // ---- in-plot fate legend, live counts ----
+  g.font = '9.5px ' + MONO; g.textBaseline = 'middle'; g.textAlign = 'left';
+  let ly = p.y + 9;
+  for (let k = 0; k < NFATE; k++){
+    const n = D.counts[k];
+    g.fillStyle = FATE_COL[k];
+    g.fillRect(p.x + p.w - 112, ly - 3, 7, 7);
+    g.fillStyle = n ? 'rgba(225,240,250,.9)' : COL.dimmer;
+    g.fillText(FATE_TXT[k] + '  ' + grp(n), p.x + p.w - 100, ly + 1);
+    ly += 13;
+  }
+
+  // ---- hover readout ----
+  if (hover.active && !animating && hover.x > p.x && hover.x < p.x + p.w){
+    const s = Math.round((hover.x - p.x) / p.w * axisMax);
+    if (s >= 0 && s <= hero.n){
+      const hx = Math.round(X(s)) + .5;
+      g.strokeStyle = 'rgba(255,255,255,.24)'; g.lineWidth = 1; g.setLineDash([2, 3]);
+      g.beginPath(); g.moveTo(hx, p.y); g.lineTo(hx, p.y + p.h); g.stroke(); g.setLineDash([]);
+      const hy = Y(hero.vals[s]);
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(hx, hy, 2.8, 0, 6.2832); g.fill();
+      const txt = 'step ' + grp(s) + '  ·  ' + grp(hero.vals[s]) + '  ·  10^' + Math.log10(hero.vals[s]).toFixed(2);
+      g.font = '10.5px ' + MONO;
+      const tw = g.measureText(txt).width + 14;
+      const bx = Math.min(Math.max(p.x + 4, hx + 9), p.x + p.w - tw - 4);
+      const by = Math.min(Math.max(p.y + 4, hy - 28), p.y + p.h - 24);
+      g.fillStyle = 'rgba(4,9,15,.93)'; g.strokeStyle = 'rgba(150,200,225,.35)';
+      roundRect(g, bx, by, tw, 19, 4); g.fill(); g.stroke();
+      g.fillStyle = '#dff2ff'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(txt, bx + 7, by + 10);
+    }
+  }
+  g.restore();
+}
+
+function drawBasin(r, p){
+  g.save();
+  g.beginPath(); roundRect(g, r.x, r.y, r.w, r.h, 9); g.clip();
+
+  const laneGap = 14, laneH = (p.h - laneGap) / 2, bw = p.w / NB;
+  const lg = Math.log10(1 + D.maxTts) || 1;
+  const grow = Math.max(0, Math.min(1, (reveal - .35) / .65));   // bars grow after the ribbons
+  const cut = Math.ceil(NB * reveal);
+
+  for (let lane = 0; lane < 2; lane++){
+    const base = p.y + lane * (laneH + laneGap);
+    g.strokeStyle = COL.gridM; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(p.x, Math.round(base + laneH) + .5);
+    g.lineTo(p.x + p.w, Math.round(base + laneH) + .5); g.stroke();
+    for (let i = 0; i < cut; i++){
+      const f = D.basF[i], tts = D.bas[i], x = p.x + i * bw, w = Math.max(0.8, bw * 0.8);
+      if (f === 0){
+        const h = Math.max(1.5, laneH * (.05 + .95 * Math.log10(1 + tts) / lg)) * grow;
+        g.fillStyle = (i & 1) ? 'rgba(110,240,196,.82)' : 'rgba(86,204,168,.72)';
+        g.fillRect(x, base + laneH - h, w, h);
+      } else {
+        const h = (laneH - 2) * grow;
+        g.fillStyle = f === 1 ? 'rgba(255,194,102,.50)' : 'rgba(255,106,142,.60)';
+        g.fillRect(x, base + laneH - h - 1, w, h);
+      }
+    }
+    g.font = '10.5px ' + MONO; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.fillStyle = lane === 0 ? COL.up : COL.dn;
+    g.fillText(lane === 0 ? '3n+1' : 'n÷2', p.x - 6, base + laneH * .5 - 7);
+    g.font = '9px ' + MONO; g.fillStyle = COL.dimmer;
+    g.fillText(lane === 0 ? 'odd' : 'even', p.x - 6, base + laneH * .5 + 6);
+  }
+
+  // mean stopping-time marker on the odd lane
+  const mh = laneH * (.05 + .95 * Math.log10(1 + D.meanTts) / lg) * grow;
+  g.strokeStyle = 'rgba(255,255,255,.32)'; g.lineWidth = 1; g.setLineDash([3, 3]);
+  g.beginPath(); g.moveTo(p.x, Math.round(p.y + laneH - mh) + .5);
+  g.lineTo(p.x + p.w, Math.round(p.y + laneH - mh) + .5); g.stroke(); g.setLineDash([]);
+  g.fillStyle = 'rgba(255,255,255,.6)'; g.font = '9.5px ' + MONO;
+  g.textAlign = 'left'; g.textBaseline = 'bottom';
+  g.fillText('mean T = ' + D.meanTts.toFixed(0) + ' steps', p.x + 5, p.y + laneH - mh - 3);
+
+  // axis
+  g.font = '9.5px ' + MONO; g.textAlign = 'center'; g.textBaseline = 'top'; g.fillStyle = COL.dim;
+  for (let i = 0; i <= NB; i += NB / 4){
+    const x = p.x + i * bw;
+    if (x > p.x + p.w - 14) break;
+    g.fillText(grp(i), x, p.y + p.h + 6);
+  }
+  g.textAlign = 'left';
+  g.fillText('offset from n = ' + sci(D.n0) + '  ·  ' + grp(D.n0) + ' … ' + grp(D.hi),
+             p.x + 2, p.y + p.h + 6);
+  g.restore();
+}
+
+function render(){
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, L.W, L.H);
+  if (bg) g.drawImage(bg, 0, 0, L.W, L.H);
+
+  const rP = L.port, rB = L.bas;
+  panelChrome(rP, 'phase portrait — log value × step',
+    grp(D.ent.length) + ' trajectories · axis 0…' + grp(D.axisMax));
+  panelChrome(rB, 'basin landscape — stopping time T(n)',
+    'bar = steps to 1 · ' + grp(D.NB) + ' contiguous starts');
+
+  drawPortrait(rP, plotRect(rP));
+  drawBasin(rB, { x:rB.x + 48, y:rB.y + 30, w:rB.w - 62, h:rB.h - 30 - 24 });
+}
+
+/* ════════════════════ HUD ════════════════════ */
+const $ = id => document.getElementById(id);
+const el = {};
+['o-start','n-start','s-start','o-steps','s-steps','o-n','s-n','o-top','s-top','o-span','s-span',
+ 'o-bcen','s-bcen','n-seed','st-one','st-open','st-ceil','v-one','v-open','v-ceil','p-one','p-open',
+ 'p-ceil','s-peak','s-fate','s-n0','s-tts','s-pk','s-up','s-dn','s-axis','s-hd','s-fps','lbrows',
+ 't-branch','t-ribbon','drift-thr','drift-now','drift-txt','s-work']
+  .forEach(k => el[k] = $(k));
+
+function paintSlider(inp){
+  inp.style.setProperty('--p', (((inp.value - inp.min) / (inp.max - inp.min)) * 100).toFixed(2) + '%');
+}
+function startToSlider(n){
+  return Math.round(Math.min(1400, Math.max(0, Math.log10(Math.max(n, 1)) / 15 * 1400)));
+}
+function sliderToStart(v){ return Math.max(1, Math.round(Math.pow(10, v / 1400 * 15))); }
+
+function syncHUD(){
+  const h = D.hero;
+  el['o-start'].textContent = grp(S.start); el['n-start'].value = S.start; paintSlider(el['s-start']);
+  el['o-steps'].textContent = grp(S.steps); paintSlider(el['s-steps']);
+  el['o-n'].textContent = S.nEnt; paintSlider(el['s-n']);
+  el['o-top'].textContent = S.eTop.toFixed(1); paintSlider(el['s-top']);
+  el['o-span'].textContent = S.span + ' decades'; paintSlider(el['s-span']);
+  el['o-bcen'].textContent = S.bCen.toFixed(1); paintSlider(el['s-bcen']);
+  el['n-seed'].value = S.seed;
+  el['t-branch'].classList.toggle('on', S.branch);
+  el['t-ribbon'].classList.toggle('on', S.ribbon);
+
+  const tot = Math.max(1, D.counts[0] + D.counts[1] + D.counts[2]);
+  [['one', 0], ['open', 1], ['ceil', 2]].forEach(pair => {
+    const k = pair[0], i = pair[1];
+    el['st-' + k].style.width = (D.counts[i] / tot * 100) + '%';
+    el['st-' + k].style.background = FATE_COL[i];
+    el['v-' + k].textContent = grp(D.counts[i]);
+    el['p-' + k].textContent = (D.counts[i] / tot * 100).toFixed(1) + '%';
+  });
+
+  el['s-peak'].textContent = sci(h.peak);
+  el['s-fate'].textContent = FATE_TXT[h.fate];
+  el['s-fate'].style.color = FATE_COL[h.fate];
+  el['s-n0'].textContent = grp(h.start);
+  el['s-tts'].textContent = h.fate === 0 ? grp(h.n)
+                                : (h.fate === 2 ? '— left float64' : '> ' + grp(D.H));
+  el['s-tts'].style.color = h.fate === 0 ? COL.one : FATE_COL[h.fate];
+  el['s-pk'].textContent = 'step ' + grp(h.peakStep);
+  el['s-up'].textContent = grp(h.up); el['s-up'].style.color = COL.up;
+  el['s-dn'].textContent = grp(h.dn); el['s-dn'].style.color = COL.dn;
+  el['s-axis'].textContent = '0 … ' + grp(D.axisMax);
+  const hd = h.fate === 2 ? 0 : Math.log10(CEIL) - Math.log10(Math.max(h.peak, 1));
+  el['s-hd'].textContent = h.fate === 2 ? 'exhausted' : hd.toFixed(1) + ' decades';
+  el['s-hd'].style.color = h.fate === 2 ? COL.ceil : (hd < 3 ? COL.open : COL.one);
+  el['s-fps'].textContent = REVEAL_FRAMES + ' frames, fixed Δ';
+  el['s-work'].textContent = grp(D.solved);
+
+  // odd-step frequency against the ln2/ln3 drift threshold
+  const fr = h.up / Math.max(1, h.up + h.dn);
+  el['drift-now'].style.left = (fr * 100).toFixed(1) + '%';
+  el['drift-thr'].style.left = (DRIFT * 100).toFixed(1) + '%';
+  el['drift-txt'].textContent = fr.toFixed(3) + (fr < DRIFT ? '  ↓ down' : '  ↑ up');
+
+  el['lbrows'].innerHTML = '';
+  D.board.forEach((b, i) => {
+    const d = document.createElement('div');
+    d.className = 'lb' + (b.n === S.start ? ' sel' : '');
+    d.innerHTML = '<span class="r">' + (i + 1) + '</span>' +
+      '<span style="color:' + FATE_COL[b.fate] + '">' + grp(b.n) + '</span>' +
+      '<span class="s">' + (b.fate === 0 ? grp(b.steps) : '—') + '</span>' +
+      '<span style="text-align:right;color:' + FATE_COL[b.fate] + '">' + sci(b.peak) + '</span>';
+    d.addEventListener('click', function(){ setStart(b.n); rebuild(); replay(); });
+    el['lbrows'].appendChild(d);
+  });
+}
+
+/* ════════════════════ frame loop ════════════════════ */
+let raf = null, frames = 0, fpsT = 0;
+window.__probe = {};
+window.__ready = false;
+
+function publishProbe(){
+  window.__probe = {
+    ready: !!window.__ready, reveal: +reveal.toFixed(3),
+    collatz_steps_solved: D.solved,
+    y_max_exponent: S.yMax, ribbons: S.ribbon, branch_colours: S.branch,
+    trajectories: D.ent.length, step_budget: D.H, axis_max: D.axisMax,
+    start_window: ['1e' + D.eLo, '1e' + D.eHi], seed: S.seed,
+    hero: { start: D.hero.start, steps: D.hero.n, peak: sci(D.hero.peak),
+            odd_steps: D.hero.up, even_steps: D.hero.dn,
+            odd_fraction: +(D.hero.up / Math.max(1, D.hero.up + D.hero.dn)).toFixed(4),
+            fate: FATE_TXT[D.hero.fate] },
+    fate_counts: { reaches_1: D.counts[0], budget_spent: D.counts[1], past_2p53: D.counts[2] },
+    basin: { centre: sci(D.n0), lo: D.n0, hi: D.hi, max_tts: D.maxTts,
+             mean_tts: +D.meanTts.toFixed(1), resolved: D.resolved, of: D.NB },
+    drift_threshold: +DRIFT.toFixed(4), safe_int_ceiling: '2^53-1',
+  };
+}
+
+function frame(){
+  frames++;
+  render();
+  if (animating && reveal < 1){
+    reveal = Math.min(1, reveal + 1 / REVEAL_FRAMES);
+    raf = requestAnimationFrame(frame);
+  } else {
+    if (animating){ animating = false; window.__ready = true; }
+    raf = null;
+    publishProbe();                 // keep __probe live after the loop parks
+  }
+  const now = performance.now();
+  if (fpsT === 0) fpsT = now;
+  else if (now - fpsT > 500){
+    frames = 0; fpsT = now;
+    publishProbe();
+  }
+}
+function kick(){ if (raf === null) raf = requestAnimationFrame(frame); }
+function replay(){ reveal = 1 / REVEAL_FRAMES; animating = true; kick(); }
+function rebuild(){
+  build();
+  syncHUD();
+  buildBands(plotRect(L.port));
+  render();
+}
+
+/* ════════════════════ interactions ════════════════════ */
+function setStart(n){
+  S.start = Math.max(1, Math.min(Number.MAX_SAFE_INTEGER, Math.round(n)));
+  el['s-start'].value = startToSlider(S.start);
+}
+function setStartOnly(n){ setStart(n); rebuild(); replay(); }
+
+el['s-start'].addEventListener('input', e => { S.start = sliderToStart(+e.target.value); rebuild(); replay(); });
+el['n-start'].addEventListener('change', e => {
+  const v = parseInt(e.target.value, 10); if (isFinite(v) && v > 0) setStartOnly(v);
+});
+el['s-steps'].addEventListener('input', e => { S.steps = +e.target.value; rebuild(); replay(); });
+el['s-n'].addEventListener('input', e => { S.nEnt = +e.target.value; rebuild(); replay(); });
+el['s-top'].addEventListener('input', e => { S.eTop = (+e.target.value) / 10; rebuild(); replay(); });
+el['s-span'].addEventListener('input', e => { S.span = +e.target.value; rebuild(); replay(); });
+el['s-bcen'].addEventListener('input', e => { S.bCen = (+e.target.value) / 10; rebuild(); replay(); });
+el['n-seed'].addEventListener('change', e => {
+  const v = parseInt(e.target.value, 10); S.seed = isFinite(v) && v >= 0 ? v : 0; rebuild(); replay();
+});
+$('b-seed').addEventListener('click', () => {
+  S.seed = (Math.imul(S.seed, 1103515245) + 12345) >>> 8; rebuild(); replay();
+});
+$('b-launch').addEventListener('click', () => { rebuild(); replay(); });
+$('b-replay').addEventListener('click', () => { replay(); });
+$('presets').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) setStartOnly(+c.dataset.n); });
+document.querySelectorAll('[data-y]').forEach(c => {
+  c.addEventListener('click', () => {
+    S.yMax = +c.dataset.y;
+    document.querySelectorAll('[data-y]').forEach(o => o.classList.toggle('on', o === c));
+    syncHUD(); replay();
+  });
+});
+$('t-branch').addEventListener('click', () => { S.branch = !S.branch; syncHUD(); replay(); });
+$('t-ribbon').addEventListener('click', () => { S.ribbon = !S.ribbon; syncHUD(); replay(); });
+
+const hover = { active:false, x:0, y:0 };
+cv.addEventListener('pointermove', e => { hover.active = true; hover.x = e.clientX; hover.y = e.clientY; if (!raf) render(); });
+cv.addEventListener('pointerleave', () => { hover.active = false; render(); });
+
+function onResize(){
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = Math.max(720, window.innerWidth), H = Math.max(480, window.innerHeight);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  L = computeLayout(W, H);
+  [['head','head'], ['ctl','ctl'], ['cens','census'], ['stat','stats'], ['board','board']]
+    .forEach(function(pair){ const e = $(pair[1]); if (e) place(e, L[pair[0]]); });
+  bg = buildBackground(W, H);
+  buildBands(plotRect(L.port));
+  render();
+}
+window.addEventListener('resize', onResize);
+
+/* ════════════════════ boot ════════════════════ */
+setStart(S.start);
+build();
+syncHUD();
+onResize();
+reveal = 1 / REVEAL_FRAMES;
+animating = true;
+kick();
+</script>
+</body>
+</html>

@@ -1,0 +1,1403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>L-System Flora — 3D stochastic parametric L-system</title>
+<style>
+  :root{
+    --ink: #dfe9ee;
+    --dim: #8ea3ad;
+    --edge: rgba(190,220,235,.16);
+    --pane: rgba(6,11,15,.74);
+    --acc: #7ee0a8;
+    --acc2: #ffd479;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#04070a;overflow:hidden}
+  body{
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;image-rendering:auto}
+  .pane{
+    position:fixed;background:var(--pane);border:1px solid var(--edge);
+    border-radius:3px;padding:9px 11px;
+    box-shadow:0 6px 26px rgba(0,0,0,.55);
+  }
+  h1{margin:0;font-size:13px;letter-spacing:.20em;font-weight:600;color:#eef6fa}
+  h1 em{font-style:normal;color:var(--acc)}
+  .sub{margin-top:3px;font-size:11px;color:var(--dim);letter-spacing:.02em}
+  .tech{margin-top:6px;font-size:10.5px;line-height:1.5;color:#8fd9c4;letter-spacing:.03em;
+        border-left:2px solid var(--acc);padding-left:7px;max-width:330px;opacity:.92}
+  .stats{margin-top:7px;font-size:10.5px;color:var(--dim)}
+  .stats b{color:var(--ink);font-weight:600}
+  .stats span{color:#6f858f}
+
+  #head{left:14px;top:14px;width:352px}
+  #ctl{left:14px;bottom:14px;width:246px}
+  #gram{right:14px;bottom:14px;width:300px}
+
+  .lab{font-size:10px;letter-spacing:.18em;color:#6f858f;margin:0 0 5px}
+  .seg{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:11px}
+  .seg button{
+    flex:1 1 46%;font:inherit;font-size:11px;letter-spacing:.04em;padding:5px 4px;
+    background:rgba(255,255,255,.035);color:var(--dim);border:1px solid var(--edge);
+    border-radius:2px;cursor:pointer;
+  }
+  .seg button:hover{background:rgba(255,255,255,.09);color:var(--ink)}
+  .seg button.on{background:rgba(126,224,168,.16);border-color:var(--acc);color:#eafff4}
+  .row{display:flex;align-items:center;gap:7px;margin:7px 0}
+  .row label{font-size:10.5px;color:var(--dim);flex:0 0 96px;letter-spacing:.03em}
+  .row output{font-size:10.5px;color:var(--acc2);flex:0 0 44px;text-align:right}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:14px;background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(255,255,255,.18)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-4px;
+    border-radius:50%;background:var(--acc);border:none}
+  input[type=range]::-moz-range-track{height:2px;background:rgba(255,255,255,.18)}
+  input[type=range]::-moz-range-thumb{width:10px;height:10px;border:none;border-radius:50%;background:var(--acc)}
+  .btns{display:flex;gap:5px;margin-top:10px}
+  .btns button{
+    flex:1;font:inherit;font-size:11px;padding:5px 3px;background:rgba(255,255,255,.045);
+    color:var(--dim);border:1px solid var(--edge);border-radius:2px;cursor:pointer;letter-spacing:.04em}
+  .btns button:hover{background:rgba(255,255,255,.10);color:var(--ink)}
+  .btns button.on{background:rgba(255,212,121,.15);border-color:var(--acc2);color:#fff3d8}
+  .hint{margin-top:9px;font-size:10px;color:#5d727c;line-height:1.5;border-top:1px solid var(--edge);padding-top:7px}
+
+  #gram .g{font-size:10.5px;line-height:1.6;color:#9db2bb;word-break:break-all}
+  #gram .g b{color:var(--acc);font-weight:600}
+  #gram .alph{margin-top:7px;font-size:10px;color:#7f959e;line-height:1.6}
+  #gram .alph i{font-style:normal;color:var(--acc2)}
+  #gram .note{margin-top:6px;font-size:10px;color:#5d727c;line-height:1.55}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="pane" id="head">
+  <h1>L-SYSTEM <em>FLORA</em></h1>
+  <div class="sub" id="sub">—</div>
+  <div class="tech" id="tech"></div>
+  <div class="stats" id="stats"></div>
+</div>
+
+<div class="pane" id="ctl">
+  <p class="lab">GRAMMAR PRESET</p>
+  <div class="seg" id="spBtns"></div>
+  <div class="row"><label>iterations</label><input type="range" id="it" min="2" max="6" step="1"><output id="itV"></output></div>
+  <div class="row"><label>branch angle</label><input type="range" id="ang" min="8" max="48" step="1"><output id="angV"></output></div>
+  <div class="row"><label>length decay</label><input type="range" id="ld" min="55" max="95" step="1"><output id="ldV"></output></div>
+  <div class="row"><label>radius decay</label><input type="range" id="rd" min="60" max="96" step="1"><output id="rdV"></output></div>
+  <div class="row"><label>gravitropism</label><input type="range" id="gr" min="0" max="30" step="1"><output id="grV"></output></div>
+  <div class="btns">
+    <button id="bSeed">reseed</button>
+    <button id="bGrow">regrow</button>
+  </div>
+  <div class="btns">
+    <button id="bSkel">skeleton</button>
+    <button id="bAuto" class="on">spin on</button>
+  </div>
+  <div class="hint">F draw &middot; + &minus; yaw &middot; &amp; ^ pitch &middot; / \ roll &middot; [ ] branch<br>Deterministic: mulberry32 seed, fixed 1/30 s sim step.</div>
+</div>
+
+<div class="pane" id="gram">
+  <p class="lab">REWRITING SYSTEM</p>
+  <div class="g" id="gBody"></div>
+  <div class="alph" id="gAlpha"></div>
+  <div class="note" id="gNote"></div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   L-SYSTEM FLORA
+   3D stochastic parametric L-system  ->  turtle interpretation  ->  tapered
+   tube / blade mesh  ->  WebGL2 forward renderer.  Everything deterministic:
+   one mulberry32 stream, one fixed 1/30 s simulation step per frame.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- constants */
+const DT          = 1/30;          // fixed simulation step (s)
+const GROW_TIME   = 1.05;          // seconds of sim time for a full growth
+const MAX_PRIMS   = 3000;          // hard safety cap
+const STR_CAP     = 200000;
+const RAD = Math.PI/180;
+
+/* ------------------------------------------------------------------- prng */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ------------------------------------------------------------------- math */
+function m4(){ return new Float32Array(16); }
+function m4ident(o){ o.fill(0); o[0]=o[5]=o[10]=o[15]=1; return o; }
+function m4persp(o,fovy,asp,n,f){
+  const t = 1/Math.tan(fovy*0.5);
+  o.fill(0); o[0]=t/asp; o[5]=t; o[10]=(f+n)/(n-f); o[11]=-1; o[14]=2*f*n/(n-f);
+  return o;
+}
+function m4look(o,e,c,up){
+  let zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2];
+  let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+  let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx;
+  l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+  const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+  o[0]=xx; o[1]=yx; o[2]=zx; o[3]=0;
+  o[4]=xy; o[5]=yy; o[6]=zy; o[7]=0;
+  o[8]=xz; o[9]=yz; o[10]=zz; o[11]=0;
+  o[12]=-(xx*e[0]+xy*e[1]+xz*e[2]);
+  o[13]=-(yx*e[0]+yy*e[1]+yz*e[2]);
+  o[14]=-(zx*e[0]+zy*e[1]+zz*e[2]);
+  o[15]=1; return o;
+}
+function m4mul(o,a,b){
+  for(let c=0;c<4;c++){
+    const b0=b[c*4],b1=b[c*4+1],b2=b[c*4+2],b3=b[c*4+3];
+    o[c*4  ]=a[0]*b0+a[4]*b1+a[8 ]*b2+a[12]*b3;
+    o[c*4+1]=a[1]*b0+a[5]*b1+a[9 ]*b2+a[13]*b3;
+    o[c*4+2]=a[2]*b0+a[6]*b1+a[10]*b2+a[14]*b3;
+    o[c*4+3]=a[3]*b0+a[7]*b1+a[11]*b2+a[15]*b3;
+  }
+  return o;
+}
+const v3 = {
+  n(a){ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; },
+  cr(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; },
+  dt(a,b){ return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; },
+  mix(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+};
+function clamp(x,a,b){ return x<a?a:(x>b?b:x); }
+function smoothstep(a,b,x){ const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); }
+
+/* ---------------------------------------------------------------- presets */
+/* Rule-set helper: one leaf of a radial whorl, `n` of them around the axis.
+   Order matters and is easy to get wrong.  '[' pushes state, so the roll has
+   to live INSIDE the branch or ']' throws it away.  But the roll must come
+   FIRST and the pitch SECOND: a roll about the draw axis only changes which
+   way "sideways" is, and a pitch applied before it is then rotated back onto
+   the vertical.  Pitch-then-roll leaves every whorl leaf pointing straight up.
+   `n` rolls of `turn` degrees close a full circle exactly. */
+function ring(n, pitch, sym){ let s=''; for(let i=0;i<n;i++) s += '[T' + pitch + sym + ']'; return s; }
+function mixc(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+
+const PRESETS = {
+/* ------------------------------------------------------------ 1. OAK TREE */
+oak:{
+  key:'oak', name:'Oak', latin:'Quercus robur', tag:'stochastic branching tree',
+  tech:'STOCHASTIC 3D L-SYSTEM &rarr; TURTLE (F + - &amp; ^ / \\ [ ]) &rarr; PARALLEL-TRANSPORT TUBES',
+  note:'Probability-weighted rules. Branch order thins the trunk; gravitropism bends the canopy.',
+  axiom:'F A',
+  rules:{
+    A:[{w:1,  to:'!F[&+B][&-B][&/B]FA'},
+       {w:0.34,to:'!F[&+B][&-B][&/B][\\&+B]FA'}],
+    B:[{w:1,  to:'!F[&+C][&-C][&/C]FB'},
+       {w:0.28,to:'!F[&+C][&-C][&/C][\\&+C]FB'}],
+    C:[{w:1,  to:'!F[&+L][&-L]FC'}]
+  },
+  final:{ C:'!F[&+L][&-L]F[&+L]' },
+  iterDef:5, iterMin:3, iterMax:5,
+  angDef:27, len:0.235, lenDef:0.86, r0:0.052, rDef:0.80, taper:0.46,
+  turn:60, jitter:0.20,
+  curv:{droop:0.10, photo:0.055, tip:0.0},
+  growMode:'height', leafShrink:0.90,
+  sym:{ L:{len:0.115,wid:0.045,thick:0.0055,bend:-0.70,arc:-0.20,mat:1} },
+  cam:{el:15, az:0.62, fit:1.00, oy:0.06, ox:0.16},
+  pal:{
+    bgBot:[0.016,0.030,0.042], bgTop:[0.040,0.070,0.090], bgGlow:[0.075,0.215,0.245], glow2:[0.10,0.05,0.10],
+    ground:[0.038,0.060,0.068], groundLit:[0.150,0.270,0.280],
+    wood:[0.300,0.212,0.150], woodTip:[0.520,0.390,0.245],
+    leaf:[0.300,0.520,0.140], leafTip:[0.660,0.840,0.290],
+    sky:[0.100,0.165,0.235], gnd:[0.085,0.048,0.030],
+    key:[1.00,0.90,0.72], fill:[0.20,0.42,0.62], rim:[0.55,0.88,0.98],
+    motes:[0.62,0.92,0.80], trans:0.70
+  }
+},
+/* ------------------------------------------------------------- 2. FERN */
+fern:{
+  key:'fern', name:'Fern', latin:'Polystichum', tag:'pinnate frond',
+  tech:'CLASSIC PINNAE L-SYSTEM &rarr; 3D TURTLE &rarr; TAPERED RACHIS + PINNAE',
+  note:'A single frond: the rachis keeps its own axis while every pinna sub-branch re-ranks.',
+  axiom:'A',
+  rules:{
+    A:[{w:1,  to:'F[&+B][&-B][&/B]FA'},
+       {w:0.22,to:'F[&+B][&-B][&/B][\\&+B]FA'}],
+    B:[{w:1,  to:'F[&+C][&-C][&/C]FB'}],
+    C:[{w:1,  to:'F[&+D][&-D][&/D]FC'}],
+    D:[{w:1,  to:'!F[&L]'}]
+  },
+  iterDef:6, iterMin:4, iterMax:6,
+  angDef:33, len:0.150, lenDef:0.86, r0:0.030, rDef:0.83, taper:0.42,
+  turn:60, jitter:0.16,
+  curv:{droop:0.14, photo:0.02, tip:0.085},
+  growMode:'root', leafShrink:0.92,
+  sym:{ L:{len:0.150,wid:0.026,thick:0.0035,bend:-0.30,arc:0.15,mat:1} },
+  cam:{el:14, az:1.72, fit:1.00, oy:0.04, ox:0.14},
+  pal:{
+    bgBot:[0.012,0.026,0.030], bgTop:[0.032,0.066,0.072], bgGlow:[0.060,0.200,0.180], glow2:[0.05,0.10,0.06],
+    ground:[0.030,0.055,0.050], groundLit:[0.120,0.245,0.205],
+    wood:[0.190,0.230,0.090], woodTip:[0.330,0.430,0.130],
+    leaf:[0.240,0.520,0.175], leafTip:[0.640,0.870,0.360],
+    sky:[0.090,0.165,0.200], gnd:[0.060,0.055,0.030],
+    key:[1.00,0.94,0.78], fill:[0.18,0.45,0.50], rim:[0.50,0.95,0.85],
+    motes:[0.70,1.00,0.80], trans:0.95
+  }
+},
+/* --------------------------------------------------------- 3. BLOSSOM */
+blossom:{
+  key:'blossom', name:'Blossom', latin:'Ranunculus', tag:'stem & petal whorl',
+  tech:'TERMINAL-PHASE REWRITING &rarr; PETAL WHORL (T = 36deg roll) &rarr; BLADE MESH',
+  note:'Each S on the stem is a leaf node. At the apex a final rule swaps S for the floral head: two whorls + stamens.',
+  axiom:'S',
+  rules:{ S:[{w:1,to:'!F[&+L][&-L]F@S'}] },
+  /* @ is a private marker: it is not a head symbol (the iteration phase leaves
+     it alone) and the interpreter has no case for it, so it survives to the
+     terminal phase and fires exactly once.  Q is the floral head, expanded to
+     a fixpoint because it introduces P/S/D -- and none of those is a final key,
+     so the fixpoint can never respawn a stem. */
+  final:{ '@':'!F[&+L][&-L][&/L]FQ',
+          /* outer whorl leans back, inner whorl leans up and out: the head
+             must open into a disc, or the petals just fold into a spear */
+          Q: ring(10,'&&^','P') + ring(7,'&','P') + 'F' + ring(5,'&&','S') + 'D' },
+  iterDef:4, iterMin:2, iterMax:6,
+  angDef:26, len:0.150, lenDef:0.88, r0:0.034, rDef:0.86, taper:0.30,
+  turn:36, jitter:0.10,
+  curv:{droop:0.035, photo:0.05, tip:0.02},
+  growMode:'root', leafShrink:0.88,
+  sym:{
+    L:{len:0.150,wid:0.055,thick:0.005,bend:-0.45,arc:-0.18,mat:1},
+    P:{len:0.290,wid:0.125,thick:0.010,bend:0.95,arc:-0.62,mat:2},
+    S:{len:0.130,wid:0.008,thick:0.008,bend:0.0 ,arc:0.0 ,mat:3,filament:true},
+    D:{len:0.055,wid:0.055,thick:0.055,bend:0.0 ,arc:0.0 ,mat:3,bead:true}
+  },
+  cam:{el:9, az:0.30, fit:1.00, oy:0.05, ox:0.15},
+  pal:{
+    bgBot:[0.030,0.016,0.036], bgTop:[0.070,0.040,0.082], bgGlow:[0.230,0.100,0.190], glow2:[0.10,0.06,0.22],
+    ground:[0.055,0.034,0.058], groundLit:[0.215,0.125,0.180],
+    wood:[0.170,0.250,0.115], woodTip:[0.330,0.430,0.170],
+    leaf:[0.215,0.400,0.150], leafTip:[0.470,0.680,0.260],
+    petal:[0.980,0.360,0.520], petalTip:[1.000,0.780,0.840], stamen:[1.000,0.860,0.380],
+    sky:[0.190,0.130,0.220], gnd:[0.110,0.050,0.060],
+    key:[1.00,0.86,0.80], fill:[0.32,0.28,0.62], rim:[1.00,0.72,0.66],
+    motes:[1.00,0.80,0.72], trans:0.85
+  }
+},
+/* --------------------------------------------------------- 4. ROSETTE */
+rosette:{
+  key:'rosette', name:'Rosette', latin:'Agave potatorum', tag:'basal succulent',
+  tech:'L-SYSTEM RADIAL WHORL (T = 30&deg; roll) &rarr; LEAF BLADES &rarr; THICK-TAPERED GEOMETRY',
+  note:'A whorl of 12 leaves per iteration, each rolled by exactly 360/12. Every iteration stacks a smaller whorl on a thinner core.',
+  axiom:'F A',
+  rules:{ A:[{w:1,to: ring(12,'&','L') + '/A'}] },
+  iterDef:4, iterMin:1, iterMax:6,
+  angDef:30, len:0.075, lenDef:0.84, r0:0.042, rDef:0.84, taper:0.30,
+  turn:30, jitter:0.06,
+  curv:{droop:0.020, photo:0.05, tip:0.0},
+  growMode:'root', leafShrink:0.78,
+  sym:{
+    L:{len:0.330,wid:0.060,thick:0.016,bend:-0.62,arc:-0.30,mat:1},
+    K:{len:0.190,wid:0.044,thick:0.015,bend:0.30,arc:-0.25,mat:1},
+    D:{len:0.032,wid:0.032,thick:0.032,bend:0.0 ,arc:0.0 ,mat:3,bead:true}
+  },
+  cam:{el:26, az:0.95, fit:1.00, oy:0.06, ox:0.15},
+  pal:{
+    bgBot:[0.014,0.024,0.030], bgTop:[0.034,0.062,0.070], bgGlow:[0.070,0.160,0.190], glow2:[0.05,0.10,0.14],
+    ground:[0.032,0.050,0.057], groundLit:[0.125,0.215,0.240],
+    wood:[0.180,0.190,0.120], woodTip:[0.300,0.340,0.180],
+    leaf:[0.130,0.330,0.290], leafTip:[0.520,0.790,0.640],
+    sky:[0.100,0.170,0.210], gnd:[0.060,0.050,0.045],
+    key:[1.00,0.95,0.85], fill:[0.20,0.42,0.60], rim:[0.60,0.92,1.00],
+    motes:[0.70,0.95,1.00], trans:0.45
+  }
+}};
+
+const ORDER = ['oak','fern','blossom','rosette'];
+
+/* ---------------------------------------------------------------- expand */
+function expand(sp, iters, rng){
+  let s = sp.axiom;
+  for(let i=0;i<iters;i++){
+    const out = [];
+    for(let k=0;k<s.length;k++){
+      const ch = s[k], rs = sp.rules[ch];
+      if(!rs){ out.push(ch); continue; }
+      let pick = rs[rs.length-1], r = rng(), acc = 0;
+      for(let q=0;q<rs.length;q++){ acc += rs[q].w; if(r < acc){ pick = rs[q]; break; } }
+      out.push(pick.to);
+      if(out.length > STR_CAP) break;
+    }
+    s = out.join('');
+    if(s.length > STR_CAP) break;
+  }
+  /* Terminal phase, run to a fixpoint.  Keys can be multi-character (zR, zP),
+     so this tokenises on the longest matching key rather than per character --
+     and it must iterate, because a rule like S -> ...zR introduces a symbol
+     the same final map also defines.  A single simultaneous pass silently
+     dropped the blossom's entire corolla. */
+  if(sp.final){
+    const keys = Object.keys(sp.final).sort((a,b)=>b.length-a.length);
+    for(let pass=0; pass<12; pass++){
+      const out = [];
+      let changed = false, i = 0;
+      while(i < s.length){
+        let hit = null;
+        for(const k of keys){
+          if(s.startsWith(k, i)){ hit = k; break; }
+        }
+        if(hit){ out.push(sp.final[hit]); changed = true; i += hit.length; }
+        else { out.push(s[i]); i++; }
+        if(out.length > STR_CAP) break;
+      }
+      s = out.join('');
+      if(!changed || s.length > STR_CAP) break;
+    }
+  }
+  return s;
+}
+
+/* ------------------------------------------------------------- interpret */
+/* primitives: 0 = tube, 1 = blade, 2 = bead                          */
+function interpret(str, sp, P, rng){
+  const prims = [];
+  /* Frame (u, v, f) with u x v = f.  f is the draw direction, v is the
+     turtle's own "up".  Seeded so that the very first draw runs toward +Y with
+     v = +Z; `&` then pitches the draw direction toward v.  All three operators
+     are proper Rodrigues rotations about the frame's OWN axes applied to the
+     whole frame -- a two-component "roll" is only correct while those
+     components happen to lie perpendicular to f, which stops being true the
+     moment the turtle pitches, and the failure is silent (whorl leaves all
+     fold back onto the vertical).  Rodrigues is exactly orthonormal, so no
+     renormalisation is needed between steps. */
+  const S = {
+    x:0,y:0,z:0,
+    ux:1,uy:0,uz:0,          // right
+    vx:0,vy:0,vz:1,          // up
+    fx:0,fy:1,fz:0,          // forward / draw
+    r: sp.r0, len: sp.len, dep:0, dist:0
+  };
+  const stack = [];
+  const jitter = sp.jitter;
+  const baseCol = sp.pal.wood, tipCol = sp.pal.woodTip;
+
+  const colFor = (r) => {
+    const t = clamp(Math.pow(clamp(1 - r/sp.r0,0,1),0.7),0,1);
+    return mixc(baseCol, tipCol, t);
+  };
+
+  /* Right-handed frame (u, v, f) with u x v = f; f is the draw direction.
+     All three operators are proper Rodrigues rotations about one of the frame's
+     OWN axes, applied to the whole frame.  They must be: a "roll" that only
+     mixes two components is only a roll while those components happen to lie
+     in the plane perpendicular to f, which stops being true the moment the
+     turtle pitches -- and the error is silent, showing up as a whorl whose
+     leaves all fold back onto the vertical.  Rodrigues also preserves
+     orthonormality exactly, so no renormalisation is needed between steps. */
+  const rodrigues = (axis, a, out) => {
+    const c=Math.cos(a), s=Math.sin(a);
+    const k=v3.cr(axis, out);
+    const d=v3.dt(axis, out)*(1-c);
+    out[0] = out[0]*c + k[0]*s + axis[0]*d;
+    out[1] = out[1]*c + k[1]*s + axis[1]*d;
+    out[2] = out[2]*c + k[2]*s + axis[2]*d;
+  };
+  const _f=[0,0,0], _u=[0,0,0], _v=[0,0,0];
+  const rotY = a => {                       // about local v
+    _f[0]=S.fx;_f[1]=S.fy;_f[2]=S.fz; _u[0]=S.ux;_u[1]=S.uy;_u[2]=S.uz; _v[0]=S.vx;_v[1]=S.vy;_v[2]=S.vz;
+    rodrigues(_v,a,_u); rodrigues(_v,a,_f);
+    S.ux=_u[0];S.uy=_u[1];S.uz=_u[2]; S.fx=_f[0];S.fy=_f[1];S.fz=_f[2];
+  };
+  const rotX = a => {                       // about local u
+    _f[0]=S.fx;_f[1]=S.fy;_f[2]=S.fz; _u[0]=S.ux;_u[1]=S.uy;_u[2]=S.uz; _v[0]=S.vx;_v[1]=S.vy;_v[2]=S.vz;
+    rodrigues(_u,a,_v); rodrigues(_u,a,_f);
+    S.vx=_v[0];S.vy=_v[1];S.vz=_v[2]; S.fx=_f[0];S.fy=_f[1];S.fz=_f[2];
+  };
+  const rotZ = a => {                       // about local f
+    _f[0]=S.fx;_f[1]=S.fy;_f[2]=S.fz; _u[0]=S.ux;_u[1]=S.uy;_u[2]=S.uz; _v[0]=S.vx;_v[1]=S.vy;_v[2]=S.vz;
+    rodrigues(_f,a,_u); rodrigues(_f,a,_v);
+    S.ux=_u[0];S.uy=_u[1];S.uz=_u[2]; S.vx=_v[0];S.vy=_v[1];S.vz=_v[2];
+  };
+
+  // one fresh stochastic draw per rotation symbol, never hoisted out of the loop
+  const A  = () => P.angle * (1 + (rng()*2-1)*jitter);
+  const TURN = sp.turn * RAD;
+
+  for(let i=0;i<str.length;i++){
+    const ch = str[i];
+    switch(ch){
+      case 'F': {
+        const ax=[S.fx,S.fy,S.fz];
+        const ctr=[S.x+ax[0]*S.len*0.5, S.y+ax[1]*S.len*0.5, S.z+ax[2]*S.len*0.5];
+        const r0 = S.r, r1 = S.r*0.93;
+        prims.push({k:0, c:ctr, ax:[ax[0]*S.len,ax[1]*S.len,ax[2]*S.len],
+                    r0, r1, u:[S.ux,S.uy,S.uz],
+                    col:colFor(S.r), mat:0, dist:S.dist, dep:S.dep,
+                    rnd:rng(), base:true});
+        S.x += ax[0]*S.len; S.y += ax[1]*S.len; S.z += ax[2]*S.len;
+        S.dist += S.len; S.r *= 0.988;
+        // tropism: gravity + apex phototropism, applied after the step
+        const thin = clamp(1 - S.r/sp.r0, 0, 1);
+        const bend = P.droop - sp.curv.photo*thin*thin - sp.curv.tip*thin*thin;
+        // gravitropism pulls the apex toward the turtle's down (-v)
+        if(bend) rotX(-bend);
+        break;
+      }
+      case 'f': {
+        S.x += S.fx*S.len; S.y += S.fy*S.len; S.z += S.fz*S.len;
+        S.dist += S.len; break;
+      }
+      case '+': rotY(-A()); break;
+      case '-': rotY( A()); break;
+      // '&' pitches toward the turtle's own up (v), '^' away from it
+      case '&': rotX( A()); break;
+      case '^': rotX(-A()); break;
+      case '/': rotZ( TURN*0.34*(1+(rng()*2-1)*0.2) ); break;
+      case '\\': rotZ(-TURN*0.34*(1+(rng()*2-1)*0.2) ); break;
+      case 'T': rotZ( TURN ); break;
+      case '!': S.r = Math.max(sp.r0*0.05, S.r*P.rDecay); break;
+      case '[':
+        stack.push({x:S.x,y:S.y,z:S.z,ux:S.ux,uy:S.uy,uz:S.uz,
+                    vx:S.vx,vy:S.vy,vz:S.vz,fx:S.fx,fy:S.fy,fz:S.fz,
+                    r:S.r,len:S.len,dep:S.dep,dist:S.dist});
+        S.len *= P.lenDecay; S.r = Math.max(sp.r0*0.05, S.r*P.rDecay);
+        S.dep++;
+        break;
+      case ']': {
+        const t = stack.pop();
+        if(t){ S.x=t.x;S.y=t.y;S.z=t.z;S.ux=t.ux;S.uy=t.uy;S.uz=t.uz;
+               S.vx=t.vx;S.vy=t.vy;S.vz=t.vz;S.fx=t.fx;S.fy=t.fy;S.fz=t.fz;
+               S.r=t.r;S.len=t.len;S.dep=t.dep;S.dist=t.dist; }
+        break;
+      }
+      default: {
+        const key = ch;
+        const cfg = sp.sym[key];
+        if(!cfg) break;
+        let col, colTip;
+        if(cfg.bead)          { col = colTip = sp.pal.stamen || sp.pal.leafTip; }
+        else if(cfg.mat===2)  { col = sp.pal.petal || sp.pal.leaf;
+                                colTip = sp.pal.petalTip || [1,0.5,0.6]; }
+        else if(key==='S')   { col = colTip = sp.pal.stamen || [1.0,0.78,0.32]; }
+        else {
+          const t = clamp(Math.pow(clamp(1 - S.r/sp.r0,0,1),0.7),0,1);
+          col = mixc(sp.pal.leaf, sp.pal.leafTip, 0.25 + 0.75*t);
+          colTip = mixc(col, sp.pal.leafTip, 0.55);   // lit tip, shaded base
+          if(key==='K'){ col = mixc(col, sp.pal.leafTip, 0.22); colTip = mixc(colTip, sp.pal.leafTip, 0.22); }
+        }
+        if(cfg.filament){
+          // stamen = a thin tapered filament with a bead on the tip
+          const ax=[S.fx,S.fy,S.fz], L = cfg.len*0.9;
+          prims.push({k:0, c:[S.x+ax[0]*L*0.5,S.y+ax[1]*L*0.5,S.z+ax[2]*L*0.5],
+                      ax:[ax[0]*L,ax[1]*L,ax[2]*L], r0:Math.max(0.004,S.r*0.30),
+                      r1:Math.max(0.003,S.r*0.22), u:[S.ux,S.uy,S.uz],
+                      col:[0.95,0.72,0.30], mat:0, dist:S.dist, dep:S.dep, rnd:rng(), base:true});
+          prims.push({k:2, c:[S.x+ax[0]*L,S.y+ax[1]*L,S.z+ax[2]*L], r:cfg.wid*1.5,
+                      col:[1.0,0.84,0.40], mat:3, dist:S.dist+L, dep:S.dep, rnd:rng()});
+        } else {
+          prims.push({k:1, c:[S.x,S.y,S.z], ax:[S.fx,S.fy,S.fz], u:[S.ux,S.uy,S.uz],
+                      v:[S.vx,S.vy,S.vz], cfg, col, colTip, mat:cfg.mat, dist:S.dist,
+                      dep:S.dep, rnd:rng(),
+                      rScale: clamp(S.r/sp.r0, 0.25, 1) * Math.pow(sp.leafShrink, S.dep)});
+        }
+        break;
+      }
+    }
+    if(prims.length > MAX_PRIMS) break;
+  }
+  return prims;
+}
+
+/* ------------------------------------------------- bounds / birth / sort */
+function prepare(prims, sp, rng){
+  // tube-only bounds drive the overall scale
+  let mnx=1e9,mny=1e9,mnz=1e9,mxx=-1e9,mxy=-1e9,mxz=-1e9;
+  for(const p of prims){
+    if(p.k===0){
+      for(const s of [-1,1]){
+        const x=p.c[0]+p.ax[0]*0.5*s, y=p.c[1]+p.ax[1]*0.5*s, z=p.c[2]+p.ax[2]*0.5*s;
+        if(x<mnx)mnx=x; if(y<mny)mny=y; if(z<mnz)mnz=z;
+        if(x>mxx)mxx=x; if(y>mxy)mxy=y; if(z>mxz)mxz=z;
+      }
+    }
+  }
+  if(mxx<mnx){ mnx=-0.1;mxx=0.1;mny=0;mxy=0.1;mnz=-0.1;mxz=0.1; }
+  const hy = Math.max(0.02, mxy-mny);
+  const L = Math.max(0.05, Math.max(mxx-mnx, hy, mxz-mnz));
+
+  /* Growth order.  A plant grows the way the turtle walks, so *string order*
+     is already the true biological order — and unlike a spatial key it is
+     uniformly distributed, which is what stops a rosette's whorl from
+     appearing all at once at the end.  Blend it with a spatial rank so the
+     base still leads and the tip still arrives last. */
+  const n = prims.length;
+  if(n > 1){
+    const key = new Float64Array(n);
+    let lo = Infinity, hi = -Infinity;
+    for(let i=0;i<n;i++){
+      const v = (sp.growMode==='height') ? prims[i].c[1] : prims[i].dist;
+      key[i] = v; if(v<lo) lo=v; if(v>hi) hi=v;
+    }
+    const inv = (hi-lo) > 1e-9 ? 1/(hi-lo) : 0;
+    const order = Array.from({length:n}, (_,i)=>i).sort((a,b)=>key[a]-key[b]);
+    const srank = new Float64Array(n);
+    for(let k=0;k<n;k++) srank[order[k]] = n>1 ? k/(n-1) : 0;
+    for(let i=0;i<n;i++){
+      const walk = i/(n-1);
+      const spat = srank[i];
+      prims[i].birth = clamp(0.62*walk + 0.38*spat + (rng()-0.5)*0.05, 0, 0.96);
+    }
+  } else if(n === 1){ prims[0].birth = 0; }
+  prims.sort((a,b)=>a.birth-b.birth);
+
+  let cx=0,cy=0,cz=0;
+  for(const p of prims){ cx+=p.c[0]; cy+=p.c[1]; cz+=p.c[2]; }
+  cx/=prims.length; cy/=prims.length; cz/=prims.length;
+  let rad=0.05;
+  for(const p of prims) rad = Math.max(rad, Math.hypot(p.c[0]-cx,p.c[1]-cy,p.c[2]-cz));
+  // include leaf blade reach, or a rosette's tips fall outside the fit
+  for(const p of prims){
+    if(p.k===1){
+      const len = p.cfg.len*L*(0.72+0.42*p.rScale);
+      rad = Math.max(rad, Math.hypot(p.c[0]+p.ax[0]*len-cx, p.c[1]+p.ax[1]*len-cy, p.c[2]+p.ax[2]*len-cz));
+    }
+  }
+  return { mnx,mny,mnz,mxx,mxy,mxz, L, rad, cy,
+           centre:[cx,cy,cz], hy };
+}
+
+/* ------------------------------------------------------------ gl context */
+const cv = document.getElementById('gl');
+const gl = cv.getContext('webgl2',{antialias:false,alpha:false,depth:true,stencil:false,
+                                    preserveDrawingBuffer:false,powerPreference:'high-performance'});
+if(!gl){ document.body.innerHTML = '<div style="padding:24px;font:13px monospace;color:#f88">WebGL2 unavailable.</div>'; }
+const HAS_GL = !!gl;
+
+function sh(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error('shader: ' + gl.getShaderInfoLog(s) + '\n' + src);
+  }
+  return s;
+}
+function prog(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error('link: ' + gl.getProgramInfoLog(p));
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const inf = gl.getActiveUniform(p,i); u[inf.name] = gl.getUniformLocation(p,inf.name); }
+  return { p, u };
+}
+
+/* --------------------------------------------------------------- shaders */
+const HASH = `
+float h21(vec2 p){ vec3 p3 = fract(vec3(p.xyx)*0.1031); p3 += dot(p3, p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+`;
+
+/* background: vertical grade + two soft light pools + static dither */
+const BG_VS = `#version 300 es
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  gl_Position = vec4(p*2.0-1.0, 0.0, 1.0);
+  vUv = p;
+}`;
+const BG_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes; uniform vec2 uG1, uG2; uniform float uR1, uR2;
+uniform vec3 uBot, uTop, uC1, uC2;
+out vec4 frag;
+${HASH}
+void main(){
+  vec2 uv = vUv;
+  float g = smoothstep(-0.35, 1.15, uv.y);
+  vec3 col = mix(uBot, uTop, g);
+  // horizon lift
+  col += uTop * 0.55 * exp(-pow((uv.y-0.16)*3.4, 2.0));
+  vec2 d1 = (uv-uG1)*vec2(1.0, 1.22); float a1 = exp(-dot(d1,d1)/(uR1*uR1));
+  col += uC1 * a1;
+  vec2 d2 = (uv-uG2)*vec2(1.0, 1.05); float a2 = exp(-dot(d2,d2)/(uR2*uR2));
+  col += uC2 * a2;
+  // large soft vignette
+  float v = 1.0 - 0.55*pow(length((uv-0.5)*vec2(1.06,1.0))*1.32, 2.4);
+  col *= clamp(v, 0.30, 1.0);
+  // static dither: kills banding and keeps the upscale from posterising
+  float n = h21(gl_FragCoord.xy*1.7);
+  col += (n-0.5)*0.0125;
+  frag = vec4(max(col, 0.0), 1.0);
+}`;
+
+/* ground: radial pool of light, faint growth rings, contact shadow, fade out */
+const GND_VS = `#version 300 es
+in vec3 aP; in vec2 aUvr;
+uniform mat4 uVP; uniform vec3 uCen; uniform vec2 uScale;
+out vec3 vW; out float vR;
+void main(){
+  vec3 w = vec3(aP.x*uScale.x + uCen.x, uCen.y, aP.z*uScale.y + uCen.z);
+  vW = w; vR = aUvr.x; gl_Position = uVP*vec4(w,1.0);
+}`;
+const GND_FS = `#version 300 es
+precision highp float;
+in vec3 vW; in float vR;
+uniform vec3 uDark, uLit, uFog; uniform vec2 uShC; uniform float uShR;
+uniform float uFogK; uniform vec3 uCam;
+out vec4 frag;
+${HASH}
+void main(){
+  float r = vR;
+  float pool = exp(-r*r*3.4);
+  float rings = 0.5 + 0.5*sin(r*46.0);
+  float grain = vn(vW.xz*3.1)*0.6 + vn(vW.xz*9.7)*0.4;
+  vec3 col = mix(uDark, uLit, pool*0.9);
+  col *= 0.90 + 0.16*rings*(1.0-pool);
+  col *= 0.86 + 0.30*grain;
+  // soft contact shadow, cast away from the key light
+  float dsx = (vW.x-uShC.x)/uShR, dsz = (vW.z-uShC.y)/(uShR*0.80);
+  col *= 1.0 - 0.62*exp(-(dsx*dsx + dsz*dsz)*1.5);
+  float a = smoothstep(1.0, 0.10, r);
+  float fog = 1.0 - exp(-length(uCam-vW)*uFogK);
+  col = mix(col, uFog, fog*0.5);
+  frag = vec4(max(col,0.0), a*0.96);
+}`;
+
+/* plant: tapered tubes + blades + beads, one draw call, growth in the VS */
+const PL_VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aP0;
+layout(location=1) in vec3 aP1;
+layout(location=2) in vec3 aNrm;
+layout(location=3) in vec3 aCol;
+layout(location=4) in vec4 aP5;   // t, radius, birth, mat
+layout(location=5) in vec3 aPos;
+layout(location=6) in vec3 aP6;   // angle, progress, random
+uniform mat4 uVP;
+uniform float uFront, uInv, uSway, uTime, uBaseY, uTopY;
+out vec3 vN, vW, vC;
+out float vMat, vAng, vProg, vRnd, vG, vT;
+void main(){
+  float g0 = clamp((uFront - aP5.z)*uInv, 0.0, 1.0);
+  float g  = g0*g0*(3.0-2.0*g0);
+  vec3 p;
+  if(aP5.w < 0.5){                       // tube: extend + thicken
+    vec3 ctr = mix(aP0, aP1, aP5.x);
+    p = ctr + aNrm*(aP5.y*mix(0.16,1.0,g)) + (aP1-aP0)*((g-1.0)*aP5.x);
+  } else {                               // blade / bead: unfurl from the base
+    p = aP0 + (aPos-aP0)*mix(0.12,1.0,g);
+  }
+  float k = clamp((p.y-uBaseY)/max(0.001,uTopY-uBaseY), 0.0, 1.0); k = k*k;
+  p.x += uSway*k*sin(uTime*1.63 + aP6.z*7.3 + p.z*1.7);
+  p.z += uSway*k*sin(uTime*1.27 + aP6.z*5.9 + 1.9);
+  vW = p; vN = aNrm; vC = aCol; vMat = aP5.w; vAng = aP6.x; vProg = aP6.y;
+  vRnd = aP6.z; vG = g0; vT = aP5.x;
+  gl_Position = uVP*vec4(p,1.0);
+}`;
+const PL_FS = `#version 300 es
+precision highp float;
+in vec3 vN, vW, vC;
+in float vMat, vAng, vProg, vRnd, vG, vT;
+uniform vec3 uCam, uKey, uKeyC, uFillC, uRimC, uSky, uGnd, uFog, uTrans, uGlow;
+uniform vec3 uKeyDir, uFillDir;
+uniform float uFogK, uSpec, uGlowAmt, uTime;
+out vec4 frag;
+${HASH}
+void main(){
+  vec3 N = normalize(vN);
+  if(dot(N, uCam-vW) < 0.0) N = -N;
+  vec3 V = normalize(uCam - vW);
+  float ndl = max(dot(N,uKeyDir), 0.0);
+  float wrap = dot(N,uKeyDir)*0.5 + 0.5;
+  vec3 amb = mix(uGnd, uSky, N.y*0.5+0.5);
+  vec3 col = vC*(amb + uKeyC*mix(wrap,ndl,0.62) + uFillC*max(dot(N,uFillDir),0.0)*0.60);
+  // leaf / petal translucency: light bleeding through the blade
+  float back = pow(max(dot(-N, uKeyDir),0.0), 2.0);
+  col += vC * uTrans * back * (vMat > 0.5 ? 0.85 : 0.20);
+  // specular
+  vec3 H = normalize(uKeyDir + V);
+  col += uKeyC * pow(max(dot(N,H),0.0), 34.0) * uSpec * (vMat < 0.5 ? 0.55 : 1.0);
+  // surface micro-structure
+  if(vMat < 0.5){
+    float st = 0.5 + 0.5*sin(vAng*26.0 + vRnd*24.0);
+    col *= 0.84 + 0.20*st;
+    col *= 0.88 + 0.26*vn(vec2(vProg*46.0, vRnd*13.0));
+  } else {
+    float mid = 1.0 - abs(vAng*2.0 - 1.0);
+    col *= 0.80 + 0.34*mid*mid;
+    col += uRimC * 0.16 * pow(mid, 7.0);
+    col *= 0.92 + 0.16*vn(vec2(vProg*60.0, vAng*7.0));
+  }
+  // fresnel rim: separates the subject from the dark ground
+  float fr = pow(1.0 - max(dot(N,V),0.0), 3.2);
+  col += uRimC * fr * (0.20 + 0.55*step(0.5, vMat));
+  // luminous growth front
+  col += uGlow * (1.0 - vG) * uGlowAmt;
+  float fog = 1.0 - exp(-length(uCam-vW)*uFogK);
+  col = mix(col, uFog, fog*0.45);
+  frag = vec4(max(col, 0.0), 1.0);
+}`;
+
+/* glowing tip points + drifting motes (additive sprites) */
+const PT_VS = `#version 300 es
+precision highp float;
+in vec3 aP; in vec3 aC; in float aB; in float aSz;
+uniform mat4 uVP; uniform float uFront, uTime, uPR;
+out vec3 vC; out float vA;
+void main(){
+  float g = clamp((uFront - aB)*3.4, 0.0, 1.0);
+  vec3 p = aP;
+  p.x += sin(uTime*0.9 + aB*31.0)*0.018;
+  p.y += sin(uTime*1.31 + aB*17.0)*0.014;
+  vA = g;
+  gl_PointSize = aSz*uPR*(0.55 + 0.75*(1.0-g));
+  gl_Position = uVP*vec4(p,1.0);
+  vC = aC;
+}`;
+const PT_FS = `#version 300 es
+precision highp float;
+in vec3 vC; in float vA;
+uniform float uAlpha;
+out vec4 frag;
+void main(){
+  float d = length(gl_PointCoord - 0.5);
+  float a = smoothstep(0.5, 0.06, d);
+  a = a*a;
+  frag = vec4(vC*a*vA*uAlpha, 1.0);
+}`;
+
+/* skeleton: the raw L-system polyline drawn over the mesh */
+const SK_VS = `#version 300 es
+precision highp float;
+in vec3 aP; in float aB;
+uniform mat4 uVP; uniform float uFront;
+out float vA;
+void main(){ vA = clamp((uFront-aB)*4.0, 0.0, 1.0); gl_Position = uVP*vec4(aP,1.0); }`;
+const SK_FS = `#version 300 es
+precision highp float;
+in float vA; uniform vec3 uCol; out vec4 frag;
+void main(){ frag = vec4(uCol*vA, 1.0); }`;
+
+let P = {};   // gl programs + uniform caches, built lazily
+
+function buildGL(){
+  P.bg  = prog(BG_VS, BG_FS);
+  P.gnd = prog(GND_VS, GND_FS);
+  P.pl  = prog(PL_VS, PL_FS);
+  P.pt  = prog(PT_VS, PT_FS);
+  P.sk  = prog(SK_VS, SK_FS);
+
+  // plant VAO — interleaved 22 floats
+  P.plStride = 22*4;
+  P.plBuf = gl.createBuffer();
+  P.plVao = gl.createVertexArray();
+  gl.bindVertexArray(P.plVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.plBuf);
+  const S22 = P.plStride;
+  const bind = (loc,size,off) => { gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, S22, off*4); };
+  bind(0,3,0); bind(1,3,3); bind(2,3,6); bind(3,3,9); bind(4,4,12); bind(5,3,16); bind(6,3,19);
+  P.plIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, P.plIdx);
+  gl.bindVertexArray(null);
+
+  P.plVao2 = null;   // (one VAO; the index buffer is shared via P.plIdx)
+
+  // ground disc
+  const RINGS=16, SEG=54;
+  const gp=[], gr=[];
+  gp.push(0,0,0); gr.push(0,0);
+  for(let i=1;i<=RINGS;i++){
+    const rr = Math.pow(i/RINGS, 0.78);
+    for(let j=0;j<SEG;j++){
+      const a = j/SEG*Math.PI*2;
+      gp.push(Math.cos(a)*rr, 0, Math.sin(a)*rr);
+      gr.push(rr, a);
+    }
+  }
+  const gi=[];
+  for(let j=0;j<SEG;j++) gi.push(0, 1+j, 1+((j+1)%SEG));
+  for(let i=1;i<RINGS;i++){
+    const b0 = 1+(i-1)*SEG, b1 = 1+i*SEG;
+    for(let j=0;j<SEG;j++){
+      const j2 = (j+1)%SEG;
+      gi.push(b0+j, b1+j, b1+j2, b0+j, b1+j2, b0+j2);
+    }
+  }
+  P.gndVao = gl.createVertexArray();
+  gl.bindVertexArray(P.gndVao);
+  const gb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, gb);
+  const gv = new Float32Array(RINGS*SEG*5);
+  for(let k=0;k<RINGS*SEG;k++){
+    gv[k*5]=gp[k*3]; gv[k*5+1]=gp[k*3+1]; gv[k*5+2]=gp[k*3+2];
+    gv[k*5+3]=gr[k*2]; gv[k*5+4]=gr[k*2+1];
+  }
+  gl.bufferData(gl.ARRAY_BUFFER, gv, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);
+  const gib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(gi), gl.STATIC_DRAW);
+  P.gndCount = gi.length;
+  gl.bindVertexArray(null);
+
+  // points (tips + motes)
+  P.ptVao = gl.createVertexArray();
+  gl.bindVertexArray(P.ptVao);
+  P.ptBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.ptBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,32,24);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,32,28);
+  gl.bindVertexArray(null);
+  P.ptCount = 0;
+
+  // motes
+  P.moVao = gl.createVertexArray();
+  gl.bindVertexArray(P.moVao);
+  P.moBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.moBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,32,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,32,12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,32,24);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,32,28);
+  gl.bindVertexArray(null);
+  P.moCount = 0;
+
+  // skeleton lines
+  P.skVao = gl.createVertexArray();
+  gl.bindVertexArray(P.skVao);
+  P.skBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.skBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,16,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,16,12);
+  gl.bindVertexArray(null);
+  P.skCount = 0;
+
+  P.emptyVao = gl.createVertexArray();
+}
+
+/* --------------------------------------------------------- mesh assembly */
+const RT = 8;      // radial samples on a tube
+const BLADE_RINGS = 5, BLADE_SEG = 9;
+
+function buildMesh(prims, bb, sp){
+  const V = [];            // 22 floats / vertex
+  const I = [];
+  const idxStart = [];     // element offset where each primitive begins
+  const nP0 = [0,0,0];
+  const taperY0 = bb.mny, spanY = Math.max(0.02, bb.mxy-bb.mny);
+  const L = bb.L;
+
+  const push = (p0,p1,nrm,col,t,r,birth,mat,pos,ang,prog,rnd)=>{
+    V.push(p0[0],p0[1],p0[2], p1[0],p1[1],p1[2], nrm[0],nrm[1],nrm[2],
+           col[0],col[1],col[2], t,r,birth,mat, pos[0],pos[1],pos[2], ang,prog,rnd);
+  };
+
+  for(const p of prims){
+    idxStart.push(I.length);
+    if(p.k === 0){                                   // ---- tapered tube
+      const tScale = 1 - sp.taper*clamp((p.c[1]-taperY0)/spanY,0,1);
+      const r0 = p.r0*tScale, r1 = p.r1*tScale;
+      const h = [p.ax[0]*0.5, p.ax[1]*0.5, p.ax[2]*0.5];
+      // frame: u, and v = axis x u
+      let u = v3.n(p.u);
+      const ax = v3.n(p.ax);
+      const d = v3.dt(u, ax); u = v3.n([u[0]-ax[0]*d, u[1]-ax[1]*d, u[2]-ax[2]*d]);
+      const w = v3.cr(ax, u);
+      const a = [p.c[0]-h[0], p.c[1]-h[1], p.c[2]-h[2]];
+      const b = [p.c[0]+h[0], p.c[1]+h[1], p.c[2]+h[2]];
+      const base = V.length/22;
+      for(let ring=0; ring<2; ring++){
+        const ctr = ring ? b : a, rr = ring ? r1 : r0, tt = ring;
+        for(let k=0;k<=RT;k++){
+          const ang = k/RT*Math.PI*2, ca=Math.cos(ang), sa=Math.sin(ang);
+          const n = [u[0]*ca + w[0]*sa, u[1]*ca + w[1]*sa, u[2]*ca + w[2]*sa];
+          const pos = [ctr[0]+n[0]*rr, ctr[1]+n[1]*rr, ctr[2]+n[2]*rr];
+          push(a,b,n,p.col,tt,rr,p.birth,0,pos,k/RT,p.dist/bb.rad,p.rnd);
+        }
+      }
+      for(let k=0;k<RT;k++){
+        const i0 = base+k, i1 = base+k+1, j0 = base+k+RT+1, j1 = base+k+RT+2;
+        I.push(i0,j0,j1, i0,j1,i1);
+      }
+    } else if(p.k === 1){                            // ---- leaf / petal blade
+      const c = p.cfg;
+      const len = c.len * L * (0.72 + 0.42*p.rScale);
+      const wid = c.wid * L, thk = c.thick * L;
+      const dir = v3.n(p.ax);
+      let side = v3.n(p.u);
+      const dp = v3.dt(dir, side); side = v3.n([side[0]-dir[0]*dp, side[1]-dir[1]*dp, side[2]-dir[2]*dp]);
+      let nrm = v3.n(v3.cr(side, dir));
+      if(nrm[1] > 0) nrm = [-nrm[0],-nrm[1],-nrm[2]];
+      const down = [-nrm[0],-nrm[1],-nrm[2]];   // normalised "towards world up"
+      /* cfg.bend is signed against world up: POSITIVE arches the blade upward
+         (a leaf reaching for light), NEGATIVE droops it (a petal reflexing
+         away from the centre).  Getting this sign backwards silently folds a
+         corolla shut into a spear, so it is spelled out here. */
+      const base = V.length/22;
+      for(let i=0;i<BLADE_RINGS;i++){
+        const t = i/(BLADE_RINGS-1);
+        // colour runs base -> tip along the blade, which is what makes a
+        // corolla or a leaf read as a lit surface rather than a flat chip
+        const bc = mixc(p.col, p.colTip || p.col, t);
+        const prof = Math.pow(Math.sin(Math.PI*Math.pow(t,0.86)), 0.62);
+        const profT = Math.pow(Math.sin(Math.PI*Math.pow(t,0.80)), 1.05);
+        const w = wid*prof*(0.30 + 0.70*Math.min(1,t*7));
+        const h = thk*profT;
+        const kb = c.bend*len*t*t;
+        const ctr = [p.c[0]+dir[0]*len*t + down[0]*kb,
+                     p.c[1]+dir[1]*len*t + down[1]*kb,
+                     p.c[2]+dir[2]*len*t + down[2]*kb];
+        for(let k=0;k<BLADE_SEG;k++){
+          const ang = k/BLADE_SEG*Math.PI*2, ca=Math.cos(ang), sa=Math.sin(ang);
+          const n = v3.n([side[0]*ca/Math.max(w,1e-4) + nrm[0]*sa/Math.max(h,1e-4),
+                          side[1]*ca/Math.max(w,1e-4) + nrm[1]*sa/Math.max(h,1e-4),
+                          side[2]*ca/Math.max(w,1e-4) + nrm[2]*sa/Math.max(h,1e-4)]);
+          const pos = [ctr[0]+side[0]*ca*w + nrm[0]*sa*h,
+                       ctr[1]+side[1]*ca*w + nrm[1]*sa*h,
+                       ctr[2]+side[2]*ca*w + nrm[2]*sa*h];
+          push(p.c, [p.c[0]+dir[0]*len, p.c[1]+dir[1]*len, p.c[2]+dir[2]*len],
+               n, bc, t, 0, p.birth, c.mat, pos, k/BLADE_SEG, p.dist/bb.rad, p.rnd);
+        }
+      }
+      for(let i=0;i<BLADE_RINGS-1;i++){
+        for(let k=0;k<BLADE_SEG;k++){
+          const k2 = (k+1)%BLADE_SEG;
+          const a0 = base+i*BLADE_SEG+k,  a1 = base+i*BLADE_SEG+k2;
+          const b0 = base+(i+1)*BLADE_SEG+k, b1 = base+(i+1)*BLADE_SEG+k2;
+          I.push(a0,b0,b1, a0,b1,a1);
+        }
+      }
+    } else {                                          // ---- octahedral bead
+      const r = p.r;
+      const base = V.length/22;
+      const ax = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+      for(let i=0;i<6;i++){
+        const n = ax[i];
+        push(p.c, p.c, n, p.col, 0, 0, p.birth, 3,
+             [p.c[0]+n[0]*r, p.c[1]+n[1]*r, p.c[2]+n[2]*r], 0, p.dist/bb.rad, p.rnd);
+      }
+      for(const f of [[0,2,4],[2,1,4],[1,3,4],[3,0,4],[2,0,5],[1,2,5],[3,1,5],[0,3,5]]){
+        I.push(base+f[0], base+f[1], base+f[2]);
+      }
+    }
+  }
+  // re-scale bead radii (octahedron positions are unit; radius applied via normal)
+  return { verts:new Float32Array(V), idx:new Uint32Array(I), idxStart };
+}
+
+/* ------------------------------------------------------------------ state */
+const S = {
+  sp: PRESETS.oak,
+  iters: 5,
+  angle: 27*RAD,
+  lenDecay: 0.86,
+  rDecay: 0.80,
+  droop: 0.10,
+  seed: 0x5EED1,
+  spin: true, swayAmt: 1, paused: false,
+  skel: false,
+  simT: 0, growth: 0, frame: 0,
+  prims: [], bb: null, mesh: null, str: '',
+  ready: false, readyFrame: -1, readyT: -1,
+  fps: 0, fpsAcc: 0, fpsN: 0, fpsT: 0,
+  az: 0, w: 0, h: 0
+};
+
+/* ----------------------------------------------------------------- build  */
+function rebuild(resetGrowth){
+  const sp = S.sp;
+  const rng = mulberry32(S.seed);
+  S.str = expand(sp, S.iters, rng);
+  const rng2 = mulberry32(S.seed ^ 0x9E3779B9);
+  S.prims = interpret(S.str, sp, {
+    angle:S.angle, lenDecay:S.lenDecay, rDecay:S.rDecay, droop:S.droop
+  }, rng2);
+  S.bb = prepare(S.prims, sp, rng2);
+  S.mesh = buildMesh(S.prims, S.bb, sp);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.plBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, S.mesh.verts, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, P.plIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, S.mesh.idx, gl.DYNAMIC_DRAW);
+  // index prefix per primitive -> count elements for the first k prims
+  S.primIdx = new Uint32Array(S.prims.length+1);
+  for(let i=0;i<S.prims.length;i++) S.primIdx[i] = S.mesh.idxStart[i];
+  S.primIdx[S.prims.length] = S.mesh.idx.length;
+
+  // tip glow points
+  const tp = [];
+  for(const p of S.prims){
+    let x,y,z;
+    if(p.k===0){ x=p.c[0]+p.ax[0]*0.5; y=p.c[1]+p.ax[1]*0.5; z=p.c[2]+p.ax[2]*0.5; }
+    else if(p.k===1){
+      const c=p.cfg, L=S.bb.L, len=c.len*L*(0.72+0.42*p.rScale);
+      x=p.c[0]+p.ax[0]*len*0.8; y=p.c[1]+p.ax[1]*len*0.8; z=p.c[2]+p.ax[2]*len*0.8;
+    } else { x=p.c[0]; y=p.c[1]; z=p.c[2]; }
+    tp.push(x,y,z, p.col[0],p.col[1],p.col[2], p.birth, 5.5 + 5.0*(1-p.birth*0.6));
+  }
+  const tpv = new Float32Array(tp);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.ptBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, tpv, gl.DYNAMIC_DRAW);
+  P.ptCount = tpv.length/8;
+
+  // skeleton polyline (2 verts per tube primitive)
+  const sk = [];
+  for(const p of S.prims){
+    if(p.k!==0) continue;
+    sk.push(p.c[0]-p.ax[0]*0.5, p.c[1]-p.ax[1]*0.5, p.c[2]-p.ax[2]*0.5, p.birth);
+    sk.push(p.c[0]+p.ax[0]*0.5, p.c[1]+p.ax[1]*0.5, p.c[2]+p.ax[2]*0.5, p.birth);
+  }
+  const skv = new Float32Array(sk);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.skBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, skv, gl.DYNAMIC_DRAW);
+  P.skCount = skv.length/4;
+  // sorted order => prefix = #prims drawn * 2 vertices per tube
+  let nt=0; for(const p of S.prims) if(p.k===0) nt++;
+  S.primTubes = nt;
+
+  // motes
+  const mr = mulberry32(S.seed ^ 0x1F123BB5);
+  const mo = [];
+  const NR = Math.max(0.35, S.bb.rad*0.85);
+  for(let i=0;i<150;i++){
+    const a = mr()*Math.PI*2, rr = Math.sqrt(mr())*NR;
+    mo.push(Math.cos(a)*rr, S.bb.mny + mr()*(S.bb.mxy-S.bb.mny+0.25), Math.sin(a)*rr,
+            0.6+mr()*0.4, 0.6+mr()*0.4, 0.6+mr()*0.4,
+            mr(), 1.6 + mr()*2.2);
+  }
+  const mov = new Float32Array(mo);
+  gl.bindBuffer(gl.ARRAY_BUFFER, P.moBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, mov, gl.STATIC_DRAW);
+  P.moCount = mov.length/8;
+  S.moteNR = NR; S.moteY0 = S.bb.mny; S.moteY1 = S.bb.mxy + 0.25;
+
+  S.az = sp.cam.az;
+  if(resetGrowth){ S.simT = 0; S.growth = 0; S.lastFront = -1; S.primPtr = 0; }
+  // A HUD failure must never take the render loop down with it.
+  try { updateHUD(); } catch(e){ console.error('hud: ' + e.message); }
+}
+
+/* Deterministic control surface for the harness: seek to an exact simulation
+   state with the turntable stopped, so two cold loads can be compared. */
+window.__seek = (opts) => {
+  const o = opts || {};
+  if(o.species && PRESETS[o.species]){
+    S.sp = PRESETS[o.species];
+    S.iters = S.sp.iterDef; S.angle = S.sp.angDef*RAD;
+    S.lenDecay = S.sp.lenDef; S.rDecay = S.sp.rDef; S.droop = S.sp.curv.droop;
+    S.seed = (o.seed >>> 0) || S.seed;
+    rebuild(true);
+  }
+  if(o.seed !== undefined){ S.seed = o.seed >>> 0; rebuild(true); }
+  S.spin = !!o.spin;
+  S.paused = !!o.paused;
+  S.swayAmt = (o.sway === false) ? 0 : 1;
+  S.simT = (o.simT !== undefined ? o.simT : GROW_TIME);
+  S.growth = clamp(S.simT/GROW_TIME, 0, 1);
+  S.az = (o.az !== undefined ? o.az : S.sp.cam.az);
+  updateStats();
+  return true;
+};
+
+/* ------------------------------------------------------------------- gl setup */
+function resize(){
+  const w = Math.max(320, window.innerWidth|0);
+  const h = Math.max(200, window.innerHeight|0);
+  const k = Math.min(1.0, 640/Math.max(w,h));
+  const iw = Math.max(320, Math.round(w*k)), ih = Math.max(200, Math.round(h*k));
+  if(cv.width !== iw || cv.height !== ih){ cv.width = iw; cv.height = ih; }
+  S.w = iw; S.h = ih;
+}
+window.addEventListener('resize', ()=>{ resize(); });
+
+/* ------------------------------------------------------------------- draw */
+const VP = m4(), PROJ = m4(), VIEW = m4();
+const FOV = 40*RAD;
+
+function frame(){
+  requestAnimationFrame(frame);
+  if(!HAS_GL) return;
+  S.frame++;
+  resize();
+  const now = performance.now();
+
+  // ---- fixed-step simulation ----
+  // Pausing halts the clock but keeps drawing, so a harness can hold one exact
+  // state and screenshot it; the scene is otherwise identical either way.
+  if(!S.paused) S.simT += DT;
+  const gRaw = clamp(S.simT / GROW_TIME, 0, 1);
+  S.growth = gRaw;
+  if(S.spin && !S.paused) S.az += DT*0.115;
+  const front = gRaw*1.14;
+
+  // how many primitives are fully drawn (primitives are birth-sorted)
+  let np = 0;
+  while(np < S.prims.length && S.prims[np].birth < front) np++;
+  S.primPtr = np;
+  let elemCount = S.primIdx[np];
+  let tubeVerts = 0;
+  for(let i=0;i<np;i++) if(S.prims[i].k===0) tubeVerts++;
+
+  const sp = S.sp, bb = S.bb, pal = sp.pal;
+
+  // ---- camera ----
+  /* fit the plant's bounding sphere to the *usable* part of the frame: the UI
+     panels eat the top-left, bottom-left and bottom-right, so the subject is
+     sized against a reduced viewport and then offset off dead centre. */
+  const usable = 0.80;
+  const rad = Math.max(0.4, bb.rad*1.02);
+  const dist = rad / (Math.tan(FOV*0.5)*usable) * sp.cam.fit;
+  // a slow breath on the elevation, frozen once the harness seeks
+  const el = sp.cam.el*RAD + 0.026*Math.sin(S.simT*0.21)*S.swayAmt;
+  // lift the look-at point so the plant's base clears the bottom edge
+  const lookY = bb.mny + (bb.mxy-bb.mny)*0.46;
+  const eye = [ bb.centre[0] + dist*Math.cos(el)*Math.cos(S.az),
+                lookY + dist*Math.sin(el),
+                bb.centre[2] + dist*Math.cos(el)*Math.sin(S.az) ];
+  const ctr = [bb.centre[0], lookY, bb.centre[2]];
+  m4persp(PROJ, FOV, S.w/S.h, Math.max(0.02, dist*0.02), dist*4.5);
+  m4look(VIEW, eye, ctr, [0,1,0]);
+  m4mul(VP, PROJ, VIEW);
+  // screen-space composition offset: subject sits right of centre (panels left)
+  VP[8] += sp.cam.ox; VP[9] += sp.cam.oy;
+
+  const keyDir  = v3.n([-0.42, 0.80, 0.43]);
+  const fillDir = v3.n([ 0.66, 0.10,-0.74]);
+
+  gl.viewport(0,0,S.w,S.h);
+  gl.disable(gl.SCISSOR_TEST);
+
+  /* ---------------- background ---------------- */
+  gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.BLEND);
+  gl.useProgram(P.bg.p);
+  {
+    // project the plant centre into uv space for the light pool
+    const cw = VP[3]*bb.centre[0] + VP[7]*bb.centre[1] + VP[11]*bb.centre[2] + VP[15];
+    const cx = (VP[0]*bb.centre[0] + VP[4]*bb.centre[1] + VP[8 ]*bb.centre[2] + VP[12])/cw;
+    const cy = (VP[1]*bb.centre[0] + VP[5]*bb.centre[1] + VP[9 ]*bb.centre[2] + VP[13])/cw;
+    gl.uniform2f(P.bg.u.uRes, S.w, S.h);
+    gl.uniform2f(P.bg.u.uG1, cx*0.5+0.5, cy*0.5+0.5);
+    gl.uniform2f(P.bg.u.uG2, cx*0.5+0.5+0.42, cy*0.5+0.5-0.22);
+    gl.uniform1f(P.bg.u.uR1, 0.40); gl.uniform1f(P.bg.u.uR2, 0.30);
+    gl.uniform3fv(P.bg.u.uBot, pal.bgBot); gl.uniform3fv(P.bg.u.uTop, pal.bgTop);
+    gl.uniform3fv(P.bg.u.uC1, pal.bgGlow); gl.uniform3fv(P.bg.u.uC2, pal.glow2);
+  }
+  gl.bindVertexArray(P.emptyVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* ---------------- ground ---------------- */
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  const grnd = Math.max(0.6, rad*2.4);
+  gl.useProgram(P.gnd.p);
+  gl.uniformMatrix4fv(P.gnd.u.uVP, false, VP);
+  gl.uniform2f(P.gnd.u.uScale, grnd, grnd);     // the disc mesh is the unit disc
+  gl.uniform3f(P.gnd.u.uCen, bb.centre[0]*0.5, 0.0, bb.centre[2]*0.5);
+  gl.uniform3fv(P.gnd.u.uDark, pal.ground);
+  gl.uniform3fv(P.gnd.u.uLit, pal.groundLit);
+  gl.uniform2f(P.gnd.u.uShC, bb.centre[0]-keyDir[0]*bb.hy*0.55, bb.centre[2]-keyDir[2]*bb.hy*0.55);
+  gl.uniform1f(P.gnd.u.uShR, Math.max(0.20, rad*0.40));
+  gl.uniform3fv(P.gnd.u.uFog, pal.bgTop);
+  gl.uniform1f(P.gnd.u.uFogK, 0.045);
+  gl.uniform3fv(P.gnd.u.uCam, eye);
+  gl.bindVertexArray(P.gndVao);
+  gl.drawElements(gl.TRIANGLES, P.gndCount, gl.UNSIGNED_INT, 0);
+  gl.disable(gl.BLEND);
+
+  /* ---------------- plant ---------------- */
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+  gl.useProgram(P.pl.p);
+  gl.uniformMatrix4fv(P.pl.u.uVP, false, VP);
+  gl.uniform1f(P.pl.u.uFront, front);
+  gl.uniform1f(P.pl.u.uInv, 1/0.030);
+  gl.uniform1f(P.pl.u.uSway, 0.013 * smoothstep(0.55, 1.0, gRaw) * S.swayAmt);
+  gl.uniform1f(P.pl.u.uTime, S.simT);
+  gl.uniform1f(P.pl.u.uBaseY, bb.mny);
+  gl.uniform1f(P.pl.u.uTopY, bb.mxy);
+  gl.uniform3fv(P.pl.u.uCam, eye);
+  gl.uniform3fv(P.pl.u.uKey, pal.key);
+  gl.uniform3fv(P.pl.u.uKeyC, pal.key);
+  gl.uniform3fv(P.pl.u.uFillC, pal.fill);
+  gl.uniform3fv(P.pl.u.uRimC, pal.rim);
+  gl.uniform3fv(P.pl.u.uSky, pal.sky);
+  gl.uniform3fv(P.pl.u.uGnd, pal.gnd);
+  gl.uniform3fv(P.pl.u.uFog, pal.bgTop);
+  gl.uniform3fv(P.pl.u.uGlow, [pal.leafTip[0], pal.leafTip[1], pal.leafTip[2]]);
+  gl.uniform1f(P.pl.u.uTrans, pal.trans);
+  gl.uniform1f(P.pl.u.uSpec, 0.28);
+  gl.uniform1f(P.pl.u.uGlowAmt, 0.55*(1-gRaw) + 0.05);
+  gl.uniform1f(P.pl.u.uFogK, 0.045);
+  gl.uniform3fv(P.pl.u.uKeyDir, keyDir);
+  gl.uniform3fv(P.pl.u.uFillDir, fillDir);
+  gl.bindVertexArray(P.plVao);
+  if(elemCount > 0) gl.drawElements(gl.TRIANGLES, elemCount, gl.UNSIGNED_INT, 0);
+
+  /* ---------------- skeleton overlay ---------------- */
+  if(S.skel && tubeVerts > 0){
+    gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.useProgram(P.sk.p);
+    gl.uniformMatrix4fv(P.sk.u.uVP, false, VP);
+    gl.uniform1f(P.sk.u.uFront, front);
+    gl.uniform3f(P.sk.u.uCol, 0.45, 0.95, 1.0);
+    gl.bindVertexArray(P.skVao);
+    gl.drawArrays(gl.LINES, 0, Math.min(tubeVerts, S.primTubes)*2);
+    gl.disable(gl.BLEND); gl.depthMask(true);
+  }
+
+  /* ---------------- tip glow ---------------- */
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.depthMask(false);
+  gl.useProgram(P.pt.p);
+  gl.uniformMatrix4fv(P.pt.u.uVP, false, VP);
+  gl.uniform1f(P.pt.u.uFront, front);
+  gl.uniform1f(P.pt.u.uTime, S.simT);
+  gl.uniform1f(P.pt.u.uPR, 1.0);
+  gl.uniform1f(P.pt.u.uAlpha, 0.55);
+  gl.bindVertexArray(P.ptVao);
+  if(P.ptCount) gl.drawArrays(gl.POINTS, 0, P.ptCount);
+
+  /* ---------------- motes ---------------- */
+  gl.bindVertexArray(P.moVao);
+  gl.useProgram(P.pt.p);
+  gl.uniformMatrix4fv(P.pt.u.uVP, false, VP);
+  gl.uniform1f(P.pt.u.uAlpha, 0.30);
+  gl.uniform1f(P.pt.u.uPR, 0.70);
+  gl.uniform1f(P.pt.u.uFront, 2.0);          // beyond every birth => always visible
+  gl.uniform1f(P.pt.u.uTime, S.simT);
+  if(P.moCount) gl.drawArrays(gl.POINTS, 0, P.moCount);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.bindVertexArray(null);
+
+  /* ---------------- hud + readiness ---------------- */
+  S.fpsAcc += now - S.fpsT; S.fpsT = now; S.fpsN++;
+  if(S.fpsAcc > 400){ S.fps = 1000/(S.fpsAcc/S.fpsN); S.fpsAcc = 0; S.fpsN = 0; }
+  if(S.frame % 6 === 0) updateStats();
+
+  // freeze the turntable at a canonical angle once growth completes, so a
+  // harness screenshot lands on the composed frame rather than wherever an
+  // arbitrary frame count happened to leave the camera
+  if(!S.ready){
+    const done = (gRaw >= 1) || (S.simT > GROW_TIME*4);
+    if(done){
+      S.ready = true; S.readyFrame = S.frame; S.readyT = S.simT;
+      S.az = sp.cam.az;                       // canonical resting angle
+      window.__ready = true;
+    }
+  }
+  window.__probe = {
+    fps: +S.fps.toFixed(2), frame: S.frame, simT: +S.simT.toFixed(3),
+    growth: +S.growth.toFixed(3), species: S.sp.name, seed: S.seed>>>0,
+    iterations: S.iters, symbols: S.str.length,
+    primitives: S.prims.length, drawn: np,
+    vertices: S.mesh.verts.length/22, triangles: elemCount/3,
+    totalTriangles: S.mesh.idx.length/3,
+    renderRes: S.w+'x'+S.h, readyFrame: S.readyFrame, readySimT: +S.readyT.toFixed(2)
+  };
+}
+
+/* ------------------------------------------------------------------- HUD */
+const el = id => document.getElementById(id);
+function updateHUD(){
+  const sp = S.sp;
+  document.documentElement.style.setProperty('--acc', rgb(sp.pal.leafTip, 1.5));
+  document.documentElement.style.setProperty('--acc2', rgb(sp.pal.rim, 1.2));
+  el('sub').textContent = sp.name + ' \u00b7 ' + sp.latin + ' \u2014 ' + sp.tag;
+  el('tech').innerHTML = sp.tech;
+  el('it').min = sp.iterMin; el('it').max = sp.iterMax; el('it').value = S.iters;
+  el('itV').textContent = S.iters;
+  el('angV').textContent = (S.angle/RAD).toFixed(0) + '\u00b0';
+  el('ldV').textContent = S.lenDecay.toFixed(2);
+  el('rdV').textContent = S.rDecay.toFixed(2);
+  el('grV').textContent = S.droop.toFixed(2);
+  document.querySelectorAll('#spBtns button').forEach(b =>
+    b.classList.toggle('on', b.dataset.k === sp.key));
+  el('gBody').innerHTML =
+    '<b>axiom</b> \u00a0' + sp.axiom + '<br>' +
+    Object.keys(sp.rules).map(k =>
+      '<b>' + k + ' \u2192</b> \u00a0' +
+      sp.rules[k].map(o => o.to).join('<br>\u00a0\u00a0\u00a0\u00a0<span style="opacity:.45">or</span>\u00a0')
+    ).join('<br>') +
+    (sp.final ? '<br><b>final</b><br>' + Object.keys(sp.final).map(
+      k => '\u00a0\u00a0\u00a0\u00a0' + k + ' \u2192 ' + sp.final[k]).join('<br>') : '');
+  el('gAlpha').innerHTML =
+    '<i>F</i> draw \u00b7 <i>f</i> move \u00b7 <i>+ \u2212</i> yaw \u00b7 <i>&amp; \u02c6</i> pitch \u00b7 ' +
+    '<i>/ \\</i> roll \u00b7 <i>T</i> roll ' + sp.turn + '\u00b0 \u00b7 <i>[ ]</i> branch \u00b7 <i>!</i> thin<br>' +
+    '<i>L K</i> leaf \u00b7 <i>P</i> petal \u00b7 <i>S</i> stamen \u00b7 <i>D</i> bud';
+  el('gNote').textContent = sp.note;
+}
+function rgb(c, k){
+  const f = v => Math.round(clamp(Math.pow(clamp(v*k,0,1), 1/2.2), 0, 1)*255);
+  return 'rgb(' + f(c[0]) + ',' + f(c[1]) + ',' + f(c[2]) + ')';
+}
+function updateStats(){
+  const s = S;
+  el('stats').innerHTML =
+    '<b>' + s.prims.length + '</b> primitives \u00b7 <span>' +
+    (s.mesh.idx.length/3|0) + '</span> tris \u00b7 <span>' +
+    (s.mesh.verts.length/22|0) + '</span> verts<br>' +
+    '<b>' + s.str.length + '</b> symbols expanded \u00b7 <b>' +
+    (s.growth*100).toFixed(0) + '%</b> grown \u00b7 <b>' + s.fps.toFixed(1) + '</b> fps<br>' +
+    '<span>seed 0x' + (s.seed>>>0).toString(16) + ' \u00b7 dt 1/30 s \u00b7 ' + s.w + '\u00d7' + s.h + ' internal</span>';
+}
+
+/* --------------------------------------------------------------- controls */
+if(HAS_GL) buildGL();
+
+const SP_ORDER = ORDER;
+el('spBtns').innerHTML = SP_ORDER.map(k =>
+  '<button data-k="'+k+'">'+PRESETS[k].name+'</button>').join('');
+el('spBtns').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  S.sp = PRESETS[b.dataset.k];
+  S.iters = S.sp.iterDef;
+  S.angle = S.sp.angDef*RAD;
+  S.lenDecay = S.sp.lenDef; S.rDecay = S.sp.rDef;
+  S.droop = S.sp.curv.droop;
+  rebuild(true);
+});
+el('it').addEventListener('input', e => { S.iters = +e.target.value; el('itV').textContent = S.iters; rebuild(true); });
+el('ang').addEventListener('input', e => { S.angle = +e.target.value*RAD; el('angV').textContent = e.target.value+'\u00b0'; rebuild(true); });
+el('ld').addEventListener('input', e => { S.lenDecay = +e.target.value/100; el('ldV').textContent = S.lenDecay.toFixed(2); rebuild(true); });
+el('rd').addEventListener('input', e => { S.rDecay = +e.target.value/100; el('rdV').textContent = S.rDecay.toFixed(2); rebuild(true); });
+el('gr').addEventListener('input', e => { S.droop = +e.target.value/100; el('grV').textContent = S.droop.toFixed(2); rebuild(true); });
+el('bSeed').addEventListener('click', () => {
+  S.seed = (Math.imul(S.seed, 1664525) + 1013904223) >>> 0;   // deterministic reseed
+  rebuild(true);
+});
+el('bGrow').addEventListener('click', () => { S.simT = 0; S.growth = 0; });
+el('bSkel').addEventListener('click', e => {
+  S.skel = !S.skel; e.target.classList.toggle('on', S.skel);
+});
+el('bAuto').addEventListener('click', e => {
+  S.spin = !S.spin; e.target.classList.toggle('on', S.spin);
+  e.target.textContent = S.spin ? 'spin on' : 'spin off';
+});
+
+/* ------------------------------------------------------------------- boot */
+if(HAS_GL){
+  resize();
+  S.sp = PRESETS.oak; S.iters = S.sp.iterDef; S.angle = S.sp.angDef*RAD;
+  S.lenDecay = S.sp.lenDef; S.rDecay = S.sp.rDef; S.droop = S.sp.curv.droop;
+  el('ang').value = (S.angle/RAD)|0; el('ld').value = Math.round(S.lenDecay*100);
+  el('rd').value = Math.round(S.rDecay*100); el('gr').value = Math.round(S.droop*100);
+  el('bSkel').classList.toggle('on', S.skel);
+  rebuild(true);
+  S.fpsT = performance.now();
+  requestAnimationFrame(frame);
+}
+window.__ready = false;
+</script>
+</body>
+</html>

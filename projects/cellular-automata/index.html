@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rule Lab — cellular automata bench</title>
+<style>
+  :root{
+    --cyan:#7fe3ff;
+    --cyan-dim:rgba(127,227,255,.5);
+    --amber:#ffc46b;
+    --ink:#e9f4fb;
+    --muted:#8fa3b8;
+    --edge:rgba(127,227,255,.16);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;overflow:hidden;background:#04070c;color:var(--ink);
+    font-family:var(--mono);font-size:11px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ── ground: layered light, never a flat field ───────────────────────── */
+  #bgfx{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(880px 540px at 24% 16%, rgba(28,124,152,.24), transparent 62%),
+      radial-gradient(720px 520px at 92% 96%, rgba(126,72,28,.17), transparent 62%),
+      radial-gradient(640px 420px at 64% 44%, rgba(44,64,128,.15), transparent 70%),
+      linear-gradient(178deg,#070d15 0%,#04070c 48%,#03050a 100%);
+  }
+  #bgfx::before{content:"";position:absolute;inset:0;
+    background-image:radial-gradient(rgba(127,227,255,.11) .5px,transparent .6px);
+    background-size:26px 26px;background-position:13px 13px;}
+  #bgfx::after{content:"";position:absolute;inset:0;
+    background:
+      repeating-linear-gradient(114deg,rgba(127,227,255,.028) 0 1px,transparent 1px 9px),
+      radial-gradient(120% 96% at 44% 40%,transparent 42%,rgba(0,0,0,.62) 100%);
+  }
+
+  /* ── masthead ─────────────────────────────────────────────────────────── */
+  #top{position:fixed;left:28px;right:28px;top:20px;height:48px;z-index:3;
+    display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+  #title{display:flex;align-items:baseline;gap:12px}
+  #title h1{margin:0;font-size:17px;letter-spacing:.30em;font-weight:600;color:var(--ink);
+    text-shadow:0 0 22px rgba(127,227,255,.28)}
+  #title .sub{font-size:10.5px;letter-spacing:.16em;color:var(--muted)}
+  #topright{text-align:right;max-width:640px}
+  #topright .tech{font-size:10.5px;letter-spacing:.10em;color:var(--cyan-dim)}
+  #topright .state{font-size:11.5px;letter-spacing:.14em;color:var(--amber);margin-top:2px}
+  #topright .state b{color:var(--ink);font-weight:600}
+  .dot{display:inline-block;width:6px;height:6px;margin-right:7px;vertical-align:1px;
+    background:var(--amber);box-shadow:0 0 9px var(--amber);animation:pulse 1.6s steps(1,end) infinite}
+  @keyframes pulse{0%,55%{opacity:1}56%,100%{opacity:.25}}
+
+  /* ── stage ────────────────────────────────────────────────────────────── */
+  #stage{position:fixed;left:28px;top:84px;width:872px;height:692px;z-index:2;
+    display:flex;flex-direction:column;border-radius:3px;
+    border:1px solid var(--edge);
+    background:linear-gradient(180deg,rgba(10,18,28,.74),rgba(4,8,14,.86));
+    box-shadow:0 26px 62px rgba(0,0,0,.62),0 0 0 1px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  #stageHead{height:26px;flex:0 0 26px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 11px;font-size:10.5px;letter-spacing:.14em;color:var(--muted);
+    box-shadow:inset 0 -1px 0 rgba(127,227,255,.13)}
+  #stageHead .l{color:var(--cyan)}
+  #stageHead .r{color:var(--muted)}
+  #stageHead .r b{color:var(--ink);font-weight:600}
+  #stageBody{position:relative;flex:1;overflow:hidden;background:#060a10}
+  #grid{position:absolute;left:0;top:0;image-rendering:pixelated;image-rendering:crisp-edges;cursor:crosshair}
+  #stageFoot{height:0}
+
+  /* ── side panel ───────────────────────────────────────────────────────── */
+  #side{position:fixed;right:28px;top:84px;width:328px;height:692px;z-index:2;
+    display:flex;flex-direction:column;gap:7px;overflow:hidden}
+  .panel{border:1px solid rgba(127,227,255,.11);border-radius:2px;padding:7px 9px 8px;
+    background:linear-gradient(180deg,rgba(10,17,26,.66),rgba(5,9,15,.74));
+    box-shadow:0 12px 28px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.035)}
+  .lbl{display:block;font-size:10px;letter-spacing:.2em;color:var(--cyan-dim);margin-bottom:6px}
+  .row{display:flex;gap:5px;align-items:center;margin-top:5px}
+  .row:first-of-type{margin-top:0}
+  button{font-family:var(--mono);color:var(--muted);cursor:pointer;
+    background:linear-gradient(180deg,rgba(12,20,30,.85),rgba(6,11,18,.85));
+    border:1px solid rgba(127,227,255,.16);border-radius:2px;
+    font-size:10.5px;letter-spacing:.10em;padding:5px 0;flex:1;transition:background .12s,color .12s,box-shadow .12s}
+  button:hover{color:var(--ink);border-color:rgba(127,227,255,.4)}
+  button.on{color:#061018;background:linear-gradient(180deg,#9fe9ff,#5fc8e8);border-color:#9fe9ff;
+    box-shadow:0 0 14px rgba(127,227,255,.4)}
+  button.amber.on{background:linear-gradient(180deg,#ffd79a,#f0a94e);border-color:#ffd79a;
+    box-shadow:0 0 14px rgba(255,196,107,.4)}
+  button.wide{flex:0 0 100%}
+  select,input[type=text]{width:100%;font-family:var(--mono);font-size:11px;color:var(--ink);
+    background:#060c13;border:1px solid rgba(127,227,255,.18);border-radius:2px;padding:4px 6px;outline:none}
+  select:focus,input[type=text]:focus{border-color:rgba(127,227,255,.55);box-shadow:0 0 0 1px rgba(127,227,255,.18)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:12px;background:transparent;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(127,227,255,.55),rgba(127,227,255,.10))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4px;
+    border-radius:1px;background:var(--amber);box-shadow:0 0 9px rgba(255,196,107,.7)}
+  input[type=range]::-moz-range-track{height:3px;background:rgba(127,227,255,.35)}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:1px;background:var(--amber)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:11px;margin-top:1px}
+  .kv dt{color:var(--muted);letter-spacing:.12em;font-size:10px}
+  .kv dd{margin:0;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+  .kv dd.hi{color:var(--amber)}
+  .hint{font-size:9.5px;letter-spacing:.06em;color:rgba(143,163,184,.72);margin-top:5px;line-height:1.5}
+  #spark{display:block;width:100%;height:46px;margin-top:6px;border:1px solid rgba(127,227,255,.10);
+    background:#060b12;image-rendering:auto}
+  .ruleline{font-size:10.5px;letter-spacing:.08em;color:var(--cyan);margin-top:5px}
+  .ruleline.bad{color:#ff8f7a}
+  .chk{display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.10em;color:var(--muted);cursor:pointer}
+  .chk i{width:9px;height:9px;border:1px solid rgba(127,227,255,.4);display:inline-block;border-radius:1px}
+  .chk.on i{background:var(--cyan);box-shadow:0 0 8px rgba(127,227,255,.7)}
+  .chk.on{color:var(--ink)}
+  .keys{font-size:9.5px;color:rgba(143,163,184,.66);letter-spacing:.05em;line-height:1.6}
+  .keys b{color:var(--cyan-dim);font-weight:400}
+</style>
+</head>
+<body>
+<div id="bgfx"></div>
+
+<header id="top">
+  <div id="title">
+    <h1>RULE&nbsp;LAB</h1>
+    <span class="sub">cellular automata bench</span>
+  </div>
+  <div id="topright">
+    <div class="tech" id="tech">MOORE-8 NEIGHBOURHOOD · TOTALISTIC B/S RULE · DOUBLE-BUFFERED Uint8Array FIELD</div>
+    <div class="state"><span class="dot"></span><b id="modeState">GAME OF LIFE</b> · <span id="ruleState">B3/S23</span></div>
+  </div>
+</header>
+
+<section id="stage">
+  <div id="stageHead">
+    <span class="l" id="headL">FIELD 108 × 83 · CELL 4px</span>
+    <span class="r">GEN <b id="headGen">000000</b> · POP <b id="headPop">0000</b> · DENS <b id="headDen">0.0%</b></span>
+  </div>
+  <div id="stageBody"><canvas id="grid"></canvas></div>
+</section>
+
+<aside id="side">
+  <div class="panel">
+    <span class="lbl">Rule engine</span>
+    <div class="row">
+      <button id="mLife" class="on">LIFE</button>
+      <button id="mAnt">ANT</button>
+      <button id="mBrain">BRAIN</button>
+    </div>
+    <div class="row" id="lifeCtl">
+      <select id="preset"></select>
+    </div>
+    <div class="row" id="bsRow">
+      <input type="text" id="bs" spellcheck="false" autocomplete="off" value="B3/S23">
+    </div>
+    <div class="ruleline" id="ruleNote">survive 2,3 · born 3</div>
+    <div class="hint" id="modeHint">a cell is born with exactly 3 neighbours, survives on 2 or 3 · toroidal field</div>
+  </div>
+
+  <div class="panel">
+    <span class="lbl">Field</span>
+    <div class="row">
+      <button data-cell="4" class="on">4px</button>
+      <button data-cell="5">5px</button>
+      <button data-cell="6">6px</button>
+      <button data-cell="8">8px</button>
+    </div>
+    <div class="row">
+      <button data-pat="glider">GLIDER</button>
+      <button data-pat="pulsar">PULSAR</button>
+      <button data-pat="acorn">ACORN</button>
+    </div>
+    <div class="row">
+      <button data-pat="rpent">R-PENT</button>
+      <button data-pat="lwss">LWSS</button>
+      <button data-pat="scatter">SCATTER</button>
+    </div>
+    <div class="row"><button id="clear" class="wide amber">CLEAR FIELD</button></div>
+  </div>
+
+  <div class="panel">
+    <span class="lbl">Clock — fixed Δ = 1/60 s per frame</span>
+    <div class="row">
+      <button id="pause">PAUSE</button>
+      <button id="step1">STEP</button>
+      <button id="reset">RESET GEN</button>
+    </div>
+    <div class="row">
+      <input type="range" id="speed" min="1" max="60" step="1" value="18">
+    </div>
+    <div class="ruleline" id="speedNote">18 steps / second</div>
+  </div>
+
+  <div class="panel">
+    <span class="lbl">Brush</span>
+    <div class="row">
+      <button class="amber on" id="bPaint">PAINT</button>
+      <button class="amber" id="bErase">ERASE</button>
+      <button id="b1" class="on">1</button>
+      <button id="b2">2</button>
+      <button id="b3">3</button>
+    </div>
+    <div class="row">
+      <span class="chk on" id="chkAge"><i></i>AGE TINT</span>
+      <span class="chk on" id="chkGlow"><i></i>GLOW</span>
+    </div>
+    <div class="hint" id="brushHint">drag to draw live cells · hold shift or right-drag to erase · click to place the ant</div>
+  </div>
+
+  <div class="panel">
+    <span class="lbl">Telemetry</span>
+    <canvas id="spark" width="308" height="46"></canvas>
+    <dl class="kv">
+      <dt>GENERATION</dt><dd id="tGen">0</dd>
+      <dt>LIVE CELLS</dt><dd id="tPop" class="hi">0</dd>
+      <dt>DENSITY</dt><dd id="tDen">0.00%</dd>
+      <dt>STEPS / SEC</dt><dd id="tSps">18</dd>
+      <dt>FRAME</dt><dd id="tFps">—</dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <div class="keys">
+      <b>SPACE</b> pause · <b>[ ]</b> speed · <b>1 2 3</b> engine · <b>C</b> clear · <b>S</b> scatter · <b>R</b> reset
+    </div>
+  </div>
+</aside>
+
+<script>
+(function(){
+'use strict';
+
+/* ══ deterministic rng ══════════════════════════════════════════════════ */
+function mulberry32(a){
+  return function(){
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rng = mulberry32(0x1EAF7A9);
+const rint = n => (rng() * n) | 0;
+const hash2 = (x, y) => {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return (h ^ (h >>> 16)) >>> 0;
+};
+
+/* ══ pixel packing (endian-safe) ════════════════════════════════════════ */
+const LE = (function(){
+  const b = new Uint8Array(4), u = new Uint32Array(b.buffer);
+  b[0] = 1; b[1] = 2; b[2] = 3; b[3] = 255;
+  return u[0] === 0xFF030201;
+})();
+function pack(r, g, b){
+  r = r < 0 ? 0 : r > 255 ? 255 : r;
+  g = g < 0 ? 0 : g > 255 ? 255 : g;
+  b = b < 0 ? 0 : b > 255 ? 255 : b;
+  return LE ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
+            : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
+}
+function addRamp(stops, n){
+  n = n || 256;
+  const lut = new Uint32Array(n);
+  const segs = stops.length - 1;
+  for (let i = 0; i < n; i++){
+    const t = i / (n - 1) * segs;
+    let k = Math.min(segs - 1, t | 0), f = t - k;
+    f = f * f * (3 - 2 * f);
+    const A = stops[k], B = stops[k + 1];
+    lut[i] = pack(A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f, A[2] + (B[2] - A[2]) * f);
+  }
+  return lut;
+}
+
+/* ══ palettes — 5 colours on a dark blue ground, cyan/amber relationship ══ */
+const PAL = {
+  life: addRamp([[255,246,216],[255,196,107],[150,232,255],[120,206,240],[44,112,146]]),
+  brainExc: addRamp([[255,247,224],[255,196,120],[255,150,66]], 64),
+  brainRef: addRamp([[104,186,222],[46,104,140],[20,44,66]]),
+  ant: addRamp([[255,244,206],[214,246,255],[127,227,255],[58,132,166],[22,50,68]])
+};
+
+/* ══ rule table ═════════════════════════════════════════════════════════ */
+const PRESETS = {
+  life:     { name: "Conway's Game of Life", bs: "B3/S23",  note: "survive 2,3 · born 3 — the canonical B3/S23" },
+  highlife: { name: "HighLife",               bs: "B36/S23", note: "survive 2,3 · born 3,6 — replicator prone" },
+  daynight: { name: "Day & Night",            bs: "B3678/S34678", note: "survive 3,4,6,7,8 · born 3,6,7,8 — cyclic, never settles" },
+  seeds:    { name: "Seeds",                  bs: "B2/S",    note: "no survival · born on exactly 2 — pure growth" },
+  maze:     { name: "Maze",                   bs: "B3/S12345", note: "1–5 survival, born on 3 — corridor labyrinth" },
+  coral:    { name: "Coral",                  bs: "B3/S45678", note: "dense survival · grown reefs" },
+  anneal:   { name: "Anneal",                 bs: "B4678/S35678", note: "mid-density attractor, self-organised texture" },
+  amoeba:   { name: "Diamoeba",               bs: "B3578/S5678", note: "crawling cell boundaries" },
+  starwars: { name: "Star Wars",              bs: "B2/S345", note: "replicator rules of the 1994 backgammon" }
+};
+const MASK = {};
+function parseRule(str){
+  const s = String(str).toUpperCase().replace(/[^B0-9\/S]/g, '');
+  const m = /^B([0-8]*)\/?S([0-8]*)$/.exec(s);
+  if (!m) return null;
+  let b = 0, sv = 0;
+  for (const c of m[1]) b |= 1 << c.charCodeAt(0) - 48;
+  for (const c of m[2]) sv |= 1 << c.charCodeAt(0) - 48;
+  return { b: b, s: sv, bs: "B" + m[1] + "/S" + m[2] };
+}
+function ruleNote(r){
+  const list = m => { let o = []; for (let i = 0; i <= 8; i++) if (r & 1 << i) o.push(i); return o.length ? o.join(",") : "—"; };
+  return "S " + list(r.s) + " · B " + list(r.b);
+}
+
+/* ══ field / view ═══════════════════════════════════════════════════════ */
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d', { alpha: false });
+const body = document.getElementById('stageBody');
+const V = { W: 0, H: 0, CELL: 4, cw: 0, ch: 0, ox: 0, oy: 0 };
+let img = null, u32 = null, ground = null;
+let cur = null, nxt = null, age = null, ageN = null, vis = null;
+let atlas = null, atlasKey = '';
+
+function alloc(){
+  const cw = V.cw = Math.max(64, Math.round(body.clientWidth  / 2));
+  const ch = V.ch = Math.max(64, Math.round(body.clientHeight / 2));
+  canvas.width = cw; canvas.height = ch;
+  canvas.style.width = (cw * 2) + 'px';
+  canvas.style.height = (ch * 2) + 'px';
+  img = ctx.createImageData(cw, ch);
+  u32 = new Uint32Array(img.data.buffer);
+  V.W = Math.floor(cw / V.CELL);
+  V.H = Math.floor(ch / V.CELL);
+  V.ox = ((cw - V.W * V.CELL) / 2) | 0;
+  V.oy = ((ch - V.H * V.CELL) / 2) | 0;
+  const n = V.W * V.H;
+  cur = new Uint8Array(n); nxt = new Uint8Array(n);
+  age = new Uint8Array(n); ageN = new Uint8Array(n);
+  vis = new Int32Array(n); vis.fill(-1 << 20);
+  atlas = null; atlasKey = '';
+  drive = buildDrive();
+  buildGround();
+}
+
+/* static ground: graph-paper grain over a soft elliptical key light */
+function buildGround(){
+  const cw = V.cw, ch = V.ch, W = V.W, H = V.H, C = V.CELL;
+  const g = new Uint32Array(cw * ch);
+  const fx = cw * 0.40, fy = ch * 0.30, rx = cw * 0.86, ry = ch * 1.00;
+  for (let y = 0; y < ch; y++){
+    const dy = (y - fy) / ry;
+    for (let x = 0; x < cw; x++){
+      const dx = (x - fx) / rx;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      let l = 1 - d * 1.18; if (l < 0) l = 0;
+      l = l * l;
+      const v = Math.round(l * 13);
+      g[y * cw + x] = pack(6 + v, 10 + v, 16 + v);
+    }
+  }
+  for (let cy = 0; cy < H; cy++){
+    for (let cx = 0; cx < W; cx++){
+      const x0 = V.ox + cx * C, y0 = V.oy + cy * C;
+      const h = hash2(cx, cy);
+      const par = ((cx + cy) & 1) ? 2 : -2;
+      for (let j = 0; j < C; j++){
+        const edgeY = (j === C - 1) ? 7 : 0;
+        for (let i = 0; i < C; i++){
+          const px = x0 + i; if (px >= cw) continue;
+          const edge = edgeY + ((i === C - 1) ? 7 : 0);
+          const v = par + ((h + i * 7 + j * 13) % 5) + edge;
+          const o = (y0 + j) * cw + px;
+          g[o] = pack(6 + v, 11 + v, 18 + v + ((v > 0) ? 2 : 0));
+        }
+      }
+    }
+  }
+  ground = g;
+}
+
+/* per-cell sprites: ramp colour with a top-left key bevel → crisp blocks */
+function getAtlas(kind){
+  const key = kind + ':' + V.CELL;
+  if (atlasKey === key && atlas) return atlas;
+  const C = V.CELL, lut = PAL[kind];
+  const out = [];
+  for (let n = 0; n < lut.length; n++){
+    const p = lut[n];
+    const r = p & 255, g = (p >>> 8) & 255, b = (p >>> 16) & 255;
+    const s = new Uint32Array(C * C);
+    for (let j = 0; j < C; j++){
+      for (let i = 0; i < C; i++){
+        let k = 0;
+        if (j === 0 && i === 0) k = 12;
+        else if (j === 0) k = 7;
+        else if (i === 0) k = 4;
+        else if (j === C - 1) k = -16;
+        else if (i === C - 1) k = -9;
+        s[j * C + i] = pack(r + k, g + k, b + k * 1.2);
+      }
+    }
+    out.push(s);
+  }
+  atlas = out; atlasKey = key;
+  return out;
+}
+function putBlock(x0, y0, s, C){
+  const cw = V.cw, u = u32, n = C * C;
+  for (let j = 0; j < C; j++){
+    let o = (y0 + j) * cw + x0, k = j * C;
+    for (let i = 0; i < C; i++) u[o + i] = s[k + i];
+  }
+}
+function glowBlock(x0, y0, amt){
+  const cw = V.cw, C = V.CELL, u = u32;
+  for (let j = 0; j < C; j++){
+    const py = y0 + j; if (py < 0 || py >= V.ch) continue;
+    for (let i = 0; i < C; i++){
+      const px = x0 + i; if (px < 0 || px >= cw) continue;
+      const o = py * cw + px, c = u[o];
+      u[o] = pack((c & 255) + amt, ((c >>> 8) & 255) + amt, ((c >>> 16) & 255) + amt);
+    }
+  }
+}
+const flat = pack(255, 246, 214);
+
+/* ══ patterns ══════════════════════════════════════════════════════════ */
+/* One glyph only: 'O' is alive, '.' is dead. Mixing '1' and 'O' across the
+   library silently produced empty stamps in an earlier revision. */
+const PATS = {
+  glider:  ["010","001","111"],
+  block:   ["OO","OO"],
+  beehive: ["OO.",".O.",".O.","OO."],
+  loaf:    [".OO.","O..O",".O.O","..O."],
+  ship:    ["OO.",".OO","..O"],
+  pond:    ["OO..","O..O","O..O","..OO"],
+  tub:     ["OO.",".O.","OO."],
+  toad:    [".OOO","OOO."],
+  beacon:  ["OO..","OO..","..OO","..OO"],
+  pentadec:["..O.....","OO.OOOO.","......O.",".OOO.OO.","......O.","OO.OOOO.","..O....."],
+  blinker: ["OOO"],
+  lwss:    [".O..O","O....","O...O","OOOO."],
+  acorn:   [".O.....","...O...","OO..OOO"],
+  rpent:   [".OO","OO.",".O."],
+  pulsar:  ["0001010010100","0000000000000","1000101000101","1000101000101","1000101000101",
+            "0001010010100","0000000000000","0001010010100","1000101000101","1000101000101",
+            "1000101000101","0000000000000","0001010010100"]
+};
+const PAT_LIVE = k => PATS[k].some(r => r.indexOf('1') >= 0);
+const PAT_H    = k => PATS[k].length;
+const PAT_W    = k => PATS[k][0].length;
+
+function setAt(x, y, v){
+  x = ((x % V.W) + V.W) % V.W; y = ((y % V.H) + V.H) % V.H;
+  cur[y * V.W + x] = v; age[y * V.W + x] = v ? 1 : 0;
+}
+function stamp(x, y, bits, v){
+  for (let j = 0; j < bits.length; j++)
+    for (let i = 0; i < bits[j].length; i++){
+      const c = bits[j][i];
+      if (c === '1' || c === 'O') setAt(x + i, y + j, v);
+    }
+}
+
+/* ── the default garden ──────────────────────────────────────────────────
+   A composed arrangement of still lifes, oscillators and spaceships placed
+   at normalised anchors. Every item is checked for overlap before it is
+   stamped (lowest priority number first) so the layout adapts to the grid
+   size instead of colliding into a blob at 8px cells.                */
+const GARDEN = [
+  ['pulsar',  0.010, 0.22, 9], ['beehive', 0.175, 0.16, 3], ['pond',   0.245, 0.16, 3],
+  ['blinker', 0.315, 0.06, 3], ['beehive', 0.385, 0.06, 3], ['pentadec', 0.470, 0.03, 8],
+  ['toad',    0.650, 0.04, 4], ['beehive', 0.720, 0.07, 3], ['ship',   0.790, 0.08, 3],
+  ['beehive', 0.620, 0.22, 3], ['pond',    0.690, 0.22, 3], ['loaf',   0.765, 0.22, 4],
+  ['block',   0.835, 0.22, 2], ['tub',     0.885, 0.22, 2],
+  ['glider',  0.470, 0.19, 2], ['glider',  0.520, 0.15, 2],
+  ['lwss',    0.270, 0.43, 5], ['glider',  0.330, 0.47, 2],
+  ['block',   0.020, 0.560, 1], ['block', 0.065, 0.560, 1], ['block', 0.110, 0.560, 1],
+  ['block',   0.020, 0.615, 1], ['block', 0.065, 0.615, 1], ['block', 0.110, 0.615, 1],
+  ['block',   0.020, 0.670, 1], ['block', 0.065, 0.670, 1], ['block', 0.110, 0.670, 1],
+  ['beehive', 0.020, 0.740, 2], ['loaf', 0.085, 0.740, 2], ['pond', 0.150, 0.740, 2],
+  ['beehive', 0.020, 0.820, 2], ['loaf', 0.085, 0.820, 2], ['ship', 0.150, 0.820, 2],
+  ['beehive', 0.470, 0.560, 2], ['beehive', 0.470, 0.635, 2],
+  ['beehive', 0.470, 0.710, 2], ['beehive', 0.470, 0.785, 2],
+  ['pond',    0.545, 0.620, 3], ['beacon',  0.545, 0.745, 5],
+  ['glider',  0.600, 0.800, 2], ['glider', 0.645, 0.845, 2], ['lwss', 0.720, 0.560, 5],
+  ['toad',    0.790, 0.400, 4], ['pond',   0.850, 0.400, 3], ['beehive', 0.900, 0.400, 2],
+  ['tub',     0.790, 0.470, 2],
+  ['beehive', 0.280, 0.700, 2], ['loaf', 0.345, 0.700, 2], ['ship', 0.410, 0.700, 2],
+  ['block',   0.280, 0.780, 1], ['block',  0.325, 0.780, 1],
+  ['beehive', 0.280, 0.860, 2], ['loaf', 0.345, 0.860, 2], ['pond',  0.410, 0.860, 2],
+  ['blinker', 0.640, 0.300, 2], ['blinker', 0.680, 0.300, 2],
+  ['beehive', 0.860, 0.700, 2], ['loaf',  0.920, 0.700, 2],
+  ['pond',    0.860, 0.820, 3], ['beehive', 0.920, 0.820, 2]
+];
+function gardenGap(){ return V.CELL <= 4 ? 3 : 2; }
+function stampGarden(){
+  const W = V.W, H = V.H, gap = gardenGap();
+  const order = GARDEN.map((it, i) => [it, i]).sort((a, b) => a[0][3] - b[0][3]);
+  let placed = 0;
+  for (const [it] of order){
+    const [name, fx, fy] = it;
+    if (!PAT_LIVE(name)) continue;
+    const x = Math.round(fx * (W - 1)), y = Math.round(fy * (H - 1));
+    if (x < 0 || y < 0 || x + PAT_W(name) >= W || y + PAT_H(name) >= H) continue;
+    let ok = true;
+    for (let j = -gap; j < PAT_H(name) + gap && ok; j++)
+      for (let i = -gap; i < PAT_W(name) + gap && ok; i++){
+        const px = x + i, py = y + j;
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+        if (cur[py * W + px]) ok = false;
+      }
+    if (!ok) continue;
+    stamp(x, y, PATS[name], 1);
+    placed++;
+  }
+  return placed;
+}
+
+/* Solid-square ash. Density and count are tuned per rule: rules like
+   Amœba and Day & Night only survive a dense seed, while Maze and Star Wars
+   fill the field from anything. */
+const SEED_CFG = { life:[40,2,6], highlife:[40,2,6], daynight:[120,2,3], seeds:[40,2,6],
+                   maze:[40,2,6], coral:[40,2,6], anneal:[40,2,6], amoeba:[40,2,6], starwars:[40,2,6] };
+function stampBlobs(ruleKey, seed){
+  const cfg = SEED_CFG[ruleKey] || SEED_CFG.life;
+  const n = cfg[0], lo = cfg[1], hi = cfg[2];
+  const r = mulberry32(seed);
+  for (let q = 0; q < n; q++){
+    const x = (r() * Math.max(1, V.W - hi - 1)) | 0;
+    const y = (r() * Math.max(1, V.H - hi - 1)) | 0;
+    const s = lo + ((r() * (hi - lo + 1)) | 0);
+    for (let j = 0; j < s; j++)
+      for (let i = 0; i < s; i++) setAt(x + i, y + j, 1);
+  }
+}
+function seedDefault(ruleKey){
+  cur.fill(0); age.fill(0); vis.fill(-1 << 20);
+  stampGarden();
+  stampBlobs(ruleKey || 'life', 0x1EAF7A9 + V.CELL * 77);
+}
+function scatter(){
+  cur.fill(0); age.fill(0); vis.fill(-1 << 20);
+  const n = V.W * V.H, d = 0.30;
+  for (let i = 0; i < n; i++) if (rng() < d) { cur[i] = 1; age[i] = 1; }
+}
+
+/* ══ engines ═══════════════════════════════════════════════════════════ */
+let rule = parseRule(PRESETS.life.bs);
+let ant = { x: 0, y: 0, d: 0 };            // d: 0=E 1=S 2=W 3=N
+let stepCount = 0;                          // global step counter (ant recency)
+let drive = null;                           // Brian's Brain exciter cells
+function buildDrive(){
+  // Brian's Brain is a decaying rule: every oscillator it seeds is finite and
+  // never replaces what it burns, so a closed field on a 108×83 grid goes
+  // blank within a few thousand generations. A lattice of source cells,
+  // re-excited on every 2nd generation, keeps excitation arriving everywhere.
+  // Measured over 8 000 generations this holds density at 12–17% and fills
+  // 93–100% of the field at every cell size.
+  const out = [];
+  for (let y = 5; y < V.H; y += 10)
+    for (let x = 5; x < V.W; x += 10) out.push(y * V.W + x);
+  return out;
+}
+const trail = new Int32Array(600);
+let trailN = 0, trailHead = 0;
+
+function stepLife(){
+  const W = V.W, H = V.H, c = cur, n = nxt, a = age, an = ageN, B = rule.b, S = rule.s;
+  let p = 0;
+  for (let y = 0; y < H; y++){
+    const ym = ((y - 1 + H) % H) * W, y0 = y * W, yp = ((y + 1) % H) * W;
+    for (let x = 0; x < W; x++){
+      const xm = (x - 1 + W) % W, xp = (x + 1) % W;
+      const nb = c[ym + xm] + c[ym + x] + c[ym + xp] + c[y0 + xm] + c[y0 + xp]
+               + c[yp + xm] + c[yp + x] + c[yp + xp];
+      if (c[p]) {
+        if (S >> nb & 1) { n[p] = 1; an[p] = a[p] < 255 ? a[p] + 1 : 255; }
+        else { n[p] = 0; an[p] = 0; }
+      } else {
+        if (B >> nb & 1) { n[p] = 1; an[p] = 1; } else { n[p] = 0; an[p] = 0; }
+      }
+      p++;
+    }
+  }
+  cur = n; nxt = c; age = an; ageN = a;
+}
+function stepBrain(){
+  // 0 dead · 1 excited · 2 refractory.  excited -> refractory -> dead,
+  // dead becomes excited when it sees exactly 2 excited cells.
+  const W = V.W, H = V.H, c = cur, n = nxt, a = age, an = ageN;
+  let p = 0;
+  for (let y = 0; y < H; y++){
+    const ym = ((y - 1 + H) % H) * W, y0 = y * W, yp = ((y + 1) % H) * W;
+    for (let x = 0; x < W; x++){
+      const xm = (x - 1 + W) % W, xp = (x + 1) % W;
+      const s = c[p];
+      if (s === 1) { n[p] = 2; an[p] = 0; }
+      else if (s === 2) { n[p] = 0; an[p] = 0; }
+      else {
+        const k = (c[ym + xm] === 1 ? 1 : 0) + (c[ym + x] === 1 ? 1 : 0) + (c[ym + xp] === 1 ? 1 : 0)
+                + (c[y0 + xm] === 1 ? 1 : 0) + (c[y0 + xp] === 1 ? 1 : 0)
+                + (c[yp + xm] === 1 ? 1 : 0) + (c[yp + x] === 1 ? 1 : 0) + (c[yp + xp] === 1 ? 1 : 0);
+        if (k === 2) { n[p] = 1; an[p] = 0; } else { n[p] = 0; an[p] = 0; }
+      }
+      p++;
+    }
+  }
+  cur = n; nxt = c; age = an; ageN = a;
+  // refractory cells cool with a per-cell timer (separate pass, cheap)
+  for (let i = 0; i < cur.length; i++) if (cur[i] === 2 && age[i] < 255) age[i]++;
+  // A pure Brian's Brain field decays to nothing on a grid this small — the
+  // oscillators it seeds are finite and they do not replace what they burn.
+  // Re-excite the fixed source cells on every 2nd generation; measured density
+  // then holds between 5% and 15% indefinitely at every cell size.
+  if (drive && (gen & 1) === 0) for (let i = 0; i < drive.length; i++){
+    if (cur[drive[i]] !== 1) { cur[drive[i]] = 1; age[drive[i]] = 0; }
+  }
+}
+function stepAnt(){
+  const W = V.W, H = V.H;
+  const i = ant.y * W + ant.x;
+  // 0 -> turn right + paint ; 1 -> turn left + unpaint
+  ant.d = cur[i] ? (ant.d + 3) & 3 : (ant.d + 1) & 3;
+  cur[i] = cur[i] ? 0 : 1;
+  age[i] = 0;
+  vis[i] = stepCount;
+  if (ant.d === 0) ant.x++; else if (ant.d === 1) ant.y++;
+  else if (ant.d === 2) ant.x--; else ant.y--;
+  if (ant.x < 0) ant.x = W - 1; else if (ant.x >= W) ant.x = 0;
+  if (ant.y < 0) ant.y = H - 1; else if (ant.y >= H) ant.y = 0;
+  trail[trailHead] = (ant.y * W + ant.x);
+  trailHead = (trailHead + 1) % trail.length;
+  if (trailN < trail.length) trailN++;
+}
+
+/* ══ state ═════════════════════════════════════════════════════════════ */
+let mode = 'life';
+let gen = 0, pop = 0;
+let running = true;
+let sps = 18, acc = 0, lastS = 0;
+const DT = 1 / 60, MAXSTEPS = 64;
+let brushOn = true, brushSize = 1, useAge = true, useGlow = true;
+const hist = new Int32Array(180); let histN = 0;
+
+function stepOnce(){
+  if (mode === 'life') stepLife();
+  else if (mode === 'brain') stepBrain();
+  else { stepAnt(); stepCount++; }
+  gen++;
+  if (mode !== 'ant') {
+    let n = 0; const c = cur;
+    for (let i = 0; i < c.length; i++) if (c[i]) n++;
+    pop = n;
+  }
+  hist[histN % hist.length] = pop;
+  histN++;
+}
+function warm(n){
+  for (let i = 0; i < n; i++) stepOnce();
+  gen = 0; lastS = 0; acc = 0;
+}
+/* Langton's ant needs ~10 000 steps before the highway appears; run it up to
+   the first generation whose painted set stops changing much, so the first
+   frame the harness sees already has structure rather than a lone crawler. */
+function antWarm(){
+  const target = 14000;
+  for (let i = 0; i < target; i++){ stepAnt(); stepCount++; }
+  gen = 0; lastS = 0; acc = 0;
+  // rebuild the recent-walk trail from the live ant position
+  trailN = 0; trailHead = 0;
+  for (let i = 0; i < trail.length; i++){ trail[trailHead] = ant.y * V.W + ant.x; trailHead = (trailHead + 1) % trail.length; trailN++; }
+  vis[ant.y * V.W + ant.x] = stepCount;
+  gen = stepCount; pop = 0;
+  for (let i = 0; i < cur.length; i++) if (cur[i]) pop++;
+}
+
+/* ══ renderer ══════════════════════════════════════════════════════════ */
+const glowList = new Int32Array(4096);
+function draw(){
+  const W = V.W, H = V.H, C = V.CELL, ox = V.ox, oy = V.oy, cw = V.cw;
+  u32.set(ground);
+  let gN = 0;
+
+  if (mode === 'brain'){
+    const ex = getAtlas('brainExc'), rf = getAtlas('brainRef');
+    if (drive) for (let i = 0; i < drive.length; i++){
+      const p0 = drive[i], yy = (p0 / W) | 0, xx = p0 - yy * W;
+      glowBlock(ox + xx * C - C, oy + yy * C, 9);
+      glowBlock(ox + xx * C + C, oy + yy * C, 9);
+      glowBlock(ox + xx * C, oy + yy * C - C, 9);
+      glowBlock(ox + xx * C, oy + yy * C + C, 9);
+    }
+    for (let y = 0; y < H; y++){
+      const row = y * W;
+      for (let x = 0; x < W; x++){
+        const v = cur[row + x]; if (!v) continue;
+        const idx = v === 1 ? 0 : Math.min(62, (age[row + x] * 62 / 200) | 0);
+        const s = v === 1 ? ex : rf;
+        const x0 = ox + x * C, y0 = oy + y * C;
+        putBlock(x0, y0, s[idx < s.length ? idx : 0], C);
+        if (useGlow && gN < glowList.length) glowList[gN++] = y0 * cw + x0;
+      }
+    }
+  } else if (mode === 'ant'){
+    const at = getAtlas('ant');
+    for (let y = 0; y < H; y++){
+      const row = y * W;
+      for (let x = 0; x < W; x++){
+        if (!cur[row + x]) continue;
+        const rec = stepCount - vis[row + x];
+        let idx = (rec <= 1) ? 0 : rec < 14 ? 1 : rec < 70 ? 2 : rec < 400 ? 3 : 4;
+        if (!useAge) idx = 2;
+        const s = at[idx];
+        const x0 = ox + x * C, y0 = oy + y * C;
+        putBlock(x0, y0, s, C);
+        if (useGlow && gN < glowList.length && rec < 14) glowList[gN++] = y0 * cw + x0;
+      }
+    }
+    // recent trail as a fading hairline
+    for (let k = 0; k < trailN; k++){
+      const p = trail[(trailHead - 1 - k + trail.length * 2) % trail.length];
+      const x0 = ox + (p % W) * C + (C >> 1), y0 = oy + ((p / W) | 0) * C + (C >> 1);
+      if (x0 < 0 || y0 < 0 || x0 >= cw || y0 >= V.ch) continue;
+      const o = y0 * cw + x0, c = u32[o];
+      const a = k < 40 ? 150 - (k * 3) : Math.max(0, 120 - k);
+      u32[o] = pack((c & 255) + a * 0.10, ((c >>> 8) & 255) + a * 0.55, ((c >>> 16) & 255) + a * 0.70);
+    }
+    // the head: a bright 3×3 block with a heading notch
+    const hx = ox + ant.x * C, hy = oy + ant.y * C, m = C >> 1;
+    for (let j = -m; j <= m; j++) for (let i = -m; i <= m; i++){
+      const px = hx + m + i, py = hy + m + j;
+      if (px < 0 || py < 0 || px >= cw || py >= V.ch) continue;
+      const c = u32[py * cw + px];
+      const k = (i === 0 && j === 0) ? 70 : 40;
+      u32[py * cw + px] = pack((c & 255) + k + 40, ((c >>> 8) & 255) + k, ((c >>> 16) & 255) - 10);
+    }
+    const dx = [1, 0, -1, 0][ant.d], dy = [0, 1, 0, -1][ant.d];
+    for (let t = 1; t <= 2; t++){
+      const px = hx + m + dx * (m + t), py = hy + m + dy * (m + t);
+      if (px < 0 || py < 0 || px >= cw || py >= V.ch) continue;
+      u32[py * cw + px] = flat;
+    }
+  } else {
+    const at = getAtlas('life');
+    for (let y = 0; y < H; y++){
+      const row = y * W;
+      for (let x = 0; x < W; x++){
+        if (!cur[row + x]) continue;
+        const idx = useAge ? Math.min(255, (age[row + x] * 255 / 90) | 0) : 96;
+        const s = at[idx];
+        const x0 = ox + x * C, y0 = oy + y * C;
+        putBlock(x0, y0, s, C);
+        if (useGlow && gN < glowList.length && age[row + x] < 10) glowList[gN++] = y0 * cw + x0;
+      }
+    }
+  }
+
+  if (useGlow) for (let i = 0; i < gN; i++){
+    const p = glowList[i], y0 = (p / cw) | 0, x0 = p - y0 * cw;
+    glowBlock(x0 - C, y0, 5); glowBlock(x0 + C, y0, 5);
+    glowBlock(x0, y0 - C, 5); glowBlock(x0, y0 + C, 5);
+    glowBlock(x0 - C, y0 - C, 3); glowBlock(x0 + C, y0 - C, 3);
+    glowBlock(x0 - C, y0 + C, 3); glowBlock(x0 + C, y0 + C, 3);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ══ telemetry panel ═══════════════════════════════════════════════════ */
+const spark = document.getElementById('spark'), sctx = spark.getContext('2d');
+const simg = sctx.createImageData(spark.width, spark.height);
+let fps = 0, frames = 0, fpsT = 0, liveSps = 0, stepT = 0, stepN = 0;
+
+function drawSpark(){
+  const w = spark.width, h = spark.height, u = new Uint32Array(simg.data.buffer);
+  for (let i = 0; i < u.length; i++){
+    const y = (i / w) | 0, g = 3 + (y * 9 / h) | 0;
+    u[i] = pack(5 + g, 9 + g * 1.6, 15 + g * 2.1);
+  }
+  const n = Math.min(histN, hist.length);
+  if (n > 1){
+    // autoscale to the visible window, not to zero — a stable population
+    // would otherwise draw as a flat line pinned to the floor
+    let mx = 1, mn = Infinity;
+    for (let i = 0; i < n; i++){
+      const v = hist[hist.length - n + i];
+      if (v > mx) mx = v;
+      if (v < mn) mn = v;
+    }
+    const span = Math.max(1, mx - mn);
+    const base = h - 3;
+    const px = x => (x * (w - 1) / (n - 1)) | 0;
+    for (let i = 0; i < n; i++){
+      const v = hist[hist.length - n + i];
+      const frac = 0.18 + 0.80 * (mx - v) / span;
+      const top = base - (frac * (h - 7)) | 0;
+      const x = px(i);
+      for (let y = top; y < h - 1; y++){
+        const t = (y - top) / Math.max(1, h - 2 - top);
+        const o = y * w + x;
+        u[o] = pack(lerp(30, 150, t) | 0, lerp(60, 210, t) | 0, lerp(80, 240, t) | 0);
+      }
+      if (i){
+        const x0 = px(i - 1);
+        for (let y = top - 1; y <= top + 1; y++){
+          if (y < 0) continue;
+          for (let q = Math.min(x, x0); q <= Math.max(x, x0); q++)
+            if (q >= 0 && q < w) u[y * w + q] = pack(255, 196, 107);
+        }
+      }
+    }
+  }
+  sctx.putImageData(simg, 0, 0);
+}
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ══ ui wiring ═════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const presetSel = $('preset');
+Object.keys(PRESETS).forEach(k => {
+  const o = document.createElement('option');
+  o.value = k; o.textContent = PRESETS[k].name + '  ' + PRESETS[k].bs;
+  presetSel.appendChild(o);
+});
+presetSel.value = 'life';
+
+function refreshModeUI(){
+  const isLife = mode === 'life';
+  $('lifeCtl').style.display = isLife ? '' : 'none';
+  $('bsRow').style.display = isLife ? '' : 'none';
+  $('ruleNote').style.display = isLife ? '' : 'none';
+  $('mLife').classList.toggle('on', isLife);
+  $('mAnt').classList.toggle('on', mode === 'ant');
+  $('mBrain').classList.toggle('on', mode === 'brain');
+  $('modeState').textContent = isLife ? 'GAME OF LIFE' : mode === 'ant' ? "LANGTON'S ANT" : "BRIAN'S BRAIN";
+  $('ruleState').textContent = isLife ? rule.bs : mode === 'ant' ? 'R/L · TURN TABLE' : '3-STATE · COUNT=2';
+  $('modeHint').textContent = isLife
+    ? (PRESETS[presetSel.value] ? PRESETS[presetSel.value].note : 'free-form totalistic rule · toroidal field')
+    : mode === 'ant'
+      ? 'on white turn right and paint · on black turn left and unpaint — 10 000 steps of chaos, then the highway'
+      : 'excited -> refractory -> dead · dead fires at exactly 2 excited neighbours · a decaying rule, so the faint lattice re-excites sources every 2nd generation';
+  brushHint();
+  $('tech').textContent = isLife
+    ? 'MOORE-8 NEIGHBOURHOOD · TOTALISTIC B/S RULE · DOUBLE-BUFFERED Uint8Array FIELD'
+    : mode === 'ant'
+      ? 'TURING MACHINE TURNTABLE · 4-STATE HEAD × 2-STATE TAPE · WALK RECENCY SHADED'
+      : '3-STATE EXCITED / REFRACTORY / DEAD · EXCITATION COUNT == 2 · COOLING TIMER';
+}
+function setMode(m){
+  mode = m;
+  if (m !== 'brain') drive = null;
+  cur.fill(0); age.fill(0); vis.fill(-1 << 20);
+  gen = 0; histN = 0; trailN = 0; stepCount = 0;
+  if (m === 'ant'){
+    ant.x = Math.round(V.W * 0.46); ant.y = Math.round(V.H * 0.46); ant.d = 0;
+    antWarm();
+  } else if (m === 'brain'){
+    drive = buildDrive();
+    seedDefault('life');
+    for (let i = 0; i < 24; i++) stepBrain();
+    recount(); warm(1);
+  } else {
+    seedDefault(presetSel.value); warm(46);
+  }
+  refreshModeUI(); syncHead();
+}
+function recount(){ let n = 0; for (let i = 0; i < cur.length; i++) if (cur[i]) n++; pop = n; }
+
+function syncHead(){
+  $('headL').textContent = 'FIELD ' + V.W + ' × ' + V.H + ' · CELL ' + V.CELL + 'px';
+  $('headGen').textContent = String(gen).padStart(6, '0');
+  $('headPop').textContent = String(mode === 'ant' ? stepCount % 100000 : pop).padStart(4, '0');
+  $('headDen').textContent = (100 * pop / (V.W * V.H)).toFixed(1) + '%';
+  $('tGen').textContent = String(gen);
+  $('tPop').textContent = String(mode === 'ant' ? trailCount() : pop);
+  $('tDen').textContent = (100 * pop / (V.W * V.H)).toFixed(2) + '%';
+  $('tSps').textContent = sps + (running ? '' : ' · held');
+  $('tFps').textContent = fps ? fps.toFixed(1) + ' fps' : '—';
+}
+function trailCount(){ let n = 0; for (let i = 0; i < cur.length; i++) if (cur[i]) n++; return n; }
+
+$('mLife').onclick = () => setMode('life');
+$('mAnt').onclick  = () => setMode('ant');
+$('mBrain').onclick= () => setMode('brain');
+presetSel.onchange = () => {
+  const p = PRESETS[presetSel.value];
+  rule = parseRule(p.bs); $('bs').value = rule.bs;
+  $('ruleNote').textContent = ruleNote(rule);
+  $('ruleNote').classList.remove('bad');
+  cur.fill(0); age.fill(0); gen = 0; histN = 0;
+  if (mode === 'life'){ seedDefault(presetSel.value); warm(46); }
+  refreshModeUI();
+};
+$('bs').oninput = () => {
+  const r = parseRule($('bs').value);
+  const n = $('ruleNote');
+  if (!r){ n.textContent = 'format: B<digits>/S<digits>'; n.classList.add('bad'); return; }
+  rule = r; n.classList.remove('bad'); n.textContent = ruleNote(r);
+  $('ruleState').textContent = rule.bs;
+};
+document.querySelectorAll('[data-cell]').forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll('[data-cell]').forEach(o => o.classList.remove('on'));
+    b.classList.add('on');
+    V.CELL = +b.dataset.cell; alloc();
+    if (mode === 'ant'){
+      ant.x = Math.round(V.W * 0.46); ant.y = Math.round(V.H * 0.46); ant.d = 0;
+      antWarm();
+    } else if (mode === 'brain'){ seedDefault('life'); warm(46); }
+    else { seedDefault(presetSel.value); warm(46); }
+    syncHead();
+  };
+});
+document.querySelectorAll('[data-pat]').forEach(b => {
+  b.onclick = () => {
+    const k = b.dataset.pat;
+    if (k === 'scatter'){ rng = mulberry32((Math.random() * 1e9) | 0); scatter(); }
+    else {
+      const W = V.W, H = V.H, bits = PATS[k];
+      const x = (rng() * Math.max(1, W - bits[0].length - 4)) | 0;
+      const y = (rng() * Math.max(1, H - bits.length - 4)) | 0;
+      stamp(x, y, bits, 1);
+    }
+    gen = 0;
+    if (mode === 'brain') warm(2);
+    syncHead();
+  };
+});
+$('clear').onclick = () => { cur.fill(0); age.fill(0); vis.fill(-1 << 20); gen = 0; histN = 0; syncHead(); };
+$('pause').onclick = () => {
+  running = !running;
+  $('pause').textContent = running ? 'PAUSE' : 'RESUME';
+  $('pause').classList.toggle('on', !running);
+  syncHead();
+};
+$('step1').onclick = () => { stepOnce(); syncHead(); };
+$('reset').onclick = () => { gen = 0; lastS = 0; acc = 0; histN = 0; };
+$('speed').oninput = () => {
+  sps = +$('speed').value;
+  $('speedNote').textContent = sps + ' steps / second · ' + (sps >= 60 ? 'capped by frame Δ' : (60 / sps).toFixed(1) + ' frames / step');
+  syncHead();
+};
+$('bPaint').onclick = () => { brushOn = true; $('bPaint').classList.add('on'); $('bErase').classList.remove('on'); };
+$('bErase').onclick = () => { brushOn = false; $('bErase').classList.add('on'); $('bPaint').classList.remove('on'); };
+[['b1', 1], ['b2', 2], ['b3', 3]].forEach(([id, n]) => {
+  $(id).onclick = () => {
+    brushSize = n;
+    ['b1', 'b2', 'b3'].forEach(o => $(o).classList.remove('on'));
+    $(id).classList.add('on');
+  };
+});
+$('chkAge').onclick = function(){ useAge = !useAge; this.classList.toggle('on', useAge); };
+$('chkGlow').onclick = function(){ useGlow = !useGlow; this.classList.toggle('on', useGlow); };
+function brushHint(){
+  $('brushHint').textContent = mode === 'ant'
+    ? 'drag to draw tape cells · a plain click teleports the ant · shift or right-drag erases'
+    : 'drag to draw live cells · shift or right-drag erases · cells you paint are yours to evolve';
+}
+brushHint();
+
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' && e.target.type === 'text') return;
+  const k = e.key.toLowerCase();
+  if (k === ' '){ e.preventDefault(); $('pause').click(); }
+  else if (k === '1') setMode('life');
+  else if (k === '2') setMode('ant');
+  else if (k === '3') setMode('brain');
+  else if (k === 'c') $('clear').click();
+  else if (k === 's') document.querySelector('[data-pat="scatter"]').click();
+  else if (k === 'r') $('reset').click();
+  else if (k === '[' || k === ']'){
+    const s = $('speed');
+    s.value = Math.max(1, Math.min(60, (+s.value) + (k === ']' ? 2 : -2)));
+    s.oninput();
+  }
+});
+
+/* pointer painting on the field */
+let drawing = false, eraseMode = false, moved = 0, lastPx = -1, lastPy = -1;
+function fieldPos(ev){
+  const r = canvas.getBoundingClientRect();
+  const x = ((ev.clientX - r.left) / r.width * V.cw - V.ox) / V.CELL;
+  const y = ((ev.clientY - r.top) / r.height * V.ch - V.oy) / V.CELL;
+  return [x | 0, y | 0];
+}
+function paintAt(x, y, v){
+  const h = (brushSize - 1) >> 1;
+  for (let j = -h; j <= h; j++)
+    for (let i = -h; i <= h; i++){
+      const px = x + i, py = y + j;
+      if (px < 0 || py < 0 || px >= V.W || py >= V.H) continue;
+      const id = py * V.W + px;
+      cur[id] = v; age[id] = v ? 2 : 0; vis[id] = stepCount;
+    }
+}
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
+  drawing = true; moved = 0;
+  const [x, y] = fieldPos(e);
+  lastPx = x; lastPy = y;
+  eraseMode = e.shiftKey || e.button === 2;
+  if (mode === 'ant') { ant.x = Math.max(0, Math.min(V.W - 1, x)); ant.y = Math.max(0, Math.min(V.H - 1, y)); }
+  paintAt(x, y, eraseMode || !brushOn ? 0 : 1);
+  gen = 0;
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const [x, y] = fieldPos(e);
+  moved += Math.abs(x - lastPx) + Math.abs(y - lastPy);
+  const dx = x - lastPx, dy = y - lastPy;
+  const n = Math.max(Math.abs(dx), Math.abs(dy));
+  for (let s = 1; s <= n; s++)
+    paintAt(lastPx + Math.round(dx * s / n), lastPy + Math.round(dy * s / n),
+            eraseMode || !brushOn ? 0 : 1);
+  lastPx = x; lastPy = y;
+});
+canvas.addEventListener('pointerup', () => { drawing = false; });
+canvas.addEventListener('pointercancel', () => { drawing = false; });
+addEventListener('resize', () => {
+  alloc();
+  if (mode === 'ant'){
+    ant.x = Math.round(V.W * 0.46); ant.y = Math.round(V.H * 0.46); ant.d = 0;
+    antWarm();
+  } else if (mode === 'brain'){ seedDefault('life'); warm(46); }
+  else { seedDefault(presetSel.value); warm(46); }
+  syncHead();
+});
+
+/* ══ fixed-delta loop ═══════════════════════════════════════════════════ */
+let hudT = 0, sparkT = 0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  frames++;
+  if (running) {
+    acc += DT;
+    const iv = 1 / sps;
+    let n = 0;
+    while (acc >= iv && n < MAXSTEPS){ acc -= iv; stepOnce(); n++; }
+    if (acc > iv * MAXSTEPS) acc = 0;      // drop the backlog rather than spiral
+  }
+  draw();
+  if (!fpsT) { fpsT = ts; }
+  else if (ts - fpsT > 500){
+    fps = frames * 1000 / (ts - fpsT);
+    frames = 0; fpsT = ts;
+  }
+  if (ts - hudT > 120){ hudT = ts; syncHead(); }
+  if (ts - sparkT > 260){ sparkT = ts; drawSpark(); }
+}
+
+/* ══ boot ══════════════════════════════════════════════════════════════ */
+alloc();
+seedDefault(presetSel.value);
+warm(46);   // 46 steps also prime the population history for the sparkline
+$('bs').value = rule.bs;
+$('ruleNote').textContent = ruleNote(rule);
+$('speed').oninput();
+refreshModeUI();
+draw();
+drawSpark();
+syncHead();
+requestAnimationFrame(function first(){
+  window.__ready = true;
+  loop(performance.now());
+});
+
+/* live stats for the harness */
+Object.defineProperty(window, '__probe', { value: {}, writable: true });
+setInterval(function(){
+  window.__probe = {
+    engine: mode,
+    rule: mode === 'life' ? rule.bs : mode === 'ant' ? 'RL' : 'BB3',
+    gridW: V.W, gridH: V.H, cell: V.CELL,
+    internal: V.cw + 'x' + V.ch,
+    generation: gen,
+    population: pop,
+    density: +(pop / (V.W * V.H)).toFixed(5),
+    antSteps: stepCount,
+    antAt: mode === 'ant' ? [ant.x, ant.y, ant.d] : null,
+    stepsPerSec: sps,
+    fps: +fps.toFixed(2),
+    running: running
+  };
+}, 250);
+})();
+</script>
+</body>
+</html>

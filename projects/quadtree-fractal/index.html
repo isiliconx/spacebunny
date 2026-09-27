@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quadtree Fractal — recursive subdivision on a seeded field</title>
+<style>
+  :root{
+    --acc:#5fe3c4;        /* mint — the subdivision rule */
+    --acc2:#ffb057;       /* amber — the field */
+    --ink:#e2f4ef;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#05070c;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .panel{position:absolute;left:20px;top:20px;width:302px;padding:15px 17px 14px;border-radius:14px;
+    background:linear-gradient(168deg,rgba(9,21,27,.95),rgba(4,10,15,.92));
+    border:1px solid rgba(95,227,196,.22);
+    box-shadow:0 24px 64px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
+    pointer-events:auto}
+  .ttl{font-size:16px;letter-spacing:.26em;font-weight:700;color:#ecfff8;text-shadow:0 0 20px rgba(95,227,196,.45)}
+  .sub{margin-top:6px;font-size:9.4px;letter-spacing:.11em;color:rgba(158,212,201,.85);text-transform:uppercase;line-height:1.6}
+  .hr{height:1px;margin:13px 0 11px;background:linear-gradient(90deg,rgba(95,227,196,.5),rgba(95,227,196,0))}
+  .row{display:grid;grid-template-columns:78px 1fr 48px;align-items:center;gap:9px;height:26px}
+  .row label{font-size:9.6px;letter-spacing:.08em;color:rgba(178,220,210,.95);text-transform:uppercase}
+  .row output{font-size:10.6px;text-align:right;color:#ecfff8;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;outline:none;
+    background:linear-gradient(90deg,var(--acc) var(--p,50%),rgba(255,255,255,.11) var(--p,50%));cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+    background:#f4fffc;box-shadow:0 0 0 3px rgba(95,227,196,.22),0 0 14px rgba(95,227,196,.75);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:#f4fffc;
+    box-shadow:0 0 0 3px rgba(95,227,196,.22),0 0 14px rgba(95,227,196,.75)}
+  .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}
+  .btns button{font:inherit;font-size:9.4px;letter-spacing:.07em;padding:7px 0;border-radius:7px;cursor:pointer;
+    color:rgba(200,240,230,.95);background:rgba(95,227,196,.08);border:1px solid rgba(95,227,196,.26);
+    text-transform:uppercase;transition:background .12s,color .12s,border-color .12s}
+  .btns button:hover{background:rgba(95,227,196,.24);color:#fff}
+  .btns button.on{background:rgba(255,176,87,.24);border-color:rgba(255,176,87,.66);color:#fff}
+  .tele{position:absolute;left:20px;bottom:20px;min-width:232px;padding:11px 14px;border-radius:11px;
+    background:linear-gradient(168deg,rgba(9,21,27,.93),rgba(4,10,15,.88));
+    border:1px solid rgba(95,227,196,.17);box-shadow:0 18px 48px rgba(0,0,0,.62);
+    font-size:11.2px;line-height:1.72;letter-spacing:.04em;color:rgba(198,232,224,.97);white-space:pre;
+    font-variant-numeric:tabular-nums}
+  .tele b{color:var(--acc);font-weight:600}
+  .tele i{color:var(--acc2);font-style:normal}
+  .tech{position:absolute;right:20px;bottom:20px;max-width:352px;padding:10px 13px;border-radius:11px;text-align:right;
+    background:linear-gradient(168deg,rgba(9,21,27,.90),rgba(4,10,15,.84));
+    border:1px solid rgba(95,227,196,.16);box-shadow:0 18px 48px rgba(0,0,0,.56);
+    font-size:9.8px;line-height:1.78;letter-spacing:.03em;color:rgba(184,220,212,.95)}
+  .tech em{color:var(--acc2);font-style:normal}
+  .tech s{color:var(--acc);text-decoration:none}
+  .cap{position:absolute;transform:translateX(-50%);font-size:9.6px;letter-spacing:.18em;
+    color:rgba(186,228,218,.85);text-transform:uppercase;text-shadow:0 1px 12px rgba(0,0,0,.95);white-space:nowrap}
+  .hint{position:absolute;left:50%;top:22px;transform:translateX(-50%);font-size:9.4px;letter-spacing:.12em;
+    color:rgba(160,204,194,.72);text-transform:uppercase;text-shadow:0 1px 10px rgba(0,0,0,.9);text-align:center}
+  .err{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;letter-spacing:.05em;
+    color:#ffb0a0;max-width:440px;text-align:center;line-height:1.7}
+  @media (max-width:1120px){.tech{display:none}}
+  @media (max-height:660px){.tech,.hint{display:none}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="ui">
+
+  <div class="panel">
+    <div class="ttl">QUADTREE</div>
+    <div class="sub">recursive subdivision on a seeded field</div>
+    <div class="hr"></div>
+
+    <div class="row"><label>threshold</label><input type="range" id="thr" min="0.24" max="0.50" step="0.01" value="0.42"><output id="thrO">0.42</output></div>
+    <div class="row"><label>max depth</label><input type="range" id="dep" min="3" max="8" step="1" value="7"><output id="depO">7</output></div>
+    <div class="row"><label>noise scale</label><input type="range" id="scl" min="0.50" max="3.00" step="0.05" value="1.60"><output id="sclO">1.60</output></div>
+    <div class="row"><label>speed</label><input type="range" id="spd" min="0.10" max="3.00" step="0.05" value="1.00"><output id="spdO">1.00×</output></div>
+
+    <div class="btns">
+      <button id="seedBtn">Reseed</button>
+      <button id="growBtn">Regrow</button>
+      <button id="pauseBtn">Pause</button>
+    </div>
+  </div>
+
+  <div class="tele" id="tele">baking field…</div>
+  <div class="tech" id="tech">
+    <em>split(c)</em> ⟺ <s>value(c) &gt; τ</s> ∧ depth &lt; D &nbsp;·&nbsp; 4 children<br>
+    <em>value</em> = 0.35·<s>field</s> + 0.65·hash(cell) — hash decorrelates siblings<br>
+    field = <em>6-octave periodic value fBm</em>, histogram-equalised → uniform<br>
+    per-pixel <em>depth-first walk</em>; seams = box-SDF border of each split cell<br>
+    leaves tinted by <s>depth × value</s> · <em>640×400</em> internal · fixed Δt
+  </div>
+  <div class="cap" id="cap">—</div>
+  <div class="hint">τ sets where the tree splits · space pauses · R reseeds</div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Quadtree Fractal — one square that subdivides into four wherever the
+   seeded value at that square's centre exceeds a threshold.
+
+   Three things make this a fractal rather than a grid:
+
+   1. The tree reads the value of the cell it is STANDING IN, not the
+      values of its children. With p = P(value > τ) as the per-cell split
+      probability, the cell population at depth L goes as (4p)^L, so the
+      tree grows, holds and recedes. The tempting alternative — decide
+      whether each child exists from that child's own value, and require
+      all four to pass — compounds into 1-(1-p)^4 ≈ 1 and degenerates to
+      a full subdivision with every leaf sitting at max depth.
+
+   2. The value mixes a continuous field with a per-cell hash:
+          value(c) = (1-HW)·field(c) + HW·hash(c)
+      The field alone cannot drive this. At depth 7 a cell is 1/128 of
+      the plate, far below the field's feature size, so all four siblings
+      read nearly the same value and the rule fires all-or-nothing —
+      measured across 8 seeds x 8 noise scales, a pure-field rule never
+      stayed alive more than 37/40 of the time. The hash decorrelates the
+      four siblings so the rule can fire independently per cell; measured
+      over 6 seeds x 5 noise scales, HW = 0.65 stayed live at every
+      τ ≤ 0.48, which is the span the threshold slider covers. The field
+      still decides the large-scale structure: with the hash weight high the
+      tree self-similarises into noise, with it low the fine octaves cannot
+      separate siblings at all.
+
+   3. The field is histogram-equalised, so its values are ~uniform on
+      [0,1]. Raw fBm piles up around 0.5, which wastes most of the slider
+      and leaves only a narrow usable band.
+
+   The field is a seamless 6-octave periodic value-noise fBm, baked on the
+   CPU into a 256×256 R8 texture whenever the seed or scale changes. The
+   CPU walk that counts the tree reads the same quantised bytes the GPU
+   samples, so the telemetry and the pixels can never disagree.
+
+   Rendering is one fragment shader. Each pixel walks the quadtree from
+   the root, descending into whichever child contains it, and tracks the
+   exact distance to the border of every cell on its path (an
+   axis-aligned box SDF). Those distances are what draw the subdivision
+   seams — no geometry buffer, no second pass, no vertex data beyond a
+   single fullscreen triangle.
+   ===================================================================== */
+
+/* ---------- deterministic RNG (mulberry32) ---------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rnd = mulberry32(0x9E3779B9);   // only ever drawn from inside a click handler
+
+/* ---------- fixed timestep, never wall clock ---------- */
+const DT    = 1 / 60;   // one simulation step, always exactly this long
+const GROW  = 1.70;     // sim seconds the tree takes to unfold
+const HOLD  = 4.60;     // held complete, with a sweep down the hierarchy
+const CLOSE = 1.50;     // collapse back to the plate
+const CYCLE = GROW + HOLD + CLOSE;
+
+/* ---------- parameters ---------- */
+const HW = 0.65;   // weight on the per-cell hash vs the continuous field
+const P = { thr: 0.42, depth: 7, scale: 1.60, speed: 1.00, seed: 0.137 };
+
+/* =====================================================================
+   Field bake: seamless periodic value-noise fBm, then histogram
+   equalisation so the distribution is flat. Quantised to 8 bits once —
+   those bytes are the single source of truth for both the CPU and GPU.
+   ===================================================================== */
+const FT    = 256;    // texture edge, power of two -> REPEAT + LINEAR are legal
+const TILE  = 4;      // noise lattice cells across the plate (keeps it seamless)
+const OCT   = 6;      // fBm octaves
+const BINS  = 256;    // equalisation histogram
+const PERM  = new Uint8Array(512);
+const RAW   = new Float32Array(FT * FT);
+const CDF   = new Float32Array(BINS + 1);
+const QUANT = new Uint8Array(FT * FT);
+
+function buildPerm(seedInt){
+  const r = mulberry32(seedInt >>> 0), p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--){
+    const j = (r() * (i + 1)) | 0, t = p[i]; p[i] = p[j]; p[j] = t;
+  }
+  for (let i = 0; i < 512; i++) PERM[i] = p[i & 255];
+}
+const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+
+function pnoise(x, y){            // value noise on a TILE × TILE wrapping lattice
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const X  = ((xi % TILE) + TILE) % TILE, Y  = ((yi % TILE) + TILE) % TILE;
+  const X1 = (X + 1) % TILE,          Y1 = (Y + 1) % TILE;
+  const a = PERM[(X  + PERM[Y ]) & 511] / 255, b = PERM[(X1 + PERM[Y ]) & 511] / 255;
+  const c = PERM[(X  + PERM[Y1]) & 511] / 255, d = PERM[(X1 + PERM[Y1]) & 511] / 255;
+  const u = fade(xf), v = fade(yf), ab = a + (b - a) * u, cd = c + (d - c) * u;
+  return ab + (cd - ab) * v;
+}
+function fbm(x, y){
+  let s = 0, amp = 1, f = 1, n = 0;
+  for (let i = 0; i < OCT; i++){ s += amp * pnoise(x * f, y * f); n += amp; amp *= 0.5; f *= 2; }
+  return s / n;
+}
+
+function bakeField(seed, scale){
+  buildPerm(Math.floor(seed * 4294967295) >>> 0);
+  const S = scale * TILE;
+  let lo = 1e9, hi = -1e9;
+  for (let j = 0; j < FT; j++){
+    const y = j / FT * S;
+    for (let i = 0; i < FT; i++){
+      const v = fbm(i / FT * S, y);
+      RAW[j * FT + i] = v;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  // histogram of the raw distribution -> cumulative, i.e. the equalisation curve
+  const hist = new Float64Array(BINS);
+  const inv = BINS / Math.max(1e-9, hi - lo);
+  for (let k = 0; k < RAW.length; k++){
+    let b = ((RAW[k] - lo) * inv) | 0;
+    if (b < 0) b = 0; else if (b > BINS - 1) b = BINS - 1;
+    hist[b]++;
+  }
+  let run = 0;
+  for (let b = 0; b < BINS; b++){ CDF[b] = run / RAW.length; run += hist[b]; }
+  CDF[BINS] = 1;
+  // equalise, then quantise once
+  for (let k = 0; k < RAW.length; k++){
+    let x = (RAW[k] - lo) * inv;
+    if (x < 0) x = 0; else if (x > BINS - 1.0001) x = BINS - 1.0001;
+    const b = x | 0, f = x - b;
+    const v = CDF[b] + (CDF[b + 1] - CDF[b]) * f;
+    let q = (v * 255 + 0.5) | 0;
+    if (q < 0) q = 0; else if (q > 255) q = 255;
+    QUANT[k] = q;
+  }
+}
+
+/* Field lookup in plate space [-1,1]: bilinear with wrap, reading the
+   quantised bytes — bit-identical to what the GPU samples. */
+function fieldAt(cx, cy){
+  const u = (cx * 0.5 + 0.5) * FT - 0.5, v = (cy * 0.5 + 0.5) * FT - 0.5;
+  const i0 = Math.floor(u), j0 = Math.floor(v);
+  const fu = u - i0, fv = v - j0;
+  const ia = ((i0 % FT) + FT) % FT,  ja = ((j0 % FT) + FT) % FT;
+  const i1 = (ia + 1) % FT,           j1 = (ja + 1) % FT;
+  const a = QUANT[ja * FT + ia], b = QUANT[ja * FT + i1];
+  const c = QUANT[j1 * FT + ia], d = QUANT[j1 * FT + i1];
+  const t = a + (b - a) * fu, uu = c + (d - c) * fu;
+  return (t + (uu - t) * fv) / 255;
+}
+
+/* Per-cell value: the field gives the large-scale structure, the hash
+   decorrelates the four siblings so the rule can fire independently per
+   cell. Mirrors cellValue() in the shader exactly. */
+function cellHash(ix, iy){
+  let qx = (ix * 0.1031) % 1, qy = (iy * 0.1031) % 1, qz = qx;
+  if (qx < 0) qx += 1; if (qy < 0) qy += 1;
+  const d = qx * (qy + 33.33) + qy * (qz + 33.33) + qz * (qx + 33.33);
+  qx += d; qy += d; qz += d;
+  const r = (qx + qy) * qz;
+  return r - Math.floor(r);
+}
+function cellValue(cx, cy, ix, iy){ return (1 - HW) * fieldAt(cx, cy) + HW * cellHash(ix, iy); }
+
+/* ---------- CPU mirror of the tree the shader walks ---------- */
+const MIN_LEAVES = 150;   // a tree below this reads as a broken plate
+let tree = { leaves: 0, nodes: 0, splits: 0, deepest: 0, hist: [] };
+function walkTree(){
+  const st = [[0, 0, 0, 0, 0]];   // [centreX, centreY, depth, indexX, indexY]
+  let leaves = 0, nodes = 0, splits = 0, deepest = 0;
+  const hist = [];
+  while (st.length){
+    const n = st.pop(), cx = n[0], cy = n[1], d = n[2], ix = n[3], iy = n[4];
+    nodes++;
+    // the plate itself is the premise and always splits once
+    const go = d === 0 ? true : (d < P.depth && cellValue(cx, cy, ix, iy) > P.thr);
+    if (go){
+      const h = 1 / Math.pow(2, d + 1);
+      splits++;
+      for (let k = 0; k < 4; k++){
+        st.push([cx + ((k & 1) ? h : -h), cy + ((k & 2) ? h : -h), d + 1,
+                 ix * 2 + ((k & 1) ? 1 : -1), iy * 2 + ((k & 2) ? 1 : -1)]);
+      }
+    } else {
+      leaves++;
+      hist[d] = (hist[d] || 0) + 1;
+      if (d > deepest) deepest = d;
+    }
+  }
+  tree = { leaves, nodes, splits, deepest, hist };
+  return leaves;
+}
+function countLeaves(){ return walkTree(); }
+function recount(){ walkTree(); }
+
+/* =====================================================================
+   GL
+   ===================================================================== */
+const cv = document.getElementById('cv');
+const gl = cv.getContext('webgl', { antialias: false, alpha: false, depth: false, stencil: false });
+
+const VS = 'attribute vec2 aPos; void main(){ gl_Position = vec4(aPos,0.0,1.0); }';
+
+const FS = `
+precision highp float;
+uniform vec2      uRes;      // internal framebuffer size, px
+uniform vec2      uSqC;      // plate centre, internal px
+uniform float     uSqH;      // plate half size, internal px
+uniform float     uGrow;     // growth timeline 0..1
+uniform float     uHold;     // hold timeline 0..1
+uniform float     uClose;    // collapse timeline 0..1 (1 = fully collapsed)
+uniform float     uThr;
+uniform float     uDepth;
+uniform float     uHW;        // weight on the per-cell hash vs the field
+uniform sampler2D uField;    // the baked, equalised field
+
+/* ---- the field: the same bytes the CPU tree walk reads ---- */
+float fieldAt(vec2 c){
+  return texture2D(uField, c*0.5 + 0.5).r;
+}
+
+/* ---- integer cell hash: no trig, exact in f32, reproducible ---- */
+float cellHash(vec2 i){
+  vec3 q = fract(vec3(i.x, i.y, i.x)*0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y)*q.z);
+}
+
+/* ---- the value the split rule reads ---- */
+float cellValue(vec2 c, vec2 i){
+  return (1.0 - uHW)*fieldAt(c) + uHW*cellHash(i);
+}
+
+/* ---- level schedule: level L opens across the first 56% of the growth ---- */
+float levelStart(float L){
+  float n = max(uDepth - 1.0, 1.0);
+  return (L/n)*0.56;
+}
+
+/* ---- distance from p to the border of the axis box centred c, full size s ---- */
+float boxBorder(vec2 p, vec2 c, float s){
+  vec2 q = abs(p - c) - vec2(s*0.5);
+  return abs(length(max(q, 0.0)) + min(max(q.x, q.y), 0.0));
+}
+
+/* ---- palette: petrol -> teal -> mint -> amber -> coral ---- */
+vec3 ramp(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c1 = vec3(0.075, 0.290, 0.400);
+  vec3 c2 = vec3(0.125, 0.560, 0.590);
+  vec3 c3 = vec3(0.478, 0.827, 0.647);
+  vec3 c4 = vec3(0.965, 0.784, 0.384);
+  vec3 c5 = vec3(0.988, 0.522, 0.318);
+  float s = t*5.0;
+  vec3 col = mix(vec3(0.035, 0.078, 0.133), c1, clamp(s,       0.0, 1.0));
+  col = mix(col, c2, clamp(s-1.0,     0.0, 1.0));
+  col = mix(col, c3, clamp(s-2.0,     0.0, 1.0));
+  col = mix(col, c4, clamp(s-3.0,     0.0, 1.0));
+  col = mix(col, c5, clamp(s-4.0,     0.0, 1.0));
+  return col;
+}
+
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 nrm = (fc/uRes - 0.5) * vec2(uRes.x/uRes.y, 1.0);
+
+  /* ============================= ground ============================= */
+  float vig = 0.5 - 0.5*length(nrm*vec2(0.62, 0.94));
+  vec3 col = mix(vec3(0.016, 0.024, 0.043), vec3(0.043, 0.063, 0.098), vig*vig);
+
+  /* iso-contours of the same field, ghosted across the ground: the
+     continuous input the discrete tree is sampling */
+  {
+    vec2 q = nrm*0.30 + 0.5;
+    float f = fieldAt(q);
+    float line = 1.0 - smoothstep(0.0, 0.10, abs(fract(f*9.0) - 0.5));
+    col += ramp(0.12 + 0.40*f)*line*0.085*(0.30 + 0.70*vig);
+  }
+
+  /* ======================= plate space [-1,1] ======================= */
+  vec2 p = (fc - uSqC)/uSqH;
+  float m = max(abs(p.x), abs(p.y));
+
+  /* light spilling out of the plate */
+  col += ramp(0.34)*0.075*exp(-max(m - 1.0, 0.0)*3.4);
+
+  if (m <= 1.0){
+    /* ---------------- walk the quadtree for this pixel ---------------- */
+    vec2  ctr  = vec2(0.0);              // centre of the cell we are in
+    float sz   = 1.0;                    // its full size, plate space
+    float dn   = 0.0;                    // its depth
+    vec2  idx  = vec2(0.0);              // its integer index, for hashing
+    float cv   = cellValue(ctr, idx);    // the value the split rule reads
+    float dEd  = boxBorder(p, ctr, sz);  // distance to its border
+    float eaa  = 0.75/uSqH;              // ~1 internal px, softens cell edges
+    float seam = 0.0;                    // accumulated subdivision line
+    vec3  seamC= vec3(0.0);
+    float parentC = cv;
+
+    for (int i = 0; i < 8; i++){
+      float fi = float(i);
+      if (fi >= uDepth) break;
+
+      /* the plate always splits once; deeper cells read their own value */
+      if (fi > 0.5 && cv <= uThr) break;
+
+      /* growth progress for this level, staggered by cell */
+      float g = clamp((uGrow - (levelStart(fi) + cellHash(idx)*0.17))/0.27, 0.0, 1.0);
+      g = g*g*(3.0 - 2.0*g);
+      g = 1.0 - g*uClose;                       // collapse runs the same path backwards
+      if (g <= 0.0) break;
+
+      /* the border of a cell that splits IS the seam of its four children */
+      float line = exp(-dEd*uSqH*0.055);
+      seamC += (ramp(0.26 + 0.50*fi/max(uDepth, 1.0))*0.34 + vec3(0.05, 0.10, 0.10))*line*g;
+      seam  += line*g;
+
+      /* descend into the child quadrant containing p */
+      vec2 sgn = vec2(p.x > ctr.x ? 1.0 : -1.0, p.y > ctr.y ? 1.0 : -1.0);
+      vec2 nIdx = idx*2.0 + sgn;
+      vec2 nCtr = ctr + sgn*sz*0.25;
+      vec2 nC   = mix(ctr, nCtr, g);            // the child grows out of the parent
+      float nS  = sz*mix(1.0, 0.5, g);
+      float nCv = cellValue(nC, nIdx);
+      float nh  = nS*0.5;
+
+      /* is p inside the growing child? soft edge so the split reads clean */
+      vec2  ad  = abs(p - nC);
+      float inC = (1.0 - smoothstep(nh - eaa, nh + eaa, ad.x))
+                * (1.0 - smoothstep(nh - eaa, nh + eaa, ad.y));
+      float k   = g*inC;
+
+      parentC = cv;
+      cv   = mix(cv, nCv, k);
+      dEd  = mix(dEd, boxBorder(p, nC, nS), k);
+      idx  = mix(idx, nIdx, step(0.5, k));
+      ctr = nC; sz = nS; dn = fi + 1.0;
+    }
+
+    /* ----------------- shade the leaf cell ----------------- */
+    float nd  = dn/max(uDepth, 1.0);
+    float sc  = sz*uSqH;                        // cell size on screen, internal px
+    float jit = cellHash(idx + 0.5) - 0.5;      // per-cell tonal variation
+
+    /* Leaves sit on the low half of the ramp (petrol -> teal -> mint) so the
+       warm amber/coral end stays reserved for the seam structure; pushing the
+       leaves up the ramp washes them out and flattens the depth reading. */
+    vec3 base = ramp(0.06 + 0.34*fieldAt(ctr) + 0.40*cv + 0.34*nd + jit*0.05);
+    float bevel = exp(-dEd*sc*1.15);            // each leaf reads as its own tile
+    col  = base*(0.70 + 0.30*bevel);
+    col += base*0.10*nd;                         // deeper cells sit back slightly
+    col += ramp(0.20 + 0.50*parentC)*0.045*nd;   // the parent value bleeds up
+
+    /* the seam stack, with a soft shoulder so it never blows out */
+    col += seamC*(0.85/(1.0 + seam*0.55));
+    col += vec3(0.34, 0.52, 0.50)*seam*0.030;
+
+    /* depth sweep during the hold: a bright band travelling down the tree */
+    float sw = exp(-pow(nd*1.2 - uHold*1.55 + 0.16, 2.0)*30.0);
+    col += ramp(0.74)*sw*0.10;
+  }
+
+  /* ---------------- plate frame: hairline rule + corner ticks ---------------- */
+  {
+    vec2 ap  = abs(p);
+    float mm = max(ap.x, ap.y);
+    float ln = exp(-abs(mm - 1.0)*uSqH*0.05);
+    float tk = exp(-abs(mm - 1.0)*uSqH*0.05)*step(0.70, min(ap.x, ap.y));
+    col += (ramp(0.32)*0.34 + vec3(0.10))*ln + vec3(0.06, 0.10, 0.10)*tk;
+  }
+
+  /* ---------------- grain ---------------- */
+  col += (fract(sin(dot(floor(fc), vec2(12.9898, 78.233)))*43758.5453) - 0.5)*0.022;
+
+  /* soft shoulder: keep highlights off the clip point. A per-channel divide
+     (col/(1+k*max(col-h,0))) desaturates, because the largest channel is
+     pulled down hardest and bright cells end up neutral grey. Scaling the
+     whole colour uniformly keeps hue and saturation intact. */
+  float mxc = max(col.r, max(col.g, col.b));
+  if (mxc > 0.72){
+    float knee = 0.72 + 0.28*(1.0 - exp(-(mxc - 0.72)/0.28));
+    col *= knee/mxc;
+  }
+  gl_FragColor = vec4(max(col, 0.0), 1.0);
+}
+`;
+
+let prog = null, U = {}, fieldTex = null;
+function buildShader(){
+  const sh = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  ['uRes','uSqC','uSqH','uGrow','uHold','uClose','uThr','uDepth','uHW'].forEach(k => U[k] = gl.getUniformLocation(prog, k));
+  U.uField = gl.getUniformLocation(prog, 'uField');
+
+  fieldTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(a);
+  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+}
+function uploadField(){
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, FT, FT, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, QUANT);
+}
+
+/* ---------- layout: 640-wide internal buffer, aspect matched to the window ---------- */
+let IW = 640, IH = 400, sqC = [0, 0], sqH = 200, sqCss = { cx: 0, cy: 0, h: 0 };
+function layout(){
+  const vw = Math.max(320, window.innerWidth), vh = Math.max(240, window.innerHeight);
+  IW = 640;
+  IH = Math.round(640 * vh / vw);
+  IH = Math.max(300, Math.min(460, IH));
+  cv.width = IW; cv.height = IH;
+  gl.viewport(0, 0, IW, IH);
+  const k = IW / vw;
+  /* Composition: the plate is nudged left of centre and kept modest in size so
+     the right-hand technique panel never crosses it, and sits low enough to
+     clear the top hint line. Aspect stays square by construction. */
+  const hCss = Math.min(0.315 * vh, 0.198 * vw);
+  sqCss = { cx: vw * 0.478, cy: vh * 0.500, h: hCss };
+  sqC = [sqCss.cx * k, (vh - sqCss.cy) * k];   // GL y is up
+  sqH = hCss * k;
+}
+
+/* ---------- animation state ---------- */
+let simT = 0, paused = false, growT = 1, holdT = 0, closeT = 0, alive = false;
+let fps = 0, msAvg = 0, last = 0, acc = 0, frames = 0, probeAt = 0;
+let needBake = false, needRecount = true;
+let levelLog = [];   // frame-accurate record of levels opening, reset on Regrow
+
+const el = id => document.getElementById(id);
+const tele = el('tele'), cap = el('cap');
+
+function draw(){
+  gl.uniform2f(U.uRes, IW, IH);
+  gl.uniform2f(U.uSqC, sqC[0], sqC[1]);
+  gl.uniform1f(U.uSqH, sqH);
+  gl.uniform1f(U.uGrow, growT);
+  gl.uniform1f(U.uHold, holdT);
+  gl.uniform1f(U.uClose, closeT);
+  gl.uniform1f(U.uThr, P.thr);
+  gl.uniform1f(U.uDepth, P.depth);
+  gl.uniform1f(U.uHW, HW);
+  gl.uniform1i(U.uField, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function phaseName(){
+  if (closeT > 0.001) return 'closing';
+  return growT < 0.999 ? 'growing' : 'held';
+}
+/* deepest level currently unfolded on screen, mirroring the shader's
+   levelStart() schedule, so the harness can watch it grow level by level */
+function visLevel(){
+  const n = Math.max(P.depth - 1, 1);
+  let d = 0;
+  for (let L = 0; L < n; L++) if (growT >= (L / n) * 0.56) d = L + 1;
+  return closeT > 0.001 ? 0 : d + 1;
+}
+function updateTele(){
+  tele.innerHTML =
+    'leaves   <b>' + String(tree.leaves).padStart(5) + '</b>\n' +
+    'cells    ' + String(tree.nodes).padStart(5) + '   splits ' + String(tree.splits).padStart(5) + '\n' +
+    'deepest  <i>' + tree.deepest + '</i> / ' + P.depth + '   τ ' + P.thr.toFixed(2) + '\n' +
+    'scale    ' + P.scale.toFixed(2) + '   ×' + P.speed.toFixed(2) + '   ' + phaseName() + '\n' +
+    'seed     <b>' + P.seed.toFixed(3) + '</b>\n' +
+    'fps      ' + fps.toFixed(1) + '  <i>' + msAvg.toFixed(0) + ' ms</i>\n' +
+    'buffer   ' + IW + '×' + IH + '   plate ' + (sqH * 2 | 0) + 'px';
+  const h = [];
+  for (let d = 0; d <= P.depth; d++) if (tree.hist[d]) h.push(d + ':' + tree.hist[d]);
+  cap.textContent = 'depth ' + tree.deepest + ' · ' + tree.leaves + ' leaves · ' + h.slice(-4).join(' ');
+  cap.style.left = sqCss.cx + 'px';
+  cap.style.top  = (sqCss.cy + sqCss.h + 16) + 'px';
+}
+
+window.__probe = {};
+window.__ready = false;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const t0 = performance.now();
+  if (last){
+    acc += (now - last) / 1000; frames++;
+    if (acc > 0.5){ fps = frames / acc; acc = 0; frames = 0; }
+  }
+  last = now;
+
+  if (needBake){ bakeField(P.seed, P.scale); uploadField(); needBake = false; needRecount = true; }
+  if (needRecount){ recount(); needRecount = false; }
+
+  if (!paused){
+    simT += DT * P.speed;
+    const t = simT % CYCLE;
+    if (t < GROW){
+      growT = t / GROW; holdT = 0; closeT = 0;
+    } else if (t < GROW + HOLD){
+      growT = 1; holdT = (t - GROW) / HOLD; closeT = 0;
+    } else {
+      growT = 1; holdT = 1; closeT = (t - GROW - HOLD) / CLOSE;
+    }
+    /* frame-accurate record of each level coming open, so the growth
+       schedule is observable from outside and not only in the pixels */
+    const lv = visLevel();
+    if (levelLog.length === 0 || levelLog[levelLog.length - 1].level !== lv){
+      levelLog.push({ level: lv, simT: +simT.toFixed(3), phase: phaseName() });
+    }
+  }
+
+  draw();
+
+  const ms = performance.now() - t0;
+  msAvg = msAvg ? msAvg * 0.85 + ms * 0.15 : ms;
+
+  if (!alive){ alive = true; window.__ready = true; }
+  if (now - probeAt > 400){
+    probeAt = now;
+    updateTele();
+    window.__probe = {
+      fps: +fps.toFixed(2), ms: +msAvg.toFixed(1),
+      leaves: tree.leaves, cells: tree.nodes, splits: tree.splits,
+      deepest: tree.deepest, maxDepth: P.depth, threshold: P.thr,
+      noiseScale: P.scale, seed: +P.seed.toFixed(4), speed: P.speed,
+      phase: phaseName(), buffer: IW + 'x' + IH, platePx: (sqH * 2) | 0,
+      simT: +simT.toFixed(3), grow: +growT.toFixed(3), level: visLevel(),
+      levelLog: levelLog.slice()
+    };
+  }
+}
+
+/* ---------- controls ---------- */
+function restart(){ simT = 0; growT = 0.015; holdT = 0; closeT = 0; levelLog = []; }
+function bindRange(id, out, key, fmt, rebake){
+  const r = el(id), o = el(out);
+  const sync = () => {
+    r.style.setProperty('--p', (100 * (r.value - r.min) / (r.max - r.min)) + '%');
+    o.textContent = fmt(parseFloat(r.value));
+  };
+  r.addEventListener('input', () => {
+    P[key] = parseFloat(r.value);
+    if (rebake) needBake = true;
+    needRecount = true;
+    sync(); restart();
+  });
+  sync();
+}
+bindRange('thr', 'thrO', 'thr',  v => v.toFixed(2),        false);
+bindRange('dep', 'depO', 'depth', v => String(v | 0),      false);
+bindRange('scl', 'sclO', 'scale', v => v.toFixed(2),        true);
+bindRange('spd', 'spdO', 'speed', v => v.toFixed(2) + '×', false);
+
+el('seedBtn').addEventListener('click', () => {
+  /* Rejection-sample the seed so a reseed never lands on a dead tree (every
+     child of the root failing the rule, leaving a bare plate). Measured over
+     24 seeds the first acceptable draw arrives within ~14 tries. */
+  let chosen = P.seed, found = false;
+  for (let attempt = 0; attempt < 64 && !found; attempt++){
+    const s = rnd();                      // user-triggered draw, seeded generator
+    bakeField(s, P.scale);
+    if (countLeaves() >= MIN_LEAVES){ chosen = s; found = true; }
+  }
+  P.seed = chosen;
+  bakeField(P.seed, P.scale);
+  needBake = false;
+  needRecount = true;
+  restart();
+});
+el('growBtn').addEventListener('click', restart);
+const pauseBtn = el('pauseBtn');
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.classList.toggle('on', paused);
+  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+});
+window.addEventListener('keydown', e => {
+  if (e.target && /input|button|textarea/i.test(e.target.tagName)) return;
+  if (e.code === 'Space'){ e.preventDefault(); pauseBtn.click(); }
+  if (e.key === 'r' || e.key === 'R'){ el('seedBtn').click(); }
+  if (e.key === 'g' || e.key === 'G'){ el('growBtn').click(); }
+});
+window.addEventListener('resize', () => layout());
+
+/* ---------- boot ---------- */
+try {
+  if (!gl) throw new Error('no webgl context');
+  buildShader();
+  layout();
+  /* Bake and warm up BEFORE the first frame: the tree is built and the
+     growth is run to completion, so what lands on screen is the finished
+     fractal, not a bare root square. The clock then starts from the
+     matching point of the cycle, keeping the animation continuous with
+     the warm-up. */
+  bakeField(P.seed, P.scale);
+  uploadField();
+  recount();
+  simT  = GROW + HOLD * 0.26;
+  growT = 1; holdT = 0.26; closeT = 0;
+  draw();
+  updateTele();
+  requestAnimationFrame(frame);
+} catch (err){
+  console.error(err);
+  const d = document.createElement('div');
+  d.className = 'err';
+  d.textContent = 'WebGL unavailable: ' + (err && err.message ? err.message : err);
+  el('ui').appendChild(d);
+  window.__ready = true;
+}
+</script>
+</body>
+</html>

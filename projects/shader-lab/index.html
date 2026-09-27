@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shader Lab — live GLSL playground</title>
+<style>
+  :root{
+    --ink:#e6eef8; --dim:#7e9cb8; --dimmer:#5b7793;
+    --acc:#6fd3ff; --amber:#ffb257; --ok:#7ee787; --bad:#ff6b6b;
+    --edge:rgba(126,175,215,.16); --panel:rgba(9,13,20,.86);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#04060a;overflow:hidden}
+  body{
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:#04060a}
+
+  .panel{
+    position:fixed; z-index:5;
+    background:linear-gradient(180deg,rgba(14,19,28,.90),rgba(7,10,16,.84));
+    border:1px solid var(--edge); border-radius:4px;
+    box-shadow:0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(160,200,240,.05);
+    backdrop-filter:blur(7px) saturate(1.15);
+    -webkit-backdrop-filter:blur(7px) saturate(1.15);
+  }
+  .ph{ /* panel head */
+    display:flex;align-items:center;gap:8px;
+    padding:5px 9px;border-bottom:1px solid rgba(126,175,215,.10);
+    font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);
+    user-select:none;
+  }
+  .ph .sp{margin-left:auto;color:var(--dimmer);letter-spacing:.08em}
+  .pb{padding:8px 9px 9px}
+
+  /* ── title ─────────────────────────────────────────── */
+  #title{top:14px;left:14px;width:322px}
+  #title h1{margin:1px 0 3px;font-size:15px;letter-spacing:.10em;font-weight:600;color:#f2f7fd}
+  #title .sub{color:var(--acc);font-size:11px;letter-spacing:.04em}
+  #title .tech{margin-top:6px;color:var(--dim);font-size:11px;line-height:1.5}
+  #title .tech b{color:#cfe2f3;font-weight:600}
+
+  /* ── controls ──────────────────────────────────────── */
+  #ctl{top:14px;right:14px;width:286px;max-height:calc(100% - 28px);overflow:auto}
+  .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);
+       margin:9px 0 5px;display:flex;align-items:center;gap:6px}
+  .lbl:first-child{margin-top:2px}
+  .lbl .hint{color:var(--dimmer);letter-spacing:.04em;text-transform:none;font-size:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:4px}
+  .chip{
+    font:inherit;font-size:11px;letter-spacing:.04em;color:var(--dim);
+    background:rgba(111,211,255,.05);border:1px solid rgba(111,211,255,.18);
+    border-radius:3px;padding:3px 6px;cursor:pointer;
+  }
+  .chip:hover{color:#dff1ff;border-color:rgba(111,211,255,.45);background:rgba(111,211,255,.12)}
+  .chip.on{color:#0a0e14;background:var(--acc);border-color:var(--acc);font-weight:600}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 6px;margin:7px 0 0}
+  .row .n{font-size:11px;color:#bdd6ea}
+  .row .n i{color:var(--dimmer);font-style:normal}
+  .row .v{font-size:11px;color:var(--amber);text-align:right;min-width:52px}
+  .row input[type=range]{grid-column:1/3}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:15px;background:transparent;
+    cursor:ew-resize;margin:1px 0 0;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:3px;border-radius:2px;
+    background:linear-gradient(90deg,var(--acc) 0 var(--fill,50%),rgba(126,175,215,.20) var(--fill,50%) 100%);
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:9px;height:14px;margin-top:-5.5px;
+    background:#e8f6ff;border:1px solid #4b7d9d;border-radius:2px;
+  }
+  input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:rgba(126,175,215,.20)}
+  input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--acc)}
+  input[type=range]::-moz-range-thumb{width:8px;height:14px;background:#e8f6ff;border:1px solid #4b7d9d;border-radius:2px}
+  .btns{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+  .btn{
+    font:inherit;font-size:11px;color:var(--dim);background:rgba(111,211,255,.05);
+    border:1px solid rgba(111,211,255,.18);border-radius:3px;padding:3px 7px;cursor:pointer;
+  }
+  .btn:hover{color:#dff1ff;border-color:rgba(111,211,255,.45)}
+  .btn.warn{color:#ffd9a8;border-color:rgba(255,178,87,.25);background:rgba(255,178,87,.06)}
+  .btn[aria-pressed=true]{color:#0a0e14;background:var(--amber);border-color:var(--amber);font-weight:600}
+
+  /* ── editor ────────────────────────────────────────── */
+  #ed{left:14px;bottom:14px;width:640px}
+  #edwrap{position:relative;display:flex;height:262px;background:rgba(3,5,9,.55)}
+  #gut{
+    margin:0;padding:7px 6px 7px 9px;font:inherit;font-size:12px;line-height:1.5;
+    color:#3f5c76;text-align:right;white-space:pre;overflow:hidden;min-width:30px;
+    flex:0 0 auto;height:262px;
+    background:rgba(255,255,255,.018);border-right:1px solid rgba(126,175,215,.10);
+    user-select:none;
+  }
+  #src{
+    flex:1;min-width:0;height:262px;margin:0;padding:7px 9px;
+    font:inherit;font-size:12px;line-height:1.5;color:#d7e8f7;background:transparent;
+    border:0;outline:none;resize:none;white-space:pre;overflow:auto;caret-color:var(--amber);
+    spellcheck:false;tab-size:2;
+  }
+  #src::selection{background:rgba(111,211,255,.28)}
+  #foot{
+    display:flex;align-items:center;gap:10px;padding:5px 9px;
+    border-top:1px solid rgba(126,175,215,.10);font-size:10px;color:var(--dimmer);
+  }
+  #foot .k{color:var(--dim)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 7px var(--ok)}
+  .dot.err{background:var(--bad);box-shadow:0 0 7px var(--bad)}
+  #status{color:#cfe2f3}
+  #status.err{color:#ffc9c9}
+
+  /* ── log ───────────────────────────────────────────── */
+  #log{right:14px;bottom:14px;width:452px}
+  #logbody{padding:7px 9px 9px;max-height:246px;overflow:auto}
+  #logbody pre{margin:0;font:inherit;font-size:11px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+  .m-ok{color:#9fd8a9} .m-info{color:#8fb4cf} .m-err{color:#ff9b9b} .m-hint{color:#5b7793}
+  .m-ctx{color:#7fa8c9}
+  .m-caret{color:var(--bad)}
+
+  #hint{
+    position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:4;
+    font-size:10px;color:rgba(150,180,205,.45);letter-spacing:.10em;user-select:none;
+    pointer-events:none;transition:opacity .4s;
+  }
+  body.bare .panel,body.bare #hint{opacity:0;pointer-events:none}
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:rgba(126,175,215,.22);border-radius:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<!-- ── title / technique ─────────────────────────────────────────── -->
+<section class="panel" id="title">
+  <div class="pb">
+    <h1>SHADER&nbsp;LAB</h1>
+    <div class="sub">live GLSL ES 3.00 fragment playground</div>
+    <div class="tech">
+      <b>pass 1</b> user shader → RGBA8 FBO @ <span id="tRes">—</span><br>
+      <b>pass 2</b> LINEAR upscale · triangular dither · vignette<br>
+      <b>tool</b> gl.compileShader + getShaderInfoLog, line-mapped
+    </div>
+  </div>
+</section>
+
+<!-- ── controls ──────────────────────────────────────────────────── -->
+<section class="panel" id="ctl">
+  <div class="ph">uniforms<span class="sp" id="ctlSp">—</span></div>
+  <div class="pb">
+    <div class="lbl">presets</div>
+    <div class="chips" id="chips"></div>
+
+    <div class="lbl">render</div>
+    <div class="row">
+      <span class="n">internal scale <i>upscale factor</i></span><span class="v" id="vRes">—</span>
+      <input type="range" id="rRes" min="0.25" max="1" step="0.05">
+    </div>
+    <div class="row">
+      <span class="n">time rate <i>× fixed 1/60 s step</i></span><span class="v" id="vRate">1.00</span>
+      <input type="range" id="rRate" min="0" max="2" step="0.05">
+    </div>
+    <div class="lbl">program uniforms <span class="hint" id="uniHint"></span></div>
+    <div id="sliders"></div>
+    <div class="btns">
+      <button class="btn" id="bFreeze" aria-pressed="false">freeze&nbsp;t</button>
+      <button class="btn" id="bStep">step&nbsp;+1/60</button>
+      <button class="btn" id="bReset">revert</button>
+      <button class="btn warn" id="bBreak">break&nbsp;it</button>
+    </div>
+  </div>
+</section>
+
+<!-- ── editor ────────────────────────────────────────────────────── -->
+<section class="panel" id="ed">
+  <div class="ph">fragment shader · <span style="text-transform:none;letter-spacing:.02em">#version · precision · 5 built-in uniforms · out vec4 fragColor are injected above your text</span><span class="sp" id="edSp">—</span></div>
+  <div id="edwrap">
+    <pre id="gut">1</pre>
+    <textarea id="src" spellcheck="false" wrap="off" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+  </div>
+  <div id="foot">
+    <span class="dot" id="dot"></span>
+    <span id="status">booting</span>
+    <span class="k" style="margin-left:auto">ctrl+enter compile · 1–5 preset · h hide ui · pointer = uMouse</span>
+  </div>
+</section>
+
+<!-- ── log / errors ──────────────────────────────────────────────── -->
+<section class="panel" id="log">
+  <div class="ph">compiler log<span class="sp" id="logSp">—</span></div>
+  <div id="logbody"><pre id="logpre" class="m-info">idle</pre></div>
+</section>
+
+<div id="hint">pointer over the canvas feeds uMouse · press h for a clean frame</div>
+
+<script>
+"use strict";
+(function(){
+/* ══════════════════════════════════════════════════════════════════
+   0. helpers
+   ══════════════════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+const f2 = v => (Math.round(v*100)/100).toFixed(2);
+
+/* ══════════════════════════════════════════════════════════════════
+   1. preset library — each is a complete fragment shader; the harness
+      injects the 4-line header (#version / precision / out) above it.
+   ══════════════════════════════════════════════════════════════════ */
+const COMMON = `
+mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+vec2 hash22(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973));
+  q += dot(q, q.yzx+33.33);
+  return fract((q.xx+q.yz)*q.zy);
+}
+float hash21(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.0-2.0*f);
+  return mix(mix(hash21(i),            hash21(i+vec2(1,0)), f.x),
+             mix(hash21(i+vec2(0,1)),  hash21(i+vec2(1,1)), f.x), f.y);
+}
+float fbm(vec2 p){
+  float s=0.0, a=0.5;
+  for(int i=0;i<4;i++){ s += a*vnoise(p); p = rot(0.55)*p*2.07 + vec2(1.7,9.2); a *= 0.5; }
+  return s;
+}
+vec2 curl(vec2 p){
+  const float e = 0.14;
+  return vec2(vnoise(p+vec2(0.0,e)) - vnoise(p-vec2(0.0,e)),
+             vnoise(p-vec2(e,0.0)) - vnoise(p+vec2(e,0.0))) / (2.0*e);
+}`;
+
+const PRESETS = [
+{ id:"plasma", name:"plasma", res:0.5,
+  tech:"4 wave trains · cosine palette",
+  src:`// ── PLASMA ────────────────────────────────────────────────────
+// Four 1-D wave trains summed on a rotating, warped domain; colour from
+// a 4-stop cosine palette. The classic demodulator, used as a smoke test.
+uniform float uWarp;   // 0.00 .. 1.50  domain warp carried between octaves
+uniform float uBands;  // 0.50 .. 6.00  spatial frequency of the wave trains
+uniform float uGlow;   // 0.00 .. 2.00  core brightness
+uniform float uSeed;   // 0.00 .. 1.00  palette phase${COMMON}
+void main(){
+  // focal point sits left of centre and above the midline
+  vec2 p = (gl_FragCoord.xy - vec2(0.47, 0.54)*uResolution) / uResolution.y;
+  float t = uTime;
+
+  float v = 0.0, amp = 1.0, wsum = 0.0;
+  for(int i=0;i<4;i++){
+    float fi = float(i);
+    vec2 dir = vec2(cos(0.63*fi + t*0.40), sin(0.63*fi - t*0.31));
+    v    += amp * sin(dot(p, dir)*uBands*3.2 + t*0.90 + fi*1.70);
+    wsum += amp;
+    p = rot(0.72)*p*1.58 + 0.40*uWarp*amp;
+    amp *= 0.68;
+  }
+  v /= wsum;                              // -1 .. 1
+
+  float r    = length(p - vec2(0.20,-0.06));
+  float msk  = smoothstep(1.34, 0.02, r);   // keep the frame dark
+  float core = exp(-3.1*r*r);
+
+  // related palette: indigo ground -> violet -> magenta -> warm highlight
+  vec3 col = 0.40 + 0.36*cos(6.2831*(v + vec3(0.00,0.14,0.36) + uSeed));
+  col *= 0.06 + 0.90*msk*msk;
+  col += vec3(1.00,0.80,0.60)*0.26*uGlow*core*core;
+  col  = pow(max(col,0.0), vec3(0.86));
+
+  fragColor = vec4(col, 1.0);
+}` },
+
+{ id:"voronoi", name:"voronoi", res:0.5,
+  tech:"F1/F2 cellular · 3×3 jittered taps",
+  src:`// ── VORONOI ───────────────────────────────────────────────────
+// Animated F1/F2 cellular field: 3x3 neighbourhood of hash-jittered
+// feature points. F2-F1 gives the cell walls, F1 gives the dome shading.
+uniform float uCells;  // 2.0 .. 14.0  cells across the short axis
+uniform float uJitter; // 0.00 .. 1.00  how far feature points roam
+uniform float uEdge;   // 0.20 .. 2.00  wall width + brightness
+uniform float uGlow;   // 0.00 .. 2.00  wall emissive gain${COMMON}
+void main(){
+  // focal point sits left of centre and above the midline
+  vec2 p = (gl_FragCoord.xy - vec2(0.47, 0.54)*uResolution) / uResolution.y;
+  float rad = length(p - vec2(0.17,-0.07));
+  // anisotropic + radial zoom: a dense cluster of small cells at the focal
+  // point, coarse cells at the edges — scale varies with distance, so the
+  // frame is composed rather than uniformly tiled.
+  float zoom = 1.0 + 1.45*exp(-2.9*rad*rad);
+  // halo is measured in the UNTRANSFORMED domain, so the focal point lands
+  // exactly where the coordinate above says it does
+  float halo = exp(-1.75*rad*rad);
+  p.x *= 1.34;
+  p = rot(0.30 + 0.06*sin(uTime*0.11))*p;
+  p *= uCells*zoom;
+  vec2 ip = floor(p), fp = fract(p);
+
+  float f1 = 8.0, f2 = 8.0;
+  vec2  id = ip;
+  for(int y=-1;y<=1;y++){
+    for(int x=-1;x<=1;x++){
+      vec2 o = vec2(float(x), float(y));
+      vec2 r = hash22(ip+o);
+      vec2 pt = o + 0.5 + uJitter*0.42*sin(uTime*0.55 + 6.2831*r);
+      float d = length(pt - fp);
+      if(d < f1){ f2 = f1; f1 = d; id = ip+o; }
+      else if(d < f2){ f2 = d; }
+    }
+  }
+
+  float wall = 1.0 - smoothstep(0.0, 0.11*uEdge, f2 - f1);
+  float dome = smoothstep(0.90, 0.04, f1);
+  float h    = hash21(id + 3.7);
+  float h2   = hash21(id*1.7 - 5.1);
+
+  // three related stops: petrol blue -> indigo, amber walls
+  vec3 cold = mix(vec3(0.030,0.150,0.215), vec3(0.140,0.070,0.240), h);
+  vec3 body = cold*(0.07 + 1.30*dome) + vec3(0.05,0.13,0.16)*dome*dome;
+
+  vec3 amber = vec3(1.00, 0.66, 0.28);
+  vec3 col = body + amber*wall*wall*(0.20 + 1.05*uGlow)*(0.45+0.55*h2);
+
+  // grounding: the cluster reads as a lit object on a dark ground. The amber
+  // walls only bloom near the focal point, so brightness itself marks the
+  // composition rather than a flat overlay.
+  col *= 0.03 + 1.30*halo;
+  col += amber*wall*wall*0.60*uGlow*halo*halo;
+  col += vec3(0.012,0.030,0.055)*(1.0 - halo);   // cool ambient in the corners
+
+  col = pow(max(col,0.0), vec3(0.88));
+  fragColor = vec4(col, 1.0);
+}` },
+
+{ id:"raymarch", name:"raymarch", res:0.4,
+  tech:"sphere tracing · soft shadow + AO",
+  src:`// ── RAYMARCH ──────────────────────────────────────────────────
+// Sphere tracing a signed distance field: tilted torus + three orbiting
+// spheres over a ground plane. 64 primary steps, 16 soft-shadow steps,
+// 4-tap AO. The second preset that exercises the fill-rate budget.
+uniform float uTwist;  // 0.00 .. 2.00  rigid-body angular rate
+uniform float uSoft;   // 0.20 .. 2.00  soft-shadow penumbra
+uniform float uAO;     // 0.00 .. 2.00  ambient occlusion strength
+uniform float uGlow;   // 0.00 .. 2.00  rim / emissive gain
+
+mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+float sdTorus(vec3 p, vec2 t){ vec2 q = vec2(length(p.xz)-t.x, p.y); return length(q)-t.y; }
+
+vec3 spheres(vec3 p){
+  vec3 c = vec3(0.0, 0.0, 0.0);
+  for(int i=0;i<3;i++){
+    float a  = uTime*0.42 + float(i)*2.0944;
+    float rr = 1.28 + 0.16*sin(uTime*0.31 + float(i)*1.3);
+    c = min(c, length(p - vec3(cos(a)*rr, 0.34*sin(a*1.7+float(i)*2.0), sin(a)*rr)) - 0.26);
+  }
+  return vec3(c);
+}
+
+float map(vec3 p){
+  vec3 q = p;
+  q.xz = rot(uTime*0.28*uTwist)*q.xz;
+  q.xy = rot(0.42 + 0.10*sin(uTime*0.23))*q.xy;
+  float d = sdTorus(q, vec2(0.92, 0.27));
+  d = min(d, spheres(q).x);
+  d = min(d, p.y + 0.92);
+  return d;
+}
+
+vec3 normal(vec3 p){
+  const vec2 k = vec2(1.0,-1.0);
+  const float h = 0.0022;
+  return normalize(k.xyy*map(p+k.xyy*h) + k.yyx*map(p+k.yyx*h) +
+                   k.yxy*map(p+k.yxy*h) + k.xxx*map(p+k.xxx*h));
+}
+
+float shadow(vec3 ro, vec3 rd){
+  float res = 1.0, t = 0.06;
+  // uSoft widens the penumbra: the classic k*h/t term, with k scaled down
+  // for a softer edge, so the slider trades shadow hardness against banding.
+  float k = mix(2.0, 22.0, clamp(uSoft*0.5, 0.0, 1.0));
+  for(int i=0;i<16;i++){
+    float h = map(ro + rd*t);
+    res = min(res, k*h/t);
+    t += clamp(h, 0.05, 0.30);
+    if(res < 0.02 || t > 5.0) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+float ao(vec3 p, vec3 n){
+  float o = 0.0, s = 1.0;
+  for(int i=1;i<=4;i++){
+    float h = 0.055*float(i);
+    o += (h - map(p + n*h))*s;
+    s *= 0.72;
+  }
+  return clamp(1.0 - 1.6*o, 0.0, 1.0);
+}
+
+void main(){
+  // focal point above-left of centre: the frame is composed, not centred
+  vec2 q = (gl_FragCoord.xy - vec2(0.44,0.62)*uResolution) / uResolution.y;
+  q.x *= 1.0;
+  vec3 ro = vec3(0.0, 0.55 + 0.10*sin(uTime*0.21), 4.15);
+  vec3 ta = vec3(0.0, 0.05, 0.0);
+  vec3 ww = normalize(ta-ro);
+  vec3 uu = normalize(cross(ww, vec3(0.0,1.0,0.0)));
+  vec3 vv = cross(uu, ww);
+  vec3 rd = normalize(uu*q.x + vv*q.y - 1.62*ww);
+
+  float t = 0.0, d = 0.0;
+  bool hit = false;
+  for(int i=0;i<64;i++){
+    d = map(ro + rd*t);
+    if(d < 0.0012 || t > 12.0){ hit = d < 0.0012; break; }
+    t += d*0.92;
+  }
+
+  vec3 col = vec3(0.0);
+  if(hit){
+    vec3 p = ro + rd*t;
+    vec3 n = normal(p);
+    vec3 l = normalize(vec3(-0.55, 0.78, 0.32));
+    float dif = clamp(dot(n,l), 0.0, 1.0);
+    float sha = shadow(p + n*0.004, l);
+    float occ = mix(1.0, ao(p,n), uAO);
+    float spe = pow(clamp(dot(reflect(rd,n), l), 0.0, 1.0), 48.0);
+
+    vec3 base = mix(vec3(0.075,0.130,0.190), vec3(0.520,0.220,0.130),
+                    0.5+0.5*sin(3.1*p.y + 1.7*p.x));
+    base = mix(base, vec3(0.62,0.66,0.72), step(0.4, -p.y/0.92));
+
+    col  = base*(0.10 + 0.95*dif*sha)*occ;
+    col += vec3(1.00,0.88,0.70)*0.55*spe*sha;
+    float fres = pow(1.0 - clamp(dot(n,-rd),0.0,1.0), 4.0);
+    col += vec3(0.20,0.45,0.70)*fres*0.55*uGlow*occ;
+    col *= 1.0 - 0.55*smoothstep(3.0, 9.0, t);
+  } else {
+    // backdrop: cool vertical gradient + a low horizon glow
+    float h = clamp(rd.y*0.5+0.5, 0.0, 1.0);
+    col = mix(vec3(0.020,0.035,0.062), vec3(0.075,0.105,0.150), h);
+    col += vec3(0.10,0.06,0.03)*pow(clamp(1.0-abs(rd.y)*2.6,0.0,1.0), 3.0);
+    col  = pow(max(col,0.0), vec3(0.90));
+    fragColor = vec4(col, 1.0);
+    return;
+  }
+
+  col = pow(max(col,0.0), vec3(0.92));
+  fragColor = vec4(col, 1.0);
+}` },
+
+{ id:"flow", name:"flow", res:0.5,
+  tech:"curl-noise advection · fbm filaments",
+  src:`// ── FLOW FIELD ────────────────────────────────────────────────
+// Divergence-free advection: the shader follows the curl of a scalar
+// noise potential and accumulates fbm along the streamline, which
+// reads as filament / smoke rather than as a static texture.
+uniform float uWarp;   // 0.00 .. 1.50  curl strength (advection length)
+uniform float uStreak; // 0.00 .. 1.20  streamline step length
+uniform float uScale;  // 0.40 .. 3.00  spatial frequency
+uniform float uGlow;   // 0.00 .. 2.00  filament emissive gain${COMMON}
+void main(){
+  vec2 p = (gl_FragCoord.xy - vec2(0.46,0.55)*uResolution) / uResolution.y;
+  p *= uScale;
+
+  // macro flow: one strong curl field, slowly drifting
+  vec2 flow = curl(p*0.75 + 0.045*uTime) * uWarp;
+  vec2 s = p + flow;
+
+  float acc = 0.0, w = 1.0, wsum = 0.0;
+  for(int i=0;i<4;i++){
+    acc  += w * fbm(s*1.25);
+    // one curl per octave, not per fbm: curl is 4 vnoise taps, so this is
+    // where the fill-rate budget goes on a software rasteriser.
+    vec2 c = curl(s*0.85 + float(i)*3.1 + 0.03*uTime);
+    s    += (c/(0.28 + length(c)) ) * (0.085*uStreak);
+    wsum += w;
+    w    *= 0.80;
+  }
+  acc /= wsum;                       // ~0 .. 1
+  float fil = pow(smoothstep(0.42, 0.92, acc), 2.4);
+
+  // three related stops: deep teal -> petrol -> warm filament core
+  vec3 deep = vec3(0.020,0.060,0.095);
+  vec3 mid  = vec3(0.060,0.240,0.320);
+  vec3 hot  = vec3(1.000,0.640,0.300);
+  vec3 col = mix(deep, mid, smoothstep(0.10, 0.62, acc));
+  col = mix(col, hot, fil*(0.30 + 0.70*uGlow));
+  col += hot*0.10*uGlow*fil;
+
+  float r = length(p/uScale - vec2(0.14,-0.04));
+  col *= 0.10 + 1.05*smoothstep(1.15, 0.05, r);
+  col  = pow(max(col,0.0), vec3(0.90));
+
+  fragColor = vec4(col, 1.0);
+}` },
+
+{ id:"truchet", name:"truchet", res:0.5,
+  tech:"quarter-arc SDF tiling",
+  src:`// ── TRUCHET ───────────────────────────────────────────────────
+// Quarter-arc SDF tiling: each cell picks one of two diagonal arc pairs
+// from a hash, so the arcs join across cell walls. Stroke colour follows
+// the arc parameter, background follows the cell id.
+uniform float uScale;  // 1.5 .. 11.0  tiles across the short axis
+uniform float uWidth;  // 0.010 .. 0.30  half stroke width
+uniform float uRotate; // 0.00 .. 2.00  global tile rotation
+uniform float uGlow;   // 0.00 .. 2.00  stroke emissive gain${COMMON}
+void main(){
+  vec2 p = (gl_FragCoord.xy - vec2(0.47,0.54)*uResolution) / uResolution.y;
+  p = rot(0.35*uRotate) * p;
+  p *= uScale;
+
+  vec2 ip = floor(p), fp = fract(p);
+  float h = hash21(ip);
+  float h2 = hash21(ip*2.3 + 11.0);
+
+  // quarter arc: centre at corner c, radius 0.5
+  vec2 c0 = h < 0.5 ? vec2(0.0,0.0) : vec2(1.0,1.0);
+  vec2 c1 = h < 0.5 ? vec2(1.0,1.0) : vec2(0.0,0.0);
+  float d0 = abs(length(fp - c0) - 0.5);
+  float d1 = abs(length(fp - c1) - 0.5);
+  float d  = min(d0, d1);
+  float w  = uWidth * (0.55 + 0.9*h2);
+  float aa = fwidth(d) + 1e-4;
+  float s  = 1.0 - smoothstep(w - aa, w + aa, d);
+
+  // stroke gradient along the arc, background wash from the cell id
+  float param = h < 0.5 ? length(fp - c0)*2.0 : length(fp - c1)*2.0;
+  vec3 a0 = mix(vec3(0.16,0.62,0.72), vec3(0.98,0.60,0.26), param);
+  vec3 a1 = mix(vec3(0.52,0.30,0.78), vec3(0.98,0.86,0.42), param);
+
+  vec3 bg = mix(vec3(0.020,0.032,0.052), vec3(0.055,0.048,0.080), h2);
+  vec3 stroke = mix(a0, a1, step(0.5, fract(h*3.1)));
+  vec3 col = bg + stroke*s*(0.30 + 0.95*uGlow);
+
+  // glow bleeding outside the stroke, then a soft vignette
+  col += stroke*0.16*uGlow*exp(-6.0*max(d - w, 0.0));
+  float r = length(p/uScale - vec2(0.05,-0.10));
+  col *= 0.20 + 0.95*smoothstep(1.10, 0.12, r);
+
+  col  = pow(max(col,0.0), vec3(0.90));
+  fragColor = vec4(col, 1.0);
+}` }
+];
+
+/* ══════════════════════════════════════════════════════════════════
+   2. uniform slider specs (per-preset overrides; unknown names default 0..1)
+   ══════════════════════════════════════════════════════════════════ */
+const HINT = {
+  uWarp  :[0.00,1.50,0.01], uBands :[0.50,6.00,0.01], uGlow :[0.00,2.00,0.01],
+  uSeed  :[0.00,1.00,0.01], uCells :[2.00,14.0,0.10], uJitter:[0.00,1.00,0.01],
+  uEdge  :[0.20,2.00,0.01], uTwist :[0.00,2.00,0.01], uSoft  :[0.20,2.00,0.01],
+  uAO    :[0.00,2.00,0.01], uStreak:[0.00,1.20,0.01],uScale :[0.40,3.00,0.01],
+  uWidth :[0.010,0.30,0.005]
+};
+const DEFAULT_U = { uWarp:0.60, uBands:2.60, uGlow:0.85, uSeed:0.18, uCells:6.0,
+  uJitter:0.55, uEdge:0.90, uTwist:0.70, uSoft:1.00, uAO:1.00, uStreak:0.75,
+  uScale:1.30, uWidth:0.090 };
+
+/* ══════════════════════════════════════════════════════════════════
+   3. GL boot
+   ══════════════════════════════════════════════════════════════════ */
+const canvas = $("#gl");
+const gl = canvas.getContext("webgl2", {
+  antialias:false, alpha:false, depth:false, stencil:false,
+  preserveDrawingBuffer:false, powerPreference:"high-performance"
+});
+if(!gl){ document.body.innerHTML =
+  '<div style="padding:30px;font:13px monospace;color:#ff9b9b">WebGL2 unavailable — '+
+  'this playground needs a WebGL2 context.</div>'; return; }
+
+const extFloat = gl.getExtension("EXT_color_buffer_float");   // before any FBO
+gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+
+const VERT = `#version 300 es
+out vec2 vUV;
+void main(){
+  vec2 p = vec2(gl_VertexID==1 ? 3.0 : -1.0, gl_VertexID==2 ? 3.0 : -1.0);
+  vUV = p*0.5 + 0.5;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+// pass 2: upscale + dither + vignette, 1 texture tap
+const DISP = `#version 300 es
+precision highp float;
+in vec2 vUV;
+out vec4 oColor;
+uniform sampler2D uSrc;
+uniform vec2 uOut;
+uniform float uFrame;
+float h12(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y)*q.z);
+}
+void main(){
+  vec3 col = texture(uSrc, vUV).rgb;
+  // triangular-PDF dither: kills banding in the dark ground
+  float d = h12(gl_FragCoord.xy) - h12(gl_FragCoord.xy + vec2(37.0, 17.0));
+  col += d/255.0;
+  // composed vignette: darkens the corners the UI panels sit on
+  vec2 v = (gl_FragCoord.xy/uOut - 0.5) * vec2(1.0, 0.86);
+  col *= 1.0 - 0.46*pow(clamp(length(v)*1.42, 0.0, 1.0), 2.3);
+  oColor = vec4(col, 1.0);
+}`;
+
+function makeProgram(fsSrc){
+  const mk = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    return s;
+  };
+  const vs = mk(gl.VERTEX_SHADER, VERT), fs = mk(gl.FRAGMENT_SHADER, fsSrc);
+  const p  = gl.createProgram();
+  gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+  const ok     = gl.getProgramParameter(p, gl.LINK_STATUS);
+  const vlog   = gl.getShaderInfoLog(vs)   || "";
+  const flog   = gl.getShaderInfoLog(fs)   || "";
+  const plog   = gl.getProgramInfoLog(p)   || "";
+  gl.deleteShader(vs); gl.deleteShader(fs);
+  return { p, ok:!!ok, vsOk: gl.getShaderParameter(vs, gl.COMPILE_STATUS) !== false,
+           log: [vlog, flog, plog].filter(Boolean).join("\n").trim() };
+}
+
+const dispProg = makeProgram(DISP);
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const U = {};                                    // pass-2 uniform locations
+for(const n of ["uSrc","uOut","uFrame"]) U[n] = gl.getUniformLocation(dispProg.p, n);
+
+/* --- offscreen colour target (RGBA8: no float format dependency) --- */
+const TEXW = {}; TEXW.fbo = gl.createFramebuffer();
+TEXW.tex = gl.createTexture();
+let IW = 0, IH = 0;
+function sizeTarget(w, h){
+  if(w === IW && h === IH) return;
+  IW = w; IH = h;
+  gl.bindTexture(gl.TEXTURE_2D, TEXW.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, IW, IH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, TEXW.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, TEXW.tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   4. state
+   ══════════════════════════════════════════════════════════════════ */
+const ui = {
+  src:$("#src"), gut:$("#gut"), logpre:$("#logpre"), dot:$("#dot"),
+  status:$("#status"), sliders:$("#sliders"), chips:$("#chips"),
+  uniHint:$("#uniHint"), vRes:$("#vRes"), vRate:$("#vRate"), tRes:$("#tRes"),
+  rRes:$("#rRes"), rRate:$("#rRate"), edSp:$("#edSp"), logSp:$("#logSp"), ctlSp:$("#ctlSp")
+};
+const S = {
+  preset: 1,
+  scale: 0.5, rate: 1.0, freeze: false,
+  t: 6.0,                 // fixed-delta clock, seeded so frame 1 is developed
+  frame: 0, fps: 0, glMs: 0, compileMs: 0,
+  mouse:[0.5,0.5], press: 0,
+  ok: false, error: null, uniforms: [], values: Object.assign({}, DEFAULT_U),
+  dirty: true, ready:false, cssW:0, cssH:0
+};
+const DT = 1/60;                                   // fixed step, never wall clock
+const BUILTIN = new Set(["uResolution","uTime","uFrame","uMouse","uPress"]);
+
+/* ══════════════════════════════════════════════════════════════════
+   5. compile pipeline — errors are reported, never swallowed
+   ══════════════════════════════════════════════════════════════════ */
+let prog = null, progLoc = {};
+const OUT_RE   = /^\s*(layout\s*\([^)]*\)\s*)?out\s+vec4\s+\w+\s*;/m;
+const PREC_RE  = p => new RegExp("^\\s*precision\\s+(highp|mediump)\\s+" + p + "\\s*;", "m");
+// uniforms the harness always provides; a user who declares one keeps theirs
+const INJECT = [["uResolution","vec2"],["uTime","float"],["uFrame","float"],
+                ["uMouse","vec2"],["uPress","float"]];
+
+function buildDocument(src){
+  const pre = ["#version 300 es"];
+  if(!PREC_RE("float").test(src)) pre.push("precision highp float;");
+  if(!PREC_RE("int").test(src))   pre.push("precision highp int;");
+  for(const [name, type] of INJECT)
+    if(!new RegExp("^\\s*uniform\\s+" + type + "\\s+" + name + "\\s*;", "m").test(src))
+      pre.push("uniform " + type + " " + name + ";");
+  if(!OUT_RE.test(src)) pre.push("out vec4 fragColor;");
+  return { text: pre.join("\n") + "\n" + src + "\n", offset: pre.length };
+}
+
+function parseLog(log, offset){
+  const out = [];
+  let first = null;
+  for(const raw of log.split("\n")){
+    const line = raw.trim();
+    if(!line) continue;
+    const m = line.match(/^(ERROR|WARNING)\s*:?\s*\d+:(\d+)/i);
+    if(m){
+      const ln = parseInt(m[2], 10) - offset;
+      if(first === null) first = ln;
+      out.push({ kind:m[1].toLowerCase(), line:ln, text:line.replace(/^\w+\s*:\s*\d+:\d+\s*:?\s*/i,"") });
+    } else {
+      out.push({ kind:"err", line:null, text:line });
+    }
+  }
+  return { items:out, first };
+}
+
+function logLines(html){ ui.logpre.className = ""; ui.logpre.innerHTML = html; }
+
+function compile(quiet){
+  const t0 = performance.now();
+  const src = ui.src.value;
+  const doc = buildDocument(src);
+  const r = makeProgram(doc.text);
+  S.compileMs = performance.now() - t0;
+
+  if(!r.ok || r.log.indexOf("ERROR") >= 0 && !r.vsOk){
+    const p = parseLog(r.log, doc.offset);
+    S.ok = false;
+    S.error = p.first !== null ? p.first : (r.ok ? null : 0);
+    ui.dot.classList.add("err");
+    ui.status.classList.add("err");
+    ui.status.textContent = r.ok
+      ? "shader compiled with errors — last good program still drawing"
+      : "compile failed on line " + (S.error === null ? "?" : S.error) + " — last good program still drawing";
+    ui.logSp.textContent = "failed";
+    renderError(p, src);
+    return false;
+  }
+
+  if(prog) gl.deleteProgram(prog);
+  prog = r.p;
+  progLoc = {};
+  const n = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+  const list = [];
+  for(let i=0;i<n;i++){
+    const info = gl.getActiveUniform(prog, i);
+    const name = info.name.replace(/\[0\]$/, "");
+    if(info.size > 1) continue;
+    const type = info.type;
+    let comps = 0;
+    if(type === gl.FLOAT) comps = 1;
+    else if(type === gl.FLOAT_VEC2) comps = 2;
+    else if(type === gl.FLOAT_VEC3) comps = 3;
+    else if(type === gl.FLOAT_VEC4) comps = 4;
+    if(!comps) continue;                       // built-ins are not exposed
+    if(BUILTIN.has(name)){ progLoc[name] = gl.getUniformLocation(prog, name); continue; }
+    progLoc[name] = gl.getUniformLocation(prog, name);
+    for(let c=0;c<comps;c++) if(S.values[name+"."+c] === undefined)
+      S.values[name+"."+c] = DEFAULT_U[name] !== undefined ? DEFAULT_U[name] : 0.5;
+    list.push({ name, comps });
+  }
+  S.uniforms = list;
+
+  S.ok = true; S.error = null;
+  ui.dot.classList.remove("err");
+  ui.status.classList.remove("err");
+  ui.status.textContent = "compiled · " + S.compileMs.toFixed(1) + " ms · " +
+    (n === 0 ? "no active uniforms" : n + " active, " + list.length + " exposed");
+  ui.logSp.textContent = "ok";
+  buildSliders();
+  logLines('<span class="m-ok">link OK</span>  ' + doc.text.split("\n").length + ' lines, ' +
+           doc.offset + ' injected header line(s)\n' +
+           '<span class="m-info">active uniforms: ' + (n ? list.map(u=>u.name).join(", ") : "(none)") + '</span>\n' +
+           (r.log ? '<span class="m-hint">' + esc(r.log) + '</span>\n' : '') +
+           '<span class="m-hint">document = #version + precision + out vec4 fragColor + your text; ' +
+           'info-log line numbers are mapped back by −' + doc.offset + '</span>');
+  S.dirty = true;
+  return true;
+}
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+
+function renderError(p, src){
+  const lines = src.split("\n");
+  let html = "";
+  for(const it of p.items){
+    if(it.line !== null && it.line >= 1 && it.line <= lines.length){
+      const a = Math.max(0, it.line-3), b = Math.min(lines.length, it.line+2);
+      html += '<span class="m-' + (it.kind === "warning" ? "hint" : "err") + '">▲ line ' +
+              it.line + ': ' + esc(it.text) + '</span>\n';
+      for(let i=a;i<b;i++)
+        html += (i === it.line-1)
+          ? '<span class="m-caret">' + String(i+1).padStart(4) + ' ▸ ' + esc(lines[i]) + '</span>\n'
+          : '<span class="m-ctx">   ' + String(i+1).padStart(4) + ' │ ' + esc(lines[i]) + '</span>\n';
+      html += '\n';
+    } else {
+      html += '<span class="m-' + (it.kind === "warning" ? "hint" : "err") + '">' + esc(it.text) + '</span>\n';
+    }
+  }
+  html += '<span class="m-hint">the last successfully linked program is still bound, so the ' +
+          'canvas keeps drawing a live frame while you fix this.</span>';
+  logLines(html);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   6. uniform sliders
+   ══════════════════════════════════════════════════════════════════ */
+function buildSliders(){
+  ui.sliders.innerHTML = "";
+  if(!S.uniforms.length){
+    const d = document.createElement("div");
+    d.className = "m-hint"; d.style.fontSize = "11px";
+    d.textContent = "no user uniforms active";
+    ui.sliders.appendChild(d);
+    ui.uniHint.textContent = "";
+    return;
+  }
+  ui.uniHint.textContent = "(" + S.uniforms.length + ")";
+  for(const u of S.uniforms){
+    for(let c=0;c<u.comps;c++){
+      const key = u.name + (u.comps > 1 ? "." + "xyzw"[c] : "");
+      const h = HINT[u.name] || [0,1,0.01];
+      const row = document.createElement("div");
+      row.className = "row";
+      const v = S.values[key] === undefined ? (h[0]+h[1])/2 : S.values[key];
+      S.values[key] = v;
+      row.innerHTML = '<span class="n">' + u.name + (u.comps>1 ? '<i>.</i>'+ "xyzw"[c] : '') +
+                      '</span><span class="v"></span><input type="range">';
+      const inp = row.querySelector("input"), out = row.querySelector(".v");
+      inp.min = h[0]; inp.max = h[1]; inp.step = h[2]; inp.value = v;
+      const paint = () => {
+        const val = parseFloat(inp.value);
+        S.values[key] = val;
+        out.textContent = (h[2] < 0.01 ? val.toFixed(3) : f2(val));
+        inp.style.setProperty("--fill", ((val-h[0])/(h[1]-h[0])*100).toFixed(1) + "%");
+      };
+      inp.addEventListener("input", () => { paint(); S.dirty = true; });
+      paint();
+      ui.sliders.appendChild(row);
+    }
+  }
+}
+
+function uploadUniforms(){
+  if(!prog) return;
+  gl.useProgram(prog);
+  gl.uniform2f(progLoc.uResolution || gl.getUniformLocation(prog,"uResolution"), IW, IH);
+  gl.uniform1f(progLoc.uTime   || gl.getUniformLocation(prog,"uTime"), S.t);
+  gl.uniform1f(progLoc.uFrame  || gl.getUniformLocation(prog,"uFrame"), S.frame);
+  gl.uniform2f(progLoc.uMouse  || gl.getUniformLocation(prog,"uMouse"), S.mouse[0], S.mouse[1]);
+  gl.uniform1f(progLoc.uPress  || gl.getUniformLocation(prog,"uPress"), S.press);
+  for(const u of S.uniforms){
+    const loc = progLoc[u.name];
+    if(!loc) continue;
+    const c = u.comps;
+    if(c === 1) gl.uniform1f(loc, S.values[u.name] || 0);
+    else {
+      const a = [0,0,0,0];
+      for(let i=0;i<c;i++) a[i] = S.values[u.name + "." + "xyzw"[i]] || 0;
+      gl.uniform4f(loc, a[0], a[1], a[2], a[3]);
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   7. draw
+   ══════════════════════════════════════════════════════════════════ */
+function draw(){
+  if(!prog) return;
+  const CW = canvas.width, CH = canvas.height;
+  // pass 1 — user fragment shader into the low-resolution RGBA8 target
+  gl.bindFramebuffer(gl.FRAMEBUFFER, TEXW.fbo);
+  gl.viewport(0, 0, IW, IH);
+  gl.useProgram(prog);
+  uploadUniforms();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // pass 2 — linear upscale to the default framebuffer
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, CW, CH);
+  gl.useProgram(dispProg.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, TEXW.tex);
+  gl.uniform1i(U.uSrc, 0);
+  gl.uniform2f(U.uOut, CW, CH);
+  gl.uniform1f(U.uFrame, S.frame);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindVertexArray(vao);
+}
+
+function resize(){
+  const w = Math.max(320, window.innerWidth), h = Math.max(240, window.innerHeight);
+  S.cssW = w; S.cssH = h;
+  canvas.width = w; canvas.height = h;          // 1:1 CSS px, software raster
+  const iw = clamp(Math.round(w * S.scale / 2) * 2, 160, 640);
+  const ih = clamp(Math.round(h * S.scale / 2) * 2, 100, 400);
+  sizeTarget(iw, ih);
+  ui.vRes.textContent = f2(S.scale) + " · " + iw + "×" + ih;
+  ui.tRes.textContent = iw + "×" + ih;
+  S.dirty = true;
+}
+
+/* drain-based timing: gl.finish() does not sync on this driver */
+function measureMs(n){
+  const px = new Uint8Array(4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);       // drain
+  const t0 = performance.now();
+  for(let i=0;i<n;i++) draw();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);       // sync
+  return (performance.now() - t0) / n;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   8. loop — fixed delta, deterministic
+   ══════════════════════════════════════════════════════════════════ */
+// window.__probe is a LIVE object: the harness reads it after __ready, so every
+// field is refreshed each frame rather than snapshotted once.
+const probe = window.__probe = {
+  ready:false, preset:"", ok:false, errorLine:null, compileMs:0,
+  fps:0, frames:0, glMs:0, t:0, scale:0.5, rate:1, freeze:false,
+  internal:"", css:"", uniforms:[], extColorBufferFloat: !!extFloat,
+  backend: gl.getParameter(gl.RENDERER),
+  glError: gl.getError()
+};
+let lastT = 0, fpsAcc = 0, fpsN = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  if(lastT) { fpsAcc += 1000/Math.max(1, now-lastT); fpsN++; }
+  lastT = now;
+  const animating = !S.freeze && S.rate > 0;
+  if(animating) S.t += DT * S.rate;
+  const drew = S.dirty || animating;
+  if(drew){
+    draw();
+    S.frame++;
+    S.dirty = false;
+    if(S.frame === 3) { S.glMs = measureMs(3); }
+  } else {
+    // frozen: report the rAF cadence we are *not* drawing at, not 0 fps
+    fpsAcc = 0; fpsN = 0;
+    S.fps = 0;
+  }
+  if(fpsN >= 6){ S.fps = fpsAcc/fpsN; fpsAcc = 0; fpsN = 0; }
+  if(S.frame >= 3 && !S.ready){ S.ready = true; window.__ready = true; }
+  probe.ready       = S.ready;
+  probe.preset      = PRESETS[S.preset].id;
+  probe.ok          = S.ok;
+  probe.errorLine   = S.error;
+  probe.compileMs   = +S.compileMs.toFixed(1);
+  probe.t           = +S.t.toFixed(4);
+  probe.frames      = S.frame;
+  probe.fps         = +S.fps.toFixed(1);
+  probe.glMs        = +S.glMs.toFixed(1);
+  probe.scale       = S.scale;
+  probe.rate        = S.rate;
+  probe.freeze      = S.freeze;
+  probe.internal    = IW + "x" + IH;
+  probe.css         = S.cssW + "x" + S.cssH;
+  probe.uniforms    = S.uniforms.map(u => u.name);
+  probe.glError     = gl.getError();
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   9. UI wiring
+   ══════════════════════════════════════════════════════════════════ */
+PRESETS.forEach((p, i) => {
+  const b = document.createElement("button");
+  b.className = "chip"; b.textContent = p.name; b.title = p.tech;
+  b.addEventListener("click", () => loadPreset(i));
+  ui.chips.appendChild(b);
+});
+function markChip(){
+  [...ui.chips.children].forEach((c, i) => c.classList.toggle("on", i === S.preset));
+}
+
+function loadPreset(i, keepTime){
+  S.preset = i;
+  const p = PRESETS[i];
+  ui.src.value = p.src;
+  gutter();
+  S.scale = p.res;
+  ui.rRes.value = p.res; paintRange(ui.rRes);
+  ui.ctlSp.textContent = p.tech;
+  markChip();
+  resize();
+  // seed the log with the preset banner, then let compile() write over it —
+  // that way a failure is the last thing in the panel, which is what you read.
+  logLines('<span class="m-info">preset: <b>' + p.name + '</b> — ' + esc(p.tech) + '</span>\n' +
+           '<span class="m-hint">' + p.src.split("\n").length + ' lines loaded into the editor</span>');
+  if(!keepTime) { S.t = 6.0; S.dirty = true; }
+  compile();
+}
+
+function gutter(){
+  const n = ui.src.value.split("\n").length;
+  let s = "";
+  for(let i=1;i<=n;i++) s += i + "\n";
+  ui.gut.textContent = s;
+  ui.edSp.textContent = n + " lines";
+  // the textarea's own scroll is the source of truth; the gutter follows it
+  ui.gut.scrollTop = ui.src.scrollTop;
+  ui.gut.scrollLeft = ui.src.scrollLeft;
+}
+function syncScroll(){ ui.gut.scrollTop = ui.src.scrollTop; ui.gut.scrollLeft = ui.src.scrollLeft; }
+
+let debounce = 0;
+ui.src.addEventListener("input", () => {
+  gutter(); syncScroll();
+  clearTimeout(debounce);
+  ui.status.textContent = "editing — compiling…"; ui.status.classList.remove("err");
+  debounce = setTimeout(() => compile(), 600);
+});
+ui.src.addEventListener("scroll", syncScroll);
+ui.src.addEventListener("keydown", e => {
+  if(e.key === "Tab"){
+    e.preventDefault();
+    const t = ui.src, s = t.selectionStart, en = t.selectionEnd;
+    t.value = t.value.slice(0, s) + "  " + t.value.slice(en);
+    t.selectionStart = t.selectionEnd = s + 2;
+    gutter(); compile();
+  } else if((e.ctrlKey || e.metaKey) && e.key === "Enter"){
+    e.preventDefault(); clearTimeout(debounce); compile();
+  }
+});
+
+function paintRange(inp){
+  const a = parseFloat(inp.min), b = parseFloat(inp.max);
+  inp.style.setProperty("--fill", ((parseFloat(inp.value)-a)/(b-a)*100).toFixed(1) + "%");
+}
+ui.rRes.addEventListener("input", () => { S.scale = parseFloat(ui.rRes.value); paintRange(ui.rRes); resize(); });
+ui.rRate.addEventListener("input", () => {
+  S.rate = parseFloat(ui.rRate.value); paintRange(ui.rRate);
+  ui.vRate.textContent = S.rate === 0 ? "0 (frozen)" : "×" + f2(S.rate);
+  S.dirty = true;
+});
+$("#bFreeze").addEventListener("click", e => {
+  S.freeze = !S.freeze; e.currentTarget.setAttribute("aria-pressed", String(S.freeze)); S.dirty = true;
+});
+$("#bStep").addEventListener("click", () => { S.t += DT; S.dirty = true; });
+$("#bReset").addEventListener("click", () => loadPreset(S.preset));
+$("#bBreak").addEventListener("click", () => {   // demo the error path
+  const v = ui.src.value;
+  const broken = v.replace("fragColor = vec4", "fragColour = vec4");
+  ui.src.value = broken !== v ? broken : v + "\nundefined_fn(1.0);\n";
+  gutter(); clearTimeout(debounce); compile();
+});
+
+window.addEventListener("resize", resize);
+window.addEventListener("pointermove", e => {
+  S.mouse[0] = clamp(e.clientX / S.cssW, 0, 1);
+  S.mouse[1] = clamp(1 - e.clientY / S.cssH, 0, 1);
+  S.dirty = true;
+});
+window.addEventListener("pointerdown", () => { S.press = 1; S.dirty = true; });
+window.addEventListener("pointerup",   () => { S.press = 0; S.dirty = true; });
+window.addEventListener("keydown", e => {
+  if(e.target === ui.src) return;
+  const k = e.key.toLowerCase();
+  if(k >= "1" && k <= String(PRESETS.length)) loadPreset(parseInt(k,10)-1);
+  if(k === "h") document.body.classList.toggle("bare");
+  if(k === "f") $("#bFreeze").click();
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   10. probe + control surface
+   ══════════════════════════════════════════════════════════════════ */
+window.__probe = probe;   // live object, refreshed every frame below
+
+/* ══════════════════════════════════════════════════════════════════
+   11. boot
+   ══════════════════════════════════════════════════════════════════ */
+function readHash(){
+  const h = (location.hash || "").replace(/^#/, "").toLowerCase();
+  const i = PRESETS.findIndex(p => p.id === h || p.name === h);
+  return i < 0 ? null : i;
+}
+paintRange(ui.rRes); paintRange(ui.rRate);
+ui.vRate.textContent = "×" + f2(S.rate);
+ui.vRes.textContent = f2(S.scale);
+loadPreset(readHash() !== null ? readHash() : 1);
+requestAnimationFrame(loop);
+setTimeout(() => { const h = $("#hint"); if(h) h.style.opacity = "0"; }, 9000);
+
+window.__lab = {
+  setPreset: n => loadPreset(typeof n === "string"
+    ? PRESETS.findIndex(p => p.id === n || p.name === n) : n, true),
+  setSource: (src, now) => { ui.src.value = src; gutter(); clearTimeout(debounce);
+                             if(now !== false) compile(); },
+  setUniform: (k, v) => { S.values[k] = v; S.dirty = true; buildSliders(); },
+  freeze: f => { S.freeze = !!f; S.dirty = true; },
+  seek: t => { S.t = t; S.dirty = true; },
+  probe: () => probe,
+  bench: () => { S.glMs = measureMs(3); probe.glMs = +S.glMs.toFixed(1); return S.glMs; },
+  sample: (x, y, w2, h2) => {   // read pixels from the presented frame
+    draw();
+    const px = new Uint8Array(w2*h2*4);
+    gl.readPixels(x, y, w2, h2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let s = 0; for(let i=0;i<px.length;i+=4) s += (px[i]+px[i+1]+px[i+2])/3;
+    return s / (w2*h2);
+  }
+};
+})();
+</script>
+</body>
+</html>

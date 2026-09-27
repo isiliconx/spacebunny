@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cloth — mass-spring lattice with progressive tearing</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:#04060b; overflow:hidden; }
+  body {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    color:#c3d1e6; -webkit-font-smoothing:antialiased;
+  }
+  #gl { position:fixed; inset:0; width:100%; height:100%; display:block; cursor:crosshair; touch-action:none; }
+  #ring {
+    position:fixed; width:26px; height:26px; margin:-13px 0 0 -13px; border-radius:50%;
+    border:1px solid rgba(255,196,120,.8); box-shadow:0 0 14px rgba(255,170,80,.45), inset 0 0 8px rgba(255,170,80,.16);
+    pointer-events:none; display:none; z-index:6;
+  }
+  .p { position:fixed; z-index:5; background:rgba(7,10,17,.74); border:1px solid rgba(146,172,210,.17); padding:11px 13px 12px; }
+  #ttl { top:16px; left:16px; max-width:400px; }
+  #ttl h1 { margin:0 0 3px; font-size:15px; letter-spacing:.20em; font-weight:600; color:#f2e6d1; text-transform:uppercase; }
+  #ttl h1 em { font-style:normal; color:#ffb454; }
+  #tech { margin:0; font-size:10.5px; line-height:1.7; letter-spacing:.045em; color:#7e93b2; text-transform:uppercase; }
+  #tech b { color:#79c6e8; font-weight:500; }
+  #ctl { top:16px; right:16px; width:214px; }
+  #ctl .hd { font-size:10px; letter-spacing:.22em; color:#6f7f9a; margin-bottom:9px; text-transform:uppercase; }
+  .row { display:flex; justify-content:space-between; align-items:baseline; margin:0 0 1px; }
+  .row span { font-size:10px; letter-spacing:.11em; color:#8fa2bd; text-transform:uppercase; }
+  .row b { font-size:11px; font-weight:600; color:#ffb454; font-variant-numeric:tabular-nums; }
+  input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:14px; margin:0 0 8px;
+    background:transparent; cursor:ew-resize; display:block; }
+  input[type=range]::-webkit-slider-runnable-track { height:2px; background:rgba(150,178,214,.26); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:9px; height:13px; margin-top:-5.5px;
+    border-radius:1px; background:#ffb454; box-shadow:0 0 7px rgba(255,170,70,.5); }
+  input[type=range]::-moz-range-track { height:2px; background:rgba(150,178,214,.26); }
+  input[type=range]::-moz-range-thumb { width:9px; height:13px; border:0; border-radius:1px; background:#ffb454; }
+  .btns { display:flex; gap:5px; margin-top:3px; }
+  button { flex:1; font:inherit; font-size:9.5px; letter-spacing:.13em; padding:6px 0; cursor:pointer;
+    color:#b9cbe4; background:rgba(120,150,190,.10); border:1px solid rgba(146,172,210,.24);
+    text-transform:uppercase; transition:background .12s, color .12s; }
+  button:hover { background:rgba(255,180,84,.17); color:#ffd9a0; border-color:rgba(255,180,84,.45); }
+  button.on { background:rgba(255,180,84,.26); color:#ffe6bd; border-color:rgba(255,180,84,.6); }
+  #st { bottom:16px; left:16px; min-width:214px; }
+  #st .k { font-size:9.5px; letter-spacing:.16em; color:#6f7f9a; text-transform:uppercase; margin-bottom:8px; }
+  #st table { border-collapse:collapse; }
+  #st td { font-size:11px; padding:1.5px 0; font-variant-numeric:tabular-nums; }
+  #st td.n { color:#93a7c2; letter-spacing:.1em; padding-right:18px; }
+  #st td.v { color:#e6dcc9; text-align:right; }
+  #st td.v.hot { color:#ff7a45; }
+  #hint { position:fixed; right:18px; bottom:18px; z-index:5; text-align:right;
+    font-size:10px; letter-spacing:.16em; color:#6d7d97; text-transform:uppercase; line-height:1.8; }
+  #hint b { color:#ffb454; font-weight:500; }
+  @media (max-width:780px){ #ttl{max-width:56vw} #ctl{width:170px} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="ring"></div>
+
+<div class="p" id="ttl">
+  <h1>Cloth <em>/</em> progressive tearing</h1>
+  <p id="tech">Mass&#8209;spring lattice &middot; <b>Verlet</b> integration &middot; Gauss&#8209;Seidel <b>constraint projection</b> &middot;
+    structural + shear + bend springs &middot; <b>strain&#8209;damage</b> fracture &middot; two&#8209;sided shading,
+    Blinn&#8209;Phong + fibre transmission</p>
+</div>
+
+<div class="p" id="ctl">
+  <div class="hd">Simulation</div>
+  <div class="row"><span>Resolution</span><b id="vRes">26</b></div>
+  <input type="range" id="sRes" min="14" max="40" step="2" value="26">
+  <div class="row"><span>Stiffness</span><b id="vStf">0.92</b></div>
+  <input type="range" id="sStf" min="10" max="100" step="1" value="92">
+  <div class="row"><span>Iterations</span><b id="vItr">14</b></div>
+  <input type="range" id="sItr" min="2" max="22" step="1" value="14">
+  <div class="row"><span>Gravity</span><b id="vGrv">16.0</b></div>
+  <input type="range" id="sGrv" min="0" max="300" step="1" value="160">
+  <div class="row"><span>Wind</span><b id="vWnd">10.0</b></div>
+  <input type="range" id="sWnd" min="0" max="260" step="1" value="100">
+  <div class="row"><span>Tear @ strain</span><b id="vTar">55%</b></div>
+  <input type="range" id="sTar" min="15" max="140" step="1" value="55">
+  <div class="btns">
+    <button id="bPause">Pause</button>
+    <button id="bGust">Gust</button>
+    <button id="bReset">Reset</button>
+  </div>
+</div>
+
+<div class="p" id="st">
+  <div class="k">Telemetry</div>
+  <table>
+    <tr><td class="n">fps</td><td class="v" id="tFps">&mdash;</td></tr>
+    <tr><td class="n">particles</td><td class="v" id="tPts">&mdash;</td></tr>
+    <tr><td class="n">springs</td><td class="v" id="tSpr">&mdash;</td></tr>
+    <tr><td class="n">fractured</td><td class="v hot" id="tBrk">0</td></tr>
+    <tr><td class="n">max strain</td><td class="v" id="tStn">&mdash;</td></tr>
+    <tr><td class="n">loose fibres</td><td class="v" id="tFib">0</td></tr>
+  </table>
+</div>
+
+<div id="hint">Drag the sheet &mdash; haul hard to <b>tear</b> it<br>Seam&#8209;reinforced corners &middot; gravity &middot; gusting wind</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ===================================================================
+   0.  deterministic randomness
+   =================================================================== */
+function mulberry32(a){
+  return function(){
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+let rnd = mulberry32(0x51ED270B);   // re-seeded on every rebuild
+
+/* ===================================================================
+   1.  parameters + world
+   =================================================================== */
+const P = {
+  res: 26, stiff: 0.92, iters: 14, grav: 16.0, wind: 3.4, tear: 0.55
+};
+const CW = 1.66, CH = 1.50, TOP_Y = 0.74, FLOOR_Y = -0.94;
+const DT = 1/60, MAXV = 0.05, DAMP = 0.984, TEAR_RATE = 0.34;
+/* BEND_K is recorded per spring but NOT used by the solver, which applies one
+   global P.stiff to every member. Wiring it in (corr *= sStiff[s]) was tried
+   and reverted: at 0.30 the sheet loses its structural back and collapses --
+   luma 56.6 -> 14.2, 29 -> 97 fractured springs, max strain 1.01 -> 29.1.
+   Pleats come from SEED_RIPPLE instead. Keep this inert unless that tradeoff
+   is deliberately revisited. */
+const BEND_K = 0.30;        /* recorded per bend spring, currently not applied */
+const SEED_RIPPLE = 0.055;  /* out-of-plane imperfection that lets it pleat */
+/* the sheet is first draped from a rod, then dropped to its two corners,
+   then held under a stiff breeze with the tear threshold briefly lowered
+   so the opening frame already shows a frayed, propagating rip */
+const WIND_ROD = 240, WIND_REL = 70, WIND_BREEZE = 130, WIND_COOL = 45;
+const RIP_STEPS = 200, RIP_THR = 0.20, RIP_WIND = 14;
+const GUST_DUR = 1.30;
+const WX = 0.900, WY = 0.080, WZ = 0.428;   /* normalize(0.88, 0.08, 0.42) */
+const PX = -0.429, PZ =  0.903;              /* cross(W, up)  */
+
+let simT = 0, gust = 0, gustT = 0, paused = false;
+let grabbing = -1, grabD = 1, grabOx = 0, grabOy = 0, grabOz = 0;
+
+/* ===================================================================
+   2.  GL
+   =================================================================== */
+const canvas = document.getElementById('gl');
+let gl = canvas.getContext('webgl2', {antialias:false, alpha:false, depth:false})
+       || canvas.getContext('webgl',  {antialias:false, alpha:false, depth:false});
+if(!gl){ document.body.innerHTML = '<p style="padding:2em;color:#c3d1e6;font:13px monospace">WebGL unavailable</p>'; return; }
+
+let IW = 600, IH = 375;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  const cache = new Map();
+  p.u = new Proxy({}, { get:(t,k) => {
+    if(!cache.has(k)) cache.set(k, gl.getUniformLocation(p, k));
+    return cache.get(k);
+  }});
+  return p;
+}
+
+/* ---- camera ------------------------------------------------------- */
+const cam = { dist:3.4, x:0.16, y:0.02, fov:38*Math.PI/180, aspect:1.6, tanH:Math.tan(19*Math.PI/180) };
+const mvp = new Float32Array(16);
+const NEAR = 0.1, FAR = 24;
+function updateCamera(){
+  cam.tanH = Math.tan(cam.fov*0.5);
+  const halfH = 1.14, halfW = 0.88;
+  cam.dist = Math.max(halfH/cam.tanH, halfW/(cam.tanH*cam.aspect));
+  const f = 1/cam.tanH;
+  const p22 = (FAR+NEAR)/(NEAR-FAR), p23 = 2*FAR*NEAR/(NEAR-FAR);
+  mvp[0]=f/cam.aspect; mvp[1]=0;    mvp[2]=0;  mvp[3]=0;
+  mvp[4]=0;           mvp[5]=f;    mvp[6]=0;  mvp[7]=0;
+  mvp[8]=0;           mvp[9]=0;    mvp[10]=p22; mvp[11]=-1;
+  mvp[12]=-(f/cam.aspect)*cam.x; mvp[13]=-f*cam.y; mvp[14]=p23 - p22*cam.dist; mvp[15]=cam.dist;
+}
+const sp0 = [0,0];
+function project(x, y, z, out){
+  const w = cam.dist - z;
+  if(w < 0.08){ out[0] = -1e4; out[1] = -1e4; return false; }
+  out[0] = ((x - cam.x)/(cam.tanH*cam.aspect*w))*0.5 + 0.5;
+  out[1] = 0.5 - ((y - cam.y)/(cam.tanH*w))*0.5;
+  return true;
+}
+
+/* ---- shaders ------------------------------------------------------ */
+const P_CLOTH = program(
+`attribute vec3 aPos; attribute vec3 aNor; attribute vec2 aUV; attribute vec2 aEx;
+ uniform mat4 uMVP;
+ varying vec3 vN; varying vec3 vWP; varying vec2 vUV; varying vec2 vEx;
+ void main(){ vN=aNor; vWP=aPos; vUV=aUV; vEx=aEx; gl_Position = uMVP*vec4(aPos,1.0); }`,
+`precision highp float;
+ varying vec3 vN; varying vec3 vWP; varying vec2 vUV; varying vec2 vEx;
+ uniform vec3 uCam, uBase, uKey, uFill, uRim, uHot;
+ uniform float uWeave, uWfade;
+ void main(){
+  vec3 n = normalize(vN);
+  vec3 Vv = normalize(uCam - vWP);
+  if(!gl_FrontFacing) n = -n;
+
+  /* one woven thread per lattice cell; the normal detail fades as the
+     weave approaches the internal pixel grid so it never aliases */
+  vec2 w = vUV*uWeave*6.2831853;
+  float weave = (sin(w.x)*0.5+0.5)*(sin(w.y)*0.5+0.5);
+  n = normalize(n + vec3(cos(w.x), cos(w.y), 0.0)*(0.10*uWfade));
+  vec3 alb = uBase*(1.0 + (weave-0.5)*0.22*uWfade);
+
+  /* horizontal bands dyed into the warp */
+  float band = smoothstep(0.40,0.5,fract(vUV.y*3.0+0.12));
+  alb = mix(alb, alb*vec3(1.10,0.88,0.70), band*0.50);
+
+  /* hem: darker, double-stitched border along the three reinforced edges */
+  float de = min(min(vUV.x, 1.0-vUV.x), 1.0-vUV.y);
+  float hem = 1.0 - smoothstep(0.030, 0.052, de);
+  float sti = smoothstep(0.40,0.5,fract((de*90.0)))*hem;
+  alb = mix(alb, alb*0.66, hem*0.9);
+  alb += vec3(0.16,0.13,0.09)*sti*0.8;
+
+  float occ = clamp(vEx.y, 0.30, 1.15);
+  /* the sheet faces the camera, so the key has to sit on the camera side or
+     the whole front face is unlit. The back light is what the transmission
+     term reads, and it is what makes thin fabric glow. */
+  vec3 L  = normalize(vec3(-0.50, 0.62, 0.60));   /* key:  near, upper left  */
+  vec3 B  = normalize(vec3( 0.38, 0.30,-0.88));   /* back: far, low right   */
+  vec3 F  = normalize(vec3( 0.86,-0.42, 0.30));   /* fill: near, lower right */
+  float keyD  = max(0.0,(dot(n,L)+0.25)/1.25);
+  float fillD = max(0.0,(dot(n,F)+0.30)/1.30);
+  float backD = max(0.0,(dot(n,B)+0.20)/1.20);
+  float trans = pow(max(0.0, dot(-n,B)), 1.30);   /* light bleeding through  */
+  vec3  H  = normalize(L+Vv);
+  float spec = pow(max(0.0,dot(n,H)), 34.0);
+  float fres = pow(1.0-max(0.0,dot(n,Vv)), 3.0);
+
+  /* three-point rig. The key is strongly warm and does the modelling; the
+     fill is cool and only opens the shadow; the rim is a cold kicker that
+     separates the silhouette from the dark ground. */
+  vec3 col  = alb*uKey *keyD *1.05;               /* warm key, the modelling  */
+  col      += alb*uFill*fillD*0.80*occ;            /* cool fill, opens shadow */
+  col      += alb*uKey *trans*0.85*(0.55+0.45*occ);/* through-the-weave glow */
+  col      += alb*uRim *backD*0.55*occ;            /* cool separation on folds */
+  col      += uKey *spec *0.30;                    /* tight satin highlight  */
+  col      += uRim *fres*0.28;                     /* sheen at grazing angles */
+  col      += alb*0.16;                            /* ambient floor          */
+  col      += uRim *0.05;
+
+  /* fracture heat: strain glows before it lets go */
+  float h = clamp(vEx.x*0.85, 0.0, 1.0);
+  col = mix(col, uHot, h*h*0.75);
+  col += uHot*h*h*h*0.30;              /* the rip core is incandescent     */
+  gl_FragColor = vec4(col, 1.0);
+ }`);
+
+const P_BG = program(
+`attribute vec2 aP; varying vec2 vNdc;
+ void main(){ vNdc = aP; gl_Position = vec4(aP,0.999,1.0); }`,
+`precision highp float;
+ varying vec2 vNdc;
+ uniform vec2 uTan; uniform vec3 uCam; uniform float uFloor, uClothR; uniform vec2 uClothC;
+ void main(){
+  vec3 rd = normalize(vec3(vNdc.x*uTan.x, vNdc.y*uTan.y, -1.0));
+  vec3 col = mix(vec3(0.021,0.030,0.050), vec3(0.009,0.014,0.026), smoothstep(-0.25,0.85,rd.y));
+  col += vec3(0.028,0.040,0.068)*exp(-abs(rd.y)*6.0);
+  if(rd.y < -0.002){
+    float t = (uFloor - uCam.y)/rd.y;
+    if(t > 0.0){
+      vec3 p = uCam + rd*t;
+      vec2 d2 = p.xz - uClothC;
+      float d  = length(d2);
+      vec3 g = vec3(0.018,0.024,0.036);
+      g += vec3(0.20,0.13,0.062)*exp(-d*d/(uClothR*uClothR*1.8))*0.55; /* pool of light */
+      g *= 1.0 - 0.76*exp(-d*d/(uClothR*uClothR*0.40));                /* contact shadow */
+      g += vec3(0.024,0.036,0.058)*exp(-d*d*0.09)*0.28;
+      col = mix(g, vec3(0.020,0.028,0.048), (1.0-exp(-t*0.30))*0.9);
+    }
+  }
+  gl_FragColor = vec4(col,1.0);
+ }`);
+
+const P_QUAD = program(
+`attribute vec3 aPos; attribute float aA;
+ uniform mat4 uMVP; varying float vA;
+ void main(){ vA=aA; gl_Position = uMVP*vec4(aPos,1.0); }`,
+`precision mediump float;
+ varying float vA; uniform vec3 uCol;
+ void main(){ gl_FragColor = vec4(uCol*vA, vA); }`);
+
+const P_BLIT = program(
+`attribute vec2 aP; varying vec2 vUV;
+ void main(){ vUV = aP*0.5+0.5; gl_Position = vec4(aP,0.0,1.0); }`,
+`precision highp float;
+ varying vec2 vUV; uniform sampler2D uTex;
+ float h21(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+ void main(){
+  vec3 c = texture2D(uTex,vUV).rgb;
+  vec2 q = vUV-0.5;
+  c *= 1.0 - dot(q,q)*0.66;                                  /* vignette */
+  /* roll the highlights off per-channel so a hot key keeps its warmth
+     instead of clipping to white */
+  c = c/(vec3(1.0)+c*0.50);
+  c = clamp((c-0.10)*1.06+0.10, 0.0, 1.0);
+  c = pow(max(c,0.0), vec3(0.94));
+  c += (vec3(h21(gl_FragCoord.xy), h21(gl_FragCoord.xy+vec2(17.31,9.77)),
+             h21(gl_FragCoord.xy+vec2(41.13,63.29))) - 0.5)*0.026;
+  gl_FragColor = vec4(c,1.0);
+ }`);
+
+/* ---- buffers ------------------------------------------------------ */
+const quadVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+function fsQuad(p){
+  const l = gl.getAttribLocation(p, 'aP');
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+  gl.enableVertexAttribArray(l);
+  gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0);
+}
+const texScene = gl.createTexture(), fboScene = gl.createFramebuffer();
+function sizeScene(){
+  gl.bindTexture(gl.TEXTURE_2D, texScene);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, IW, IH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fboScene);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texScene, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+sizeScene();
+
+const bPos = gl.createBuffer(), bNor = gl.createBuffer(), bUV = gl.createBuffer(),
+      bEx = gl.createBuffer(), bIdx = gl.createBuffer(), bLin = gl.createBuffer();
+const MAX_QUADS = 520;
+const qData = new Float32Array(MAX_QUADS*24);
+const lin = { mesh:0, fib:0, fibN:0, str:0, strN:0 };
+
+/* ===================================================================
+   3.  the cloth
+   =================================================================== */
+let n = 0, nP = 0, ns = 0;
+let pos, prev, invM, nor, heat, extra, occ, uv, wph;
+let sA, sB, sRest, sAlive, sDmg, sFat, sStrain, sResist, sHard, nbrStart, nbrList;
+let sH, sV, cellAlive, idxArr, idxCount, meshDirty = true;
+let fibres = [];
+let maxStrain = 0, brokeTotal = 0, peakStrain = 0, simStep = 0;
+let ripStepsLeft = 0, ripRate = 1;
+let sDeg = null, nStruct = 0;
+const clothC = [0,0]; let clothR = 1;
+
+function build(){
+  rnd = mulberry32(0x51ED270B);
+  n = P.res|0; nP = n*n;
+  pos  = new Float32Array(nP*3); prev = new Float32Array(nP*3);
+  invM = new Float32Array(nP); nor = new Float32Array(nP*3);
+  heat = new Float32Array(nP); extra = new Float32Array(nP*2); occ = new Float32Array(nP);
+  uv   = new Float32Array(nP*2); wph = new Float32Array(nP);
+
+  const dx = CW/(n-1), dy = CH/(n-1);
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){
+    const id = j*n+i;
+    pos[id*3]   = -CW*0.5 + i*dx;
+    pos[id*3+1] = TOP_Y - j*dy;
+    pos[id*3+2] = SEED_RIPPLE*Math.sin(i/(n-1)*Math.PI*3.1)*Math.sin(j/(n-1)*Math.PI*1.3);
+    uv[id*2]    = i/(n-1);
+    uv[id*2+1]  = 1 - j/(n-1);
+    wph[id]     = i*0.62 + j*0.21 + rnd()*0.4;
+  }
+  prev.set(pos);
+  invM.fill(1); invM[0]=0; invM[n-1]=0;
+
+  const A=[], B=[], R=[], RES=[], HARD=[], sK=[];
+  sH = new Int32Array(n*n).fill(-1);
+  sV = new Int32Array(n*n).fill(-1);
+  /* A point pin is a stress singularity: the material right at it carries the
+     whole sheet. Reinforce a patch around each corner so the rip initiates in
+     the open field, not by unzipping the mount. */
+  const RAD = 2.6;
+  const pinPatch = (i,j) => {
+    const a = Math.hypot(i, j), b = Math.hypot(n-1-i, j);
+    return a < RAD || b < RAD;
+  };
+  const add = (a,b,rest,hard,resist,k) => {
+    A.push(a); B.push(b); R.push(rest); HARD.push(hard ? 1 : 0); RES.push(resist);
+    sK.push(k === undefined ? 1 : k);
+    return A.length-1;
+  };
+  const gi = id => id % n, gj = id => (id / n) | 0;
+  const hardAB = (a,b) => pinPatch(gi(a),gj(a)) && pinPatch(gi(b),gj(b));
+  for(let j=0;j<n;j++)     for(let i=0;i<n-1;i++){ const a=j*n+i,b=a+1;
+    sH[j*n+i] = add(a, b, dx, hardAB(a,b), 0.80); }
+  for(let j=0;j<n-1;j++)   for(let i=0;i<n;i++){ const a=j*n+i,b=a+n;
+    sV[j*n+i] = add(a, b, dy, hardAB(a,b), 0.80); }
+  const cd = Math.sqrt(dx*dx+dy*dy);
+  for(let j=0;j<n-1;j++) for(let i=0;i<n-1;i++){
+    const a=j*n+i; add(a,   (j+1)*n+i+1, cd, hardAB(a,(j+1)*n+i+1), 0.95);
+    add((j+1)*n+i, j*n+i+1,   cd, hardAB((j+1)*n+i, j*n+i+1), 0.95);
+  }
+  for(let j=0;j<n;j++)   for(let i=0;i<n-2;i++) add(j*n+i, j*n+i+2, 2*dx, 0, 3.0, BEND_K);
+  for(let j=0;j<n-2;j++) for(let i=0;i<n;i++)   add(j*n+i, (j+2)*n+i, 2*dy, 0, 3.0, BEND_K);
+
+  ns = A.length; nStruct = 2*n*(n-1);      /* the leading structural springs */
+  sA=new Int32Array(A); sB=new Int32Array(B); sRest=new Float32Array(R);
+  sAlive=new Uint8Array(ns).fill(1); sDmg=new Float32Array(ns); sFat=new Float32Array(ns);
+  sStrain=new Float32Array(ns); sResist=new Float32Array(RES); sHard=new Uint8Array(HARD);
+
+  const deg = new Int32Array(nP+1);
+  for(let s=0;s<ns;s++){ deg[sA[s]]++; deg[sB[s]]++; }
+  nbrStart = new Int32Array(nP+1);
+  let acc = 0; for(let i=0;i<nP;i++){ nbrStart[i]=acc; acc+=deg[i]; } nbrStart[nP]=acc;
+  nbrList = new Int32Array(acc);
+  const cur = nbrStart.slice(0, nP);
+  for(let s=0;s<ns;s++){ nbrList[cur[sA[s]]++]=s; nbrList[cur[sB[s]]++]=s; }
+
+  /* live structural degree: a particle with none left is a loose shred */
+  sDeg = new Int32Array(nP);
+  for(let j=0;j<n-1;j++) for(let i=0;i<n-1;i++){
+    sDeg[j*n+i]++; sDeg[j*n+i+1]++; sDeg[(j+1)*n+i]++; sDeg[(j+1)*n+i+1]++;
+  }
+
+  cellAlive = new Uint8Array((n-1)*(n-1));
+  idxArr = new Uint16Array((n-1)*(n-1)*6);
+  fibres = []; brokeTotal = 0; maxStrain = 0; peakStrain = 0; simT = 0; gustT = 0; gust = 0;
+  simStep = 0; ripStepsLeft = 0; ripRate = 1;
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos); gl.bufferData(gl.ARRAY_BUFFER, pos,   gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bNor); gl.bufferData(gl.ARRAY_BUFFER, nor,   gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bUV ); gl.bufferData(gl.ARRAY_BUFFER, uv,    gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bEx ); gl.bufferData(gl.ARRAY_BUFFER, extra, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIdx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxArr, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bLin); gl.bufferData(gl.ARRAY_BUFFER, qData, gl.DYNAMIC_DRAW);
+  meshDirty = true;
+  rebuildMesh(); computeNormals(); computeOcc(); packHeat();
+}
+
+function rebuildMesh(){
+  let c = 0;
+  for(let j=0;j<n-1;j++) for(let i=0;i<n-1;i++){
+    const h0=sH[j*n+i], h1=sH[j*n+i+1], v0=sV[j*n+i], v1=sV[(j+1)*n+i];
+    const ok = sAlive[h0] && sAlive[h1] && sAlive[v0] && sAlive[v1];
+    cellAlive[j*(n-1)+i] = ok ? 1 : 0;
+    if(ok){
+      const a=j*n+i, b=a+1, c2=a+n, d=a+n+1;
+      idxArr[c++]=a; idxArr[c++]=c2; idxArr[c++]=b;
+      idxArr[c++]=b; idxArr[c++]=c2; idxArr[c++]=d;
+    }
+  }
+  idxCount = c;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIdx);
+  gl.bufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, idxArr);
+  lin.mesh = idxCount/3;
+}
+
+function breakSpring(s){
+  const a = sA[s], b = sB[s];
+  sAlive[s] = 0; brokeTotal++;
+  if(s < nStruct){ sDeg[a]--; sDeg[b]--; }
+  if(!sHard[s]){ heat[a] = 1; heat[b] = 1; }
+  for(let k=nbrStart[a];k<nbrStart[a+1];k++){ const t=nbrList[k]; if(sFat[t] < 0.55) sFat[t] += 0.40; }
+  for(let k=nbrStart[b];k<nbrStart[b+1];k++){ const t=nbrList[k]; if(sFat[t] < 0.55) sFat[t] += 0.40; }
+  if(!sHard[s] && rnd() < 0.55 && fibres.length < 300)
+    fibres.push({ a: (rnd() < 0.5 ? a : b), len: 0.022 + rnd()*0.070, ph: rnd()*6.283, d: rnd()*2-1 });
+  meshDirty = true;
+}
+
+/* ---- one fixed-dt step ------------------------------------------- */
+function step(dt){
+  simT += dt; simStep++;
+  if(gustT > 0){ gustT -= dt; gust = Math.min(1, gustT/GUST_DUR); } else gust = 0;
+  if(ripStepsLeft > 0) ripStepsLeft--;
+  const tb = 0.40 + 0.72*(0.5+0.5*Math.sin(simT*2.3+0.7))*(0.5+0.5*Math.sin(simT*0.83+2.1))
+                 + 0.30*Math.sin(simT*5.7+1.3);
+  const d2 = dt*dt, g = P.grav, w = P.wind, sw = 0.78*tb;
+
+  for(let i=0;i<nP;i++){
+    const ix = i*3;
+    if(invM[i] === 0 || sDeg[i] <= 0){
+      prev[ix]=pos[ix]; prev[ix+1]=pos[ix+1]; prev[ix+2]=pos[ix+2]; continue;
+    }
+    let vx=(pos[ix]-prev[ix])*DAMP, vy=(pos[ix+1]-prev[ix+1])*DAMP, vz=(pos[ix+2]-prev[ix+2])*DAMP;
+    const facing = Math.abs(nor[ix]*WX + nor[ix+1]*WY + nor[ix+2]*WZ);
+    const base = (0.26+0.74*facing)*tb;
+    const ph = wph[i] + simT*3.3, c = Math.cos(ph), s2 = Math.sin(ph);
+    vx += (WX*base + PX*c*sw)*w*d2;
+    vy += (WY*base + s2*sw)*w*d2 - g*d2;
+    vz += (WZ*base + PZ*c*sw)*w*d2;
+    const l2 = vx*vx+vy*vy+vz*vz;
+    if(l2 > MAXV*MAXV){ const f = MAXV/Math.sqrt(l2); vx*=f; vy*=f; vz*=f; }
+    prev[ix]=pos[ix]; prev[ix+1]=pos[ix+1]; prev[ix+2]=pos[ix+2];
+    pos[ix]+=vx; pos[ix+1]+=vy; pos[ix+2]+=vz;
+  }
+
+  for(let i=0;i<nP;i++){
+    if(invM[i] === 0) continue;
+    const ix = i*3;
+    if(pos[ix+1] < FLOOR_Y){
+      pos[ix+1] = FLOOR_Y;
+      const vx = pos[ix]-prev[ix], vz = pos[ix+2]-prev[ix+2];
+      prev[ix] = pos[ix] - vx*0.5; prev[ix+1] = pos[ix+1]; prev[ix+2] = pos[ix+2] - vz*0.5;
+    }
+  }
+
+  const k = P.stiff;
+  for(let it=0; it<P.iters; it++){
+    for(let s=0;s<ns;s++){
+      if(!sAlive[s]) continue;
+      const a=sA[s], b=sB[s], ax=a*3, bx=b*3;
+      const dx=pos[bx]-pos[ax], dy=pos[bx+1]-pos[ax+1], dz=pos[bx+2]-pos[ax+2];
+      const dd = dx*dx+dy*dy+dz*dz;
+      if(dd < 1e-12) continue;
+      const wa=invM[a], wb=invM[b], ws=wa+wb;
+      if(ws === 0) continue;
+      const dl = Math.sqrt(dd);
+      const rest = sRest[s];
+      /* project the pair back toward `rest`: A slides along +d, B along -d */
+      /* A single projection moves a particle by at most k*rest (since
+         |corr*dl| = k|dl-rest|), so this cannot run away. */
+      let corr = (dl - rest)/dl * k;
+      const sa = corr*wa/ws, sb = corr*wb/ws;
+      pos[ax]+=dx*sa; pos[ax+1]+=dy*sa; pos[ax+2]+=dz*sa;
+      pos[bx]-=dx*sb; pos[bx+1]-=dy*sb; pos[bx+2]-=dz*sb;
+    }
+  }
+
+  /* The projection step can inject velocity of its own, and a shred that has
+     lost every structural spring has nothing left to hold it back. Re-clamp,
+     then leash everything to a generous box so nothing sails out of frame. */
+  for(let i=0;i<nP;i++){
+    if(invM[i] === 0 || sDeg[i] <= 0) continue;
+    const ix = i*3;
+    let vx=pos[ix]-prev[ix], vy=pos[ix+1]-prev[ix+1], vz=pos[ix+2]-prev[ix+2];
+    const l2 = vx*vx+vy*vy+vz*vz;
+    if(l2 > MAXV*MAXV){
+      const f = MAXV/Math.sqrt(l2);
+      vx*=f; vy*=f; vz*=f;
+      prev[ix]=pos[ix]-vx; prev[ix+1]=pos[ix+1]-vy; prev[ix+2]=pos[ix+2]-vz;
+    }
+    if(pos[ix]   < -3.4) pos[ix]   = -3.4; else if(pos[ix]   > 3.4) pos[ix]   = 3.4;
+    if(pos[ix+1] >  2.4) pos[ix+1] =  2.4;
+    if(pos[ix+2] < -2.2) pos[ix+2] = -2.2; else if(pos[ix+2] > 2.2) pos[ix+2] = 2.2;
+  }
+
+  maxStrain = 0;
+  const T = ripStepsLeft > 0 ? RIP_THR : P.tear;
+  for(let s=0;s<ns;s++){
+    if(!sAlive[s]) continue;
+    const a=sA[s], b=sB[s], ax=a*3, bx=b*3;
+    const dx=pos[bx]-pos[ax], dy=pos[bx+1]-pos[ax+1], dz=pos[bx+2]-pos[ax+2];
+    let st = Math.sqrt(dx*dx+dy*dy+dz*dz)/sRest[s] - 1;
+    if(st > maxStrain) maxStrain = st;
+    if(st > peakStrain) peakStrain = st;
+    sStrain[s] = st;
+    if(sHard[s]) continue;
+    if(st > 0.75) st = 0.75;
+    const tt = T*(1 - 0.55*sFat[s])/sResist[s];
+    if(st > tt){
+      sDmg[s] += (st-tt)*TEAR_RATE*ripRate;
+      if(sDmg[s] >= 1) breakSpring(s);
+    } else {
+      sDmg[s] -= 0.015; if(sDmg[s] < 0) sDmg[s] = 0;
+    }
+  }
+}
+
+function computeNormals(){
+  nor.fill(0);
+  for(let j=0;j<n-1;j++) for(let i=0;i<n-1;i++){
+    if(!cellAlive[j*(n-1)+i]) continue;
+    const a=(j*n+i)*3, b=a+3, c=a+n*3, d=c+3;
+    const e1x=pos[c]-pos[a],   e1y=pos[c+1]-pos[a+1],   e1z=pos[c+2]-pos[a+2];
+    const e2x=pos[b]-pos[a],   e2y=pos[b+1]-pos[a+1],   e2z=pos[b+2]-pos[a+2];
+    const nx=e1y*e2z-e1z*e2y, ny=e1z*e2x-e1x*e2z, nz=e1x*e2y-e1y*e2x;
+    nor[a]+=nx; nor[a+1]+=ny; nor[a+2]+=nz;
+    nor[b]+=nx; nor[b+1]+=ny; nor[b+2]+=nz;
+    nor[c]+=nx; nor[c+1]+=ny; nor[c+2]+=nz;
+    nor[d]+=nx; nor[d+1]+=ny; nor[d+2]+=nz;
+  }
+  for(let i=0;i<nP;i++){
+    const ix=i*3, l=Math.sqrt(nor[ix]*nor[ix]+nor[ix+1]*nor[ix+1]+nor[ix+2]*nor[ix+2]);
+    if(l > 1e-9){ nor[ix]/=l; nor[ix+1]/=l; nor[ix+2]/=l; } else { nor[ix]=0; nor[ix+1]=0; nor[ix+2]=1; }
+  }
+  let cx=0, cz=0, ext=0;
+  for(let i=0;i<nP;i++){ cx+=pos[i*3]; cz+=pos[i*3+2]; }
+  cx/=nP; cz/=nP;
+  for(let i=0;i<nP;i++){ const d=pos[i*3]-cx; if(Math.abs(d)>ext) ext=Math.abs(d); }
+  clothC[0]=cx; clothC[1]=cz; clothR=Math.max(0.35, ext*1.3);
+}
+
+function ndot(ix, kx){
+  const dx=pos[kx]-pos[ix], dy=pos[kx+1]-pos[ix+1], dz=pos[kx+2]-pos[ix+2];
+  const l=Math.sqrt(dx*dx+dy*dy+dz*dz);
+  return l < 1e-9 ? 0 : (nor[ix]*dx+nor[ix+1]*dy+nor[ix+2]*dz)/l;
+}
+function computeOcc(){
+  for(let j=0;j<n;j++) for(let i=0;i<n;i++){
+    const id=j*n+i, ix=id*3;
+    let acc=0, cnt=0;
+    if(i>0){    acc+=ndot(ix, ix-3);      cnt++; }
+    if(i<n-1){  acc+=ndot(ix, ix+3);      cnt++; }
+    if(j>0){    acc+=ndot(ix, ix-n*3);    cnt++; }
+    if(j<n-1){  acc+=ndot(ix, ix+n*3);    cnt++; }
+    occ[id] = cnt ? (0.5 + 0.5*acc/cnt) : 0.5;
+  }
+}
+function packHeat(){
+  const T = ripStepsLeft > 0 ? RIP_THR : P.tear;
+  const lo = T*0.85, span = Math.max(0.02, T*0.30);
+  for(let i=0;i<nP;i++){ extra[i*2]=0; extra[i*2+1]=0.45+0.55*occ[i]; }
+  for(let s=0;s<ns;s++){
+    if(!sAlive[s]) continue;
+    const g = (sStrain[s]-lo)/span;
+    if(g <= 0) continue;
+    const a=sA[s], b=sB[s];
+    if(g > extra[a*2]) extra[a*2]=g;
+    if(g > extra[b*2]) extra[b*2]=g;
+  }
+  for(let i=0;i<nP;i++){
+    extra[i*2] = Math.min(1.0, extra[i*2]*0.55 + heat[i]*0.9);
+    if(heat[i] > 0){ heat[i] -= 0.014; if(heat[i] < 0) heat[i] = 0; }
+  }
+}
+
+/* ===================================================================
+   4.  atmosphere
+   =================================================================== */
+const MOTES = 80, STREAKS = 78;
+const motes = new Float32Array(MOTES*6);
+let streaks = [];
+function seedMotes(){
+  for(let i=0;i<MOTES;i++){
+    motes[i*6+0] = -3.2 + rnd()*6.4;
+    motes[i*6+1] = -1.35 + rnd()*2.7;
+    motes[i*6+2] = -0.9 + rnd()*2.1;
+    motes[i*6+3] = 0.010 + rnd()*0.026;
+    motes[i*6+4] = 0.10 + rnd()*0.30;
+    motes[i*6+5] = 0.006 + rnd()*0.018;
+  }
+}
+function seedStreaks(){
+  streaks = [];
+  for(let i=0;i<STREAKS;i++) streaks.push({
+    x: -2.6+rnd()*5.2, y: -1.30+rnd()*2.60, z: -0.8+rnd()*1.9,
+    L: 0.10+rnd()*0.30, sp: 0.45+rnd()*0.9, a: 0.05+rnd()*0.16
+  });
+}
+function drift(){
+  for(let i=0;i<MOTES;i++){
+    motes[i*6] += motes[i*6+5]*(0.4+P.wind*0.10);
+    motes[i*6+1] += Math.sin(simT*0.7+i)*0.00035;
+    motes[i*6+2] += Math.cos(simT*0.5+i*1.7)*0.00028;
+    if(motes[i*6] > 3.3) motes[i*6] = -3.3;
+  }
+  const ws = 0.35 + P.wind*0.16;
+  for(const s of streaks){
+    s.x += WX*s.sp*ws*DT; s.y += WY*s.sp*ws*DT; s.z += WZ*s.sp*ws*DT;
+    if(s.x > 2.7) s.x = -2.7;
+    if(s.y > 1.35) s.y = -1.35;
+    if(s.z > 1.25) s.z = -0.75;
+  }
+}
+
+/* screen-aligned quads, no allocation in the loop */
+let qOff = 0;
+const _cx=[0,0,0], _cy=[0,0,0], _cz=[0,0,0];
+function pushQuad(ax,ay,az, bx,by,bz, hw, a0, a1, ex,ey,ez){
+  if(qOff + 6 > MAX_QUADS*6) return;
+  const dx=bx-ax, dy=by-ay, dz=bz-az;
+  let sx=dy*(ez-az)-dz*(ey-ay), sy=dz*(ex-ax)-dx*(ez-az), sz=dx*(ey-ay)-dy*(ex-ax);
+  let l=Math.sqrt(sx*sx+sy*sy+sz*sz);
+  if(l < 1e-9){ sx=1; sy=0; sz=0; l=1; }
+  sx/=l; sy/=l; sz/=l;
+  _cx[0]=ax+sx*hw; _cy[0]=ay+sy*hw; _cz[0]=az+sz*hw;
+  _cx[1]=ax-sx*hw; _cy[1]=ay-sy*hw; _cz[1]=az-sz*hw;
+  _cx[2]=bx+sx*hw; _cy[2]=by+sy*hw; _cz[2]=bz+sz*hw;
+  _cx[3]=bx-sx*hw; _cy[3]=by-sy*hw; _cz[3]=bz-sz*hw;
+  const v = qData, o = qOff*4;
+  v[o]=_cx[0]; v[o+1]=_cy[0]; v[o+2]=_cz[0]; v[o+3]=a0;
+  v[o+4]=_cx[2]; v[o+5]=_cy[2]; v[o+6]=_cz[2]; v[o+7]=a0;
+  v[o+8]=_cx[1]; v[o+9]=_cy[1]; v[o+10]=_cz[1]; v[o+11]=a1;
+  v[o+12]=_cx[1]; v[o+13]=_cy[1]; v[o+14]=_cz[1]; v[o+15]=a1;
+  v[o+16]=_cx[2]; v[o+17]=_cy[2]; v[o+18]=_cz[2]; v[o+19]=a0;
+  v[o+20]=_cx[3]; v[o+21]=_cy[3]; v[o+22]=_cz[3]; v[o+23]=a1;
+  qOff += 6;
+}
+function buildLines(){
+  qOff = 0;
+  const cx = cam.x, cy = cam.y, cz = cam.dist;
+  lin.fib = 0; lin.fibN = 0;
+  for(const f of fibres){
+    const ix = f.a*3, ax=pos[ix], ay=pos[ix+1], az=pos[ix+2];
+    const sway = Math.sin(simT*2.6 + f.ph)*0.35 + 0.5;
+    const dx = f.d*0.55, dy = -0.55 - f.len*3.0 + sway*0.25, dz = WZ*0.5 + Math.cos(simT*2.1+f.ph)*0.3;
+    const L = Math.sqrt(dx*dx+dy*dy+dz*dz);
+    pushQuad(ax,ay,az, ax+dx/L*f.len, ay+dy/L*f.len, az+dz/L*f.len, 0.0024, 0.70, 0.10, cx,cy,cz);
+    lin.fibN++;
+  }
+  lin.str = qOff; lin.strN = 0;
+  const wa = Math.min(0.60, 0.035 + P.wind*0.030)*1.6;
+  for(const s of streaks){
+    pushQuad(s.x,s.y,s.z, s.x+WX*s.L, s.y+WY*s.L, s.z+WZ*s.L, 0.0026, wa*s.a, 0.0, cx,cy,cz);
+    lin.strN++;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, bLin);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, qData, 0, qOff*4);
+}
+
+/* ===================================================================
+   5.  draw
+   =================================================================== */
+const COL = { base:[0.86,0.63,0.44], key:[1.00,0.80,0.56], fill:[0.30,0.50,0.90],
+              rim:[0.38,0.80,1.00], hot:[1.00,0.24,0.06] };
+function draw(){
+  const cx = cam.x, cy = cam.y, cz = cam.dist;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fboScene);
+  gl.viewport(0,0,IW,IH);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+
+  gl.useProgram(P_BG); fsQuad(P_BG);
+  gl.uniform2f(P_BG.u.uTan, cam.tanH*cam.aspect, cam.tanH);
+  gl.uniform3f(P_BG.u.uCam, cx, cy, cz);
+  gl.uniform1f(P_BG.u.uFloor, FLOOR_Y);
+  gl.uniform2f(P_BG.u.uClothC, clothC[0], clothC[1]);
+  gl.uniform1f(P_BG.u.uClothR, clothR);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  /* opaque cloth first: additive layers then read through it like backlight */
+  gl.useProgram(P_CLOTH);
+  const lP=gl.getAttribLocation(P_CLOTH,'aPos'), lN=gl.getAttribLocation(P_CLOTH,'aNor'),
+        lU=gl.getAttribLocation(P_CLOTH,'aUV'),  lE=gl.getAttribLocation(P_CLOTH,'aEx');
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos); gl.enableVertexAttribArray(lP); gl.vertexAttribPointer(lP,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bNor); gl.enableVertexAttribArray(lN); gl.vertexAttribPointer(lN,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bUV ); gl.enableVertexAttribArray(lU); gl.vertexAttribPointer(lU,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bEx ); gl.enableVertexAttribArray(lE); gl.vertexAttribPointer(lE,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bIdx);
+  gl.uniformMatrix4fv(P_CLOTH.u.uMVP, false, mvp);
+  gl.uniform3f(P_CLOTH.u.uCam, cx, cy, cz);
+  gl.uniform3fv(P_CLOTH.u.uBase, COL.base);
+  gl.uniform3fv(P_CLOTH.u.uKey,  COL.key);
+  gl.uniform3fv(P_CLOTH.u.uFill, COL.fill);
+  gl.uniform3fv(P_CLOTH.u.uRim,  COL.rim);
+  gl.uniform3fv(P_CLOTH.u.uHot,  COL.hot);
+  gl.uniform1f(P_CLOTH.u.uWeave, n*0.92);
+  gl.uniform1f(P_CLOTH.u.uWfade, 0.85);
+  gl.drawElements(gl.TRIANGLES, idxCount, gl.UNSIGNED_SHORT, 0);
+
+  /* additive: fibres, wind streaks, dust */
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.useProgram(P_QUAD);
+  const lp = gl.getAttribLocation(P_QUAD,'aPos'), la = gl.getAttribLocation(P_QUAD,'aA');
+  gl.bindBuffer(gl.ARRAY_BUFFER, bLin);
+  gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp,3,gl.FLOAT,false,16,0);
+  gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la,1,gl.FLOAT,false,16,12);
+  gl.uniformMatrix4fv(P_QUAD.u.uMVP, false, mvp);
+
+  qOff = 0;
+  for(let i=0;i<MOTES;i++){
+    const x=motes[i*6], y=motes[i*6+1], z=motes[i*6+2], s=motes[i*6+3], a=motes[i*6+4];
+    pushQuad(x,y,z, x+0.002,y+0.002,z, s, a, a*0.22, cx,cy,cz);
+  }
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, qData, 0, qOff*4);
+  gl.uniform3f(P_QUAD.u.uCol, 0.60, 0.72, 0.95);
+  gl.drawArrays(gl.TRIANGLES, 0, qOff);
+
+  buildLines();
+  if(lin.fibN){
+    gl.uniform3f(P_QUAD.u.uCol, 0.95, 0.70, 0.42);
+    gl.drawArrays(gl.TRIANGLES, lin.fib, lin.fibN*6);
+  }
+  if(lin.strN){
+    gl.uniform3f(P_QUAD.u.uCol, 0.42, 0.62, 0.94);
+    gl.drawArrays(gl.TRIANGLES, lin.str, lin.strN*6);
+  }
+  gl.disable(gl.BLEND);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.useProgram(P_BLIT);
+  fsQuad(P_BLIT);
+  const lt = P_BLIT.u.uTex;
+  if(lt){ gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, texScene); gl.uniform1i(lt, 0); }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ===================================================================
+   6.  loop
+   =================================================================== */
+function upload(){
+  gl.bindBuffer(gl.ARRAY_BUFFER, bPos); gl.bufferSubData(gl.ARRAY_BUFFER, 0, pos);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bNor); gl.bufferSubData(gl.ARRAY_BUFFER, 0, nor);
+  gl.bindBuffer(gl.ARRAY_BUFFER, bEx ); gl.bufferSubData(gl.ARRAY_BUFFER, 0, extra);
+}
+let frames = 0, fps = 0, lastT = performance.now();
+
+function advance(){
+  step(DT);
+  computeNormals();
+  computeOcc();
+  packHeat();
+  drift();
+}
+
+function frame(){
+  if(meshDirty){ rebuildMesh(); meshDirty = false; }
+  if(!paused) advance();
+  upload();
+  draw();
+
+  frames++;
+  const now = performance.now();
+  if(now - lastT > 400){ fps = frames*1000/(now-lastT); frames = 0; lastT = now; }
+  window.__probe = {
+    fps: +fps.toFixed(2), step: Math.round(simT/DT), res: n, particles: nP, springs: ns,
+    fractured: brokeTotal, triangles: lin.mesh|0, fibres: lin.fibN,
+    maxStrain: +(maxStrain*100).toFixed(1), peakStrain: +(peakStrain*100).toFixed(1),
+    ripLeft: ripStepsLeft, stiffness: P.stiff, iters: P.iters,
+    gravity: P.grav, wind: P.wind, tear: P.tear, paused: paused, internal: IW+'x'+IH
+  };
+  if(!window.__ready) window.__ready = true;
+  requestAnimationFrame(frame);
+}
+
+/* ---- warm-up: drape it from a rod, drop to two pins, then open the
+       first rip with a scripted brief over-load ---------------------- */
+function warmUp(){
+  peakStrain = 0; simStep = 0;
+  /* 1. hang from the whole top edge so the drape develops under load */
+  invM.fill(1);
+  for(let i=0;i<n;i++) invM[i] = 0;
+  for(let i=0;i<WIND_ROD;i++) advance();
+  /* 2. let go of everything but the two reinforced corners -- RELEASE
+     PROGRESSIVELY. Dropping the whole hem at once lets the cloth free-fall
+     until the corners catch it, and that transient spikes the strain high
+     enough to tear the sheet and fold it into a streamer. Paying the hem out
+     over many steps keeps it under tension the whole way down. */
+  const relOrder = [];
+  for(let i=0;i<n;i++) relOrder.push(i);
+  relOrder.sort((a,b)=>Math.hypot(a-n*0.5,0) - Math.hypot(b-n*0.5,0));
+  for(let k=0;k<n;k++){
+    invM[relOrder[k]] = 1;
+    for(let i=0;i<Math.max(1,(WIND_REL/n)|0);i++) advance();
+  }
+  invM[0]=0; invM[n-1]=0;
+  for(let i=0;i<WIND_REL;i++) advance();
+  /* 3. a steady breeze, then the scripted tear event */
+  const w0 = P.wind; P.wind = w0*1.5;
+  for(let i=0;i<WIND_BREEZE;i++) advance();
+  P.wind = RIP_WIND;
+  ripStepsLeft = RIP_STEPS; ripRate = 1.0;
+  for(let i=0;i<RIP_STEPS;i++) advance();
+  ripStepsLeft = 0; ripRate = 1; P.wind = w0;
+  for(let i=0;i<WIND_COOL;i++) advance();
+  upload();
+}
+
+/* ===================================================================
+   7.  UI
+   =================================================================== */
+const el = id => document.getElementById(id);
+function bind(slider, out, key, fmt, rebuild, defer){
+  const s = el(slider), o = el(out);
+  const upd = () => {
+    P[key] = fmt(+s.value);
+    o.textContent = (key==='res' || key==='iters') ? String(P[key])
+                  : key==='tear' ? Math.round(P[key]*100)+'%' : P[key].toFixed(2);
+  };
+  let t = 0;
+  s.addEventListener('input', () => {
+    upd();
+    if(!rebuild) return;
+    clearTimeout(t);
+    if(defer) t = setTimeout(rebuildCloth, 130); else rebuildCloth();
+  });
+  upd();
+}
+bind('sRes','vRes','res',  v=>v, true, true);
+bind('sStf','vStf','stiff', v=>v/100);
+bind('sItr','vItr','iters', v=>v);
+bind('sGrv','vGrv','grav',  v=>v/10);
+bind('sWnd','vWnd','wind',  v=>v/10);
+bind('sTar','vTar','tear',  v=>v/100);
+
+function rebuildCloth(){
+  build(); seedMotes(); seedStreaks(); warmUp();
+}
+el('bReset').addEventListener('click', rebuildCloth);
+const bGust = el('bGust');
+bGust.addEventListener('click', () => { gustT = GUST_DUR; bGust.classList.add('on'); });
+setTimeout(() => bGust.classList.remove('on'), 700);
+const bPause = el('bPause');
+bPause.addEventListener('click', () => {
+  paused = !paused;
+  bPause.textContent = paused ? 'Resume' : 'Pause';
+  bPause.classList.toggle('on', paused);
+});
+
+/* ---- pointer ------------------------------------------------------ */
+const ring = el('ring'), sp = [0,0];
+function pick(px, py, rad){
+  let best = -1, bd = rad*rad;
+  for(let i=0;i<nP;i++){
+    if(invM[i] === 0) continue;
+    const z = cam.dist - pos[i*3+2];
+    if(z < 0.2) continue;
+    const sx = (pos[i*3]-cam.x)/(cam.tanH*cam.aspect*z)*0.5 + 0.5;
+    const sy = 0.5 - (pos[i*3+1]-cam.y)/(cam.tanH*z)*0.5;
+    const d = (sx-px)*(sx-px) + (sy-py)*(sy-py);
+    if(d < bd){ bd = d; best = i; }
+  }
+  return best;
+}
+function toWorld(px, py, depth){
+  const dx = (px-0.5)*2*cam.tanH*cam.aspect, dy = (0.5-py)*2*cam.tanH, dz = -1;
+  const l = Math.sqrt(dx*dx+dy*dy+dz*dz);
+  return [cam.x + dx/l*depth, cam.y + dy/l*depth, cam.dist + dz/l*depth];
+}
+canvas.addEventListener('pointerdown', e => {
+  const r = canvas.getBoundingClientRect();
+  const px = (e.clientX-r.left)/r.width, py = (e.clientY-r.top)/r.height;
+  const i = pick(px, py, 0.035);
+  if(i < 0) return;
+  grabbing = i; invM[i] = 0;
+  grabD = cam.dist - pos[i*3+2];
+  const w = toWorld(px, py, grabD);
+  grabOx = pos[i*3]-w[0]; grabOy = pos[i*3+1]-w[1]; grabOz = pos[i*3+2]-w[2];
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+  ring.style.display = 'block';
+  canvas.style.cursor = 'grabbing';
+  e.preventDefault();
+});
+canvas.addEventListener('pointermove', e => {
+  const r = canvas.getBoundingClientRect();
+  const px = (e.clientX-r.left)/r.width, py = (e.clientY-r.top)/r.height;
+  let i = -1;
+  if(grabbing >= 0){
+    i = grabbing;
+    const w = toWorld(px, py, grabD);
+    pos[grabbing*3]   = Math.max(-3.2, Math.min(3.2, w[0]+grabOx));
+    pos[grabbing*3+1] = Math.max(FLOOR_Y, Math.min(2.0, w[1]+grabOy));
+    pos[grabbing*3+2] = Math.max(-1.4, Math.min(1.6, w[2]+grabOz));
+    prev[grabbing*3] = pos[grabbing*3];
+    prev[grabbing*3+1] = pos[grabbing*3+1];
+    prev[grabbing*3+2] = pos[grabbing*3+2];
+  } else {
+    i = pick(px, py, 0.020);
+    canvas.style.cursor = i >= 0 ? 'grab' : 'crosshair';
+  }
+  if(i >= 0){
+    project(pos[i*3], pos[i*3+1], pos[i*3+2], sp);
+    ring.style.left = (sp[0]*r.width)+'px';
+    ring.style.top  = (sp[1]*r.height)+'px';
+    ring.style.display = 'block';
+  } else ring.style.display = 'none';
+});
+function release(e){
+  if(grabbing >= 0){ invM[grabbing] = 1; grabbing = -1; }
+  canvas.style.cursor = 'crosshair';
+  try{ canvas.releasePointerCapture(e.pointerId); }catch(_){}
+}
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+canvas.addEventListener('pointerleave', () => { if(grabbing < 0) ring.style.display = 'none'; });
+
+/* ---- resize ------------------------------------------------------- */
+function resize(){
+  const w = window.innerWidth, h = window.innerHeight;
+  canvas.style.width = w+'px'; canvas.style.height = h+'px';
+  const aspect = w/h;
+  /* Contract: the internal target must sit in 512x320..640x400. Scale a 600px
+     width by the real aspect and clamp, checking BOTH axes land in the band
+     (rounding one axis can push the other outside it). */
+  let iw = Math.round(600*aspect), ih = 360;
+  if(iw > 640){ iw = 640; ih = Math.round(640/aspect); }
+  if(iw < 512){ iw = 512; ih = Math.round(512/aspect); }
+  ih = Math.max(320, Math.min(400, ih));
+  iw = Math.max(512, Math.min(640, Math.round(ih*aspect)));
+  ih = Math.max(320, Math.min(400, Math.round(iw/aspect)));
+  /* compare against the canvas itself, not the cached values, or a stale
+     IW/IH makes this a no-op and the drawing buffer keeps its default 300x150 */
+  if(iw !== canvas.width || ih !== canvas.height){
+    canvas.width = iw; canvas.height = ih; sizeScene();
+  }
+  IW = iw; IH = ih;
+  cam.aspect = aspect;
+  updateCamera();
+}
+window.addEventListener('resize', resize);
+
+/* ---- telemetry ---------------------------------------------------- */
+const tFps=el('tFps'), tPts=el('tPts'), tSpr=el('tSpr'), tBrk=el('tBrk'), tStn=el('tStn'), tFib=el('tFib');
+setInterval(() => {
+  tFps.textContent = fps ? fps.toFixed(1) : '—';
+  tPts.textContent = nP;
+  tSpr.textContent = ns;
+  tBrk.textContent = brokeTotal;
+  tStn.textContent = (maxStrain*100).toFixed(2) + '%';
+  tFib.textContent = lin.fibN;
+}, 250);
+
+window.__probe = {};
+window.__sim = { P:P, reset:rebuildCloth,
+  get state(){ let lo=9,hi=-9,bad=0,minY=9,maxY=-9;
+    for(let i=0;i<nP;i++){ const x=pos[i*3],y=pos[i*3+1],z=pos[i*3+2];
+      if(!isFinite(x)||!isFinite(y)||!isFinite(z)){ bad++; continue; }
+      if(y<lo)lo=y; if(y>hi)hi=y; }
+    minY=lo; maxY=hi;
+    return { n:n, nP:nP, ns:ns, broke:brokeTotal, strain:+(maxStrain*100).toFixed(1),
+             peak:+(peakStrain*100).toFixed(1), tris:lin.mesh|0, step:simStep, bad:bad,
+             y:[+minY.toFixed(3),+maxY.toFixed(3)] }; },
+  internals(){ let lo=[9,9,9],hi=[-9,-9,-9];
+    for(let i=0;i<nP;i++)for(let k=0;k<3;k++){const v=pos[i*3+k];
+      if(v<lo[k])lo[k]=v; if(v>hi[k])hi[k]=v;}
+    const rows=[];
+    for(let j=0;j<n;j+=4){ let l=9,h=-9,dz=0;
+      for(let i=0;i<n;i++){const x=pos[(j*n+i)*3]; if(x<l)l=x; if(x>h)h=x;
+        dz=Math.max(dz,Math.abs(pos[(j*n+i)*3+2]));}
+      rows.push([+(h-l).toFixed(2),+dz.toFixed(2)]); }
+    let worst=-9, ws=-1;
+    for(let s=0;s<ns;s++){ if(!sAlive[s])continue;
+      const a=sA[s],b=sB[s],ax=a*3,bx=b*3;
+      const dx=pos[bx]-pos[ax],dy=pos[bx+1]-pos[ax+1],dz2=pos[bx+2]-pos[ax+2];
+      const st=Math.hypot(dx,dy,dz2)/sRest[s]-1;
+      if(st>worst){worst=st;ws=s;} }
+    return { AABB:{lo:lo.map(v=>+v.toFixed(2)),hi:hi.map(v=>+v.toFixed(2))},
+             rowWidthZ:rows, pos:pos, n:n, sA:sA, sB:sB, sRest:sRest,
+             sAlive:sAlive, worstStrain:+worst.toFixed(2), worstSpring:ws,
+             deadIsolated:(()=>{let c=0;for(let i=0;i<nP;i++)if(sDeg[i]<=0)c++;return c;})() };
+  } };
+
+
+/* ---- go ----------------------------------------------------------- */
+/* size the buffers before anything builds, so the first frame is correct */
+resize();
+window.addEventListener('load', resize);
+seedMotes(); seedStreaks();
+build();
+warmUp();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

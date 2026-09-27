@@ -1,0 +1,1058 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fractal Flames — colour-binned density estimation</title>
+<style>
+  :root{
+    --ink:#e8e4dc;
+    --dim:#8e9099;
+    --line:rgba(180,200,230,0.16);
+    --panel:rgba(9,11,17,0.72);
+    --hi:#ffd9a0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#05060a;}
+  body{
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  #view{position:fixed;inset:0;width:100%;height:100%;display:block;}
+  .panel{
+    position:fixed;
+    background:var(--panel);
+    border:1px solid var(--line);
+    padding:9px 11px;
+    pointer-events:none;
+    letter-spacing:0.02em;
+  }
+  .panel.live{pointer-events:auto}
+  #title{top:14px;left:14px;max-width:min(430px,46vw)}
+  h1{
+    margin:0 0 3px;font-size:15px;font-weight:600;
+    letter-spacing:0.30em;text-transform:uppercase;color:var(--ink);
+  }
+  h1 .dim{color:var(--hi)}
+  .tech{color:var(--dim);font-size:11px;line-height:1.5}
+  .tech b{color:#b9c6dd;font-weight:600}
+  #ctrl{top:14px;right:14px;width:236px}
+  #stats{bottom:14px;left:14px;min-width:232px}
+  #xf{bottom:14px;right:14px;width:236px}
+  .lbl{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:3px}
+  .grp{margin:0 0 7px}
+  .lbl b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:14px;
+    background:transparent;margin:0;cursor:ew-resize;display:block;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(200,215,240,0.22)}
+  input[type=range]::-moz-range-track{height:2px;background:rgba(200,215,240,0.22)}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:11px;height:11px;margin-top:-4.5px;border-radius:50%;
+    background:var(--hi);border:0;
+  }
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:var(--hi);border:0}
+  .btns{display:flex;gap:6px;margin-top:9px}
+  button{
+    flex:1;font:inherit;font-size:11px;letter-spacing:0.10em;
+    color:var(--ink);background:rgba(255,255,255,0.045);
+    border:1px solid var(--line);padding:6px 4px;cursor:pointer;text-transform:uppercase;
+  }
+  button:hover{background:rgba(255,217,160,0.14);border-color:rgba(255,217,160,0.42)}
+  button:active{background:rgba(255,217,160,0.26)}
+  .note{color:var(--dim);font-size:11px;margin-top:7px;line-height:1.5}
+  .xrow{display:flex;align-items:center;gap:6px;font-size:11px;padding:1.5px 0}
+  .sw{width:9px;height:9px;flex:0 0 9px;border:1px solid rgba(255,255,255,0.22)}
+  .xn{flex:0 0 62px;color:#c2cad9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .xv{flex:1;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hd{color:var(--hi);font-size:11px;letter-spacing:0.16em;margin-bottom:6px;text-transform:uppercase}
+  .rule{height:1px;background:var(--line);margin:8px 0 7px}
+  .stat{display:flex;justify-content:space-between;gap:12px;white-space:nowrap}
+  .stat b{color:var(--hi);font-weight:500;font-variant-numeric:tabular-nums}
+  .k{color:var(--dim)}
+  @media (max-width:900px){
+    #xf{display:none}
+    #ctrl{width:206px}
+    #title{max-width:40vw}
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div class="panel" id="title">
+  <h1>Fractal&nbsp;<span class="dim">Flames</span></h1>
+  <div class="tech">
+    <b>Chaos game</b> over 64 walkers &rarr; affine <b>&#8497;</b> + blended <b>variations</b>
+    &rarr; colour-binned <b>density histogram</b> (4&sup3; bins, trilinear splat)
+    &rarr; Reinhard tone map &rarr; gamma encode. Density keeps growing.
+  </div>
+</div>
+
+<div class="panel live" id="ctrl">
+  <div class="hd">Controls</div>
+
+  <div class="grp">
+    <div class="lbl"><span>brightness</span><b id="vExp">1.15</b></div>
+    <input id="sExp" type="range" min="0.25" max="3.5" step="0.01" value="1.15">
+  </div>
+  <div class="grp">
+    <div class="lbl"><span>gamma</span><b id="vGam">2.20</b></div>
+    <input id="sGam" type="range" min="1.0" max="3.4" step="0.01" value="2.2">
+  </div>
+  <div class="grp">
+    <div class="lbl"><span>colour cycle</span><b id="vCyc">0.00</b></div>
+    <input id="sCyc" type="range" min="0" max="1" step="0.01" value="0">
+  </div>
+  <div class="grp">
+    <div class="lbl"><span>vibrancy</span><b id="vVib">1.25</b></div>
+    <input id="sVib" type="range" min="0" max="2.2" step="0.01" value="1.25">
+  </div>
+  <div class="grp">
+    <div class="lbl"><span>zoom <span style="opacity:.6">(re-renders)</span></span><b id="vZoom">1.00</b></div>
+    <input id="sZoom" type="range" min="0.55" max="1.9" step="0.01" value="1">
+  </div>
+
+  <div class="btns">
+    <button id="bShuf" type="button">Shuffle</button>
+    <button id="bHeat" type="button">Reheat</button>
+  </div>
+  <div class="note">seed: <b id="presetName" style="color:var(--hi)">&mdash;</b><br>
+  keys <b style="color:var(--ink)">S</b> shuffle &middot; <b style="color:var(--ink)">H</b> reheat</div>
+</div>
+
+<div class="panel" id="stats">
+  <div class="hd">Density estimate</div>
+  <div class="stat"><span class="k">samples plotted</span><b id="oSamples">0</b></div>
+  <div class="stat"><span class="k">new samples / frame</span><b id="oRate">&mdash;</b></div>
+  <div class="stat"><span class="k">transforms / variations</span><b id="oXf">&mdash;</b></div>
+  <div class="stat"><span class="k">histogram bins</span><b id="oBins">&mdash;</b></div>
+  <div class="rule"></div>
+  <div class="stat"><span class="k">frame</span><b id="oFrame">0</b></div>
+  <div class="stat"><span class="k">fps</span><b id="oFps">&mdash;</b></div>
+  <div class="stat"><span class="k">bin occupancy</span><b id="oOcc">&mdash;</b></div>
+  <div class="stat"><span class="k">mean density / px</span><b id="oMean">&mdash;</b></div>
+  <div class="stat"><span class="k">hist checksum</span><b id="oHash">&mdash;</b></div>
+</div>
+
+<div class="panel" id="xf">
+  <div class="hd">Seeded transforms</div>
+  <div id="xlist"></div>
+  <div class="note" id="fnote">final xform &mdash;</div>
+</div>
+
+<script>
+"use strict";
+/* ===========================================================================
+   FRACTAL FLAMES  —  Scott Draves' flame algorithm (flam3 / Apophysis)
+   ---------------------------------------------------------------------------
+   Every transform is   x' = V_blend( a*x + b*y + c ,  d*x + e*y + f )
+   where V_blend is a weighted sum of non-linear "variations". A population of
+   walkers is iterated; after burn-in each point is deposited into a
+   colour-binned density histogram, which is tone mapped and gamma encoded.
+   Variation formulas transcribed from flam3's variations.c.
+   =========================================================================== */
+
+const HW = 640, HH = 400;        // internal render resolution (contract 4)
+const CB = 4, CB3 = CB * CB * CB; // colour bins per axis -> 4^3 = 64 per pixel
+const NPIX = HW * HH;
+const WALKERS = 64;              // population size
+const STEPS_PER_WALKER = 620;    // new samples per frame ~ 39 700
+const WARMUP_LOAD = 2_600_000;   // samples burned before the first frame
+const WARMUP_SHUFFLE = 1_100_000;
+
+/* ----------------------------------------------------------------- rng ---- */
+let rs = 0x2f6e2b1 >>> 0;                // mulberry32: two cold loads match
+function rnd() {
+  rs = (rs + 0x6d2b79f5) | 0;
+  let t = rs;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function rndInt(n) { return (rnd() * n) | 0; }
+function reseed(s) { rs = (s >>> 0) || 0x2f6e2b1; }
+
+/* --------------------------------------------------------- variations ---- */
+/* Each writes its unweighted result into VX / VY; the caller applies the
+   blend weight, exactly like flam3's `weight` argument inside each formula. */
+const EPS = 1e-9;
+let VX = 0, VY = 0;
+const clampT = (t) => (t > 1e4 ? 1e4 : t < -1e4 ? -1e4 : t);
+
+function vLinear(x, y) { VX = x; VY = y; }
+function vSinusoidal(x, y) { VX = Math.sin(x); VY = Math.sin(y); }
+function vSpherical(x, y) { const k = 1 / (x * x + y * y + EPS); VX = x * k; VY = y * k; }
+function vSwirl(x, y) {
+  const r2 = x * x + y * y, c1 = Math.sin(r2), c2 = Math.cos(r2);
+  VX = c1 * x - c2 * y; VY = c2 * x + c1 * y;
+}
+function vHorseshoe(x, y) {
+  const r = 1 / (Math.sqrt(x * x + y * y) + EPS);
+  VX = (x - y) * (x + y) * r; VY = 2 * x * y * r;
+}
+function vPolar(x, y) { VX = Math.atan2(x, y) / Math.PI; VY = Math.sqrt(x * x + y * y) - 1; }
+function vDisc(x, y) {
+  const a = Math.atan2(x, y) / Math.PI, r = Math.PI * Math.sqrt(x * x + y * y);
+  VX = Math.sin(r) * a; VY = Math.cos(r) * a;
+}
+function vSpiral(x, y) {
+  const r = Math.sqrt(x * x + y * y) + EPS, a = Math.atan2(x, y), r1 = 1 / r;
+  VX = r1 * (Math.cos(a) + Math.sin(r)); VY = r1 * (Math.sin(a) - Math.cos(r));
+}
+function vHyperbolic(x, y) {
+  const r = Math.sqrt(x * x + y * y) + EPS, a = Math.atan2(x, y);
+  VX = Math.sin(a) / r; VY = Math.cos(a) * r;
+}
+function vDiamond(x, y) {
+  const r = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  VX = Math.sin(a) * Math.cos(r); VY = Math.cos(a) * Math.sin(r);
+}
+function vHeart(x, y) {
+  const r = Math.sqrt(x * x + y * y), a = r * Math.atan2(x, y);
+  VX = r * Math.sin(a); VY = -r * Math.cos(a);
+}
+function vHandkerchief(x, y) {
+  const r = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  VX = r * Math.sin(a + r); VY = r * Math.cos(a - r);
+}
+function vEx(x, y) {
+  const r = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  const n0 = Math.sin(a + r), n1 = Math.cos(a - r);
+  const m0 = n0 * n0 * n0 * r, m1 = n1 * n1 * n1 * r;
+  VX = m0 + m1; VY = m0 - m1;
+}
+function vJulia(x, y) {
+  let a = 0.5 * Math.atan2(x, y);
+  if (rndInt(2)) a += Math.PI;
+  const r = Math.sqrt(Math.sqrt(x * x + y * y));
+  VX = r * Math.cos(a); VY = r * Math.sin(a);
+}
+function vBent(x, y) { VX = x < 0 ? x * 2 : x; VY = y < 0 ? y * 0.5 : y; }
+function vWaves(x, y, p) {
+  VX = x + p[0] * Math.sin(y * p[1]); VY = y + p[2] * Math.sin(x * p[3]);
+}
+function vEyefish(x, y) { const k = 2 / (Math.sqrt(x * x + y * y) + 1); VX = k * x; VY = k * y; }
+function vFisheye(x, y) { const k = 2 / (Math.sqrt(x * x + y * y) + 1); VX = k * y; VY = k * x; }
+function vPopcorn(x, y, p) {
+  VX = x + p[0] * Math.sin(clampT(Math.tan(3 * y)));
+  VY = y + p[1] * Math.sin(clampT(Math.tan(3 * x)));
+}
+function vExponential(x, y) {
+  const t = x < -20 ? -20 : x > 20 ? 20 : x - 1;
+  const dx = Math.exp(t), dy = Math.PI * y;
+  VX = dx * Math.cos(dy); VY = dx * Math.sin(dy);
+}
+function vPower(x, y) {
+  const a = Math.atan2(x, y), r = Math.pow(Math.sqrt(x * x + y * y), Math.sin(a));
+  VX = r * Math.cos(a); VY = r * Math.sin(a);
+}
+function vCosine(x, y) {
+  const yy = y < -5 ? -5 : y > 5 ? 5 : y, a = Math.PI * x;
+  VX = Math.cos(a) * Math.cosh(yy); VY = -Math.sin(a) * Math.sinh(yy);
+}
+function vRings(x, y, p) {
+  const dx = p[0] * p[0] + EPS, r0 = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  const r = ((r0 + dx) % (2 * dx)) - dx + r0 * (1 - dx);
+  VX = r * Math.cos(a); VY = r * Math.sin(a);
+}
+function vRings2(x, y, p) {
+  const r0 = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  const dx = p[0] * p[0] + EPS;
+  const r = r0 - 2 * dx * Math.floor((r0 + dx) / (2 * dx)) + r0 * (1 - dx);
+  VX = Math.sin(a) * r; VY = Math.cos(a) * r;
+}
+function vBlob(x, y, p) {
+  const r0 = Math.sqrt(x * x + y * y), a = Math.atan2(x, y);
+  const r = r0 * (p[0] + (p[1] - p[0]) * (0.5 + 0.5 * Math.sin(p[2] * a)));
+  VX = Math.sin(a) * r; VY = Math.cos(a) * r;
+}
+function vPdj(x, y, p) {
+  VX = Math.sin(p[0] * y) - Math.cos(p[1] * x);
+  VY = Math.sin(p[2] * x) - Math.cos(p[3] * y);
+}
+function vBubble(x, y) { const k = 1 / (0.25 * (x * x + y * y) + 1); VX = k * x; VY = k * y; }
+function vJulian(x, y, p) {
+  const t = rndInt(p[0] | 0);
+  const th = (Math.atan2(y, x) + 2 * Math.PI * t) / p[1];
+  const r = Math.pow(x * x + y * y, p[2]);
+  VX = r * Math.cos(th); VY = r * Math.sin(th);
+}
+function vJuliascope(x, y, p) {
+  const t = rndInt(p[0] | 0);
+  const ax = Math.atan2(y, x);
+  const th = ((t & 1) === 0 ? 2 * Math.PI * t + ax : 2 * Math.PI * t - ax) / p[1];
+  const r = Math.pow(x * x + y * y, p[2]);
+  VX = r * Math.cos(th); VY = r * Math.sin(th);
+}
+function vCross(x, y) { const s = x * x - y * y, r = Math.sqrt(1 / (s * s + EPS)); VX = x * r; VY = y * r; }
+function vButterfly(x, y) {
+  const y2 = 2 * y;
+  const r = 1.3029400317411198 * Math.sqrt(Math.abs(y * x) / (EPS + x * x + y2 * y2));
+  VX = r * x; VY = r * y2;
+}
+function vFan(x, y, p) {
+  const dx = Math.PI * (p[0] * p[0] + EPS), h = dx * 0.5;
+  let a = Math.atan2(x, y);
+  a += ((a + p[1]) % dx > h) ? -h : h;
+  const r = Math.sqrt(x * x + y * y);
+  VX = Math.cos(a) * r; VY = Math.sin(a) * r;
+}
+function vPerspective(x, y, p) { const d = p[0], t = 1 / (d - y); VX = d * x * t; VY = y * t; }
+function vCylinder(x, y) { VX = Math.sin(x); VY = y; }
+function vMobius(x, y, p) {
+  const a = p[0], b = p[1], c = p[2], d = p[3];
+  const den = c * x + d * y + 1;
+  VX = (a * x + b * y) / den; VY = (b * x - a * y) / den;
+}
+
+const VNAME = {
+  linear: vLinear, sinusoidal: vSinusoidal, spherical: vSpherical, swirl: vSwirl,
+  horseshoe: vHorseshoe, polar: vPolar, disc: vDisc, spiral: vSpiral,
+  hyperbolic: vHyperbolic, diamond: vDiamond, heart: vHeart, handkerchief: vHandkerchief,
+  ex: vEx, julia: vJulia, bent: vBent, waves: vWaves, eyefish: vEyefish, fisheye: vFisheye,
+  popcorn: vPopcorn, exponential: vExponential, power: vPower, cosine: vCosine,
+  rings: vRings, rings2: vRings2, blob: vBlob, pdj: vPdj, bubble: vBubble,
+  julian: vJulian, juliascope: vJuliascope, cross: vCross, butterfly: vButterfly,
+  fan: vFan, perspective: vPerspective, cylinder: vCylinder, mobius: vMobius,
+};
+
+/* ------------------------------------------------------------ palettes ---- */
+/* 8 anchors at the corners of colour space; the 4x4x4 palette LUT is their
+   trilinear blend, so a transform's colour coordinate lands on a smooth 3-D
+   colour field rather than on a 1-D ramp.  Index = (r<<2)|(g<<1)|b.          */
+const PALETTES = [
+  { name: "AURORA VEIL",
+    anchors: [ [10,9,24], [214,62,34], [26,132,120], [40,62,168],
+               [255,186,90], [196,58,132], [86,208,196], [255,236,200] ] },
+  { name: "EMBER VELVET",
+    anchors: [ [14,7,12], [232,74,26], [120,34,18], [72,22,60],
+               [255,176,62], [226,66,96], [186,60,24], [255,232,186] ] },
+  { name: "ABYSSAL",
+    anchors: [ [6,12,20], [24,96,190], [10,140,150], [30,40,150],
+               [120,226,226], [40,128,220], [70,200,176], [226,248,255] ] },
+  { name: "ORCHID ENGINE",
+    anchors: [ [13,6,22], [216,44,132], [58,120,190], [110,44,200],
+               [140,226,190], [252,122,168], [92,196,150], [250,224,244] ] },
+  { name: "BRASS FILIGREE",
+    anchors: [ [11,10,8], [176,108,30], [34,118,100], [54,78,120],
+               [255,206,118], [156,92,22], [120,200,176], [255,246,222] ] },
+  { name: "NOCTURNAL GARDEN",
+    anchors: [ [8,10,12], [40,190,128], [24,66,96], [122,46,168],
+               [244,118,158], [56,152,200], [138,232,190], [236,252,246] ] },
+];
+
+/* ------------------------------------------------ seeded transform sets ---- */
+/* Hand-authored, not random noise: each preset is a small palette of
+   transforms chosen to give the flame a specific body.
+   col: colour coordinate   s: colour speed   vs: variation blend          */
+const V = (name, w, p) => ({ name, w, p: p || null });
+const BL = function () { return Array.prototype.slice.call(arguments); };
+const C = (r, g, b) => [r, g, b];
+const X = function (w, a, b, c, d, e, f, col, s, vs) {
+  return { w: w, a: a, b: b, c: c, d: d, e: e, f: f, col: col, s: s, vs: vs };
+};
+
+const PRESETS = [
+  {
+    name: "AURORA VEIL", pal: 0,
+    view: { zoom: 0, cx: -0.068, cy: -0.003, rot: 0.081, ox: -24.665, oy: 13.617 },
+    final: BL(V("linear", 0.038)),
+    x: [
+      X(1, 0.212, 0.529, -0.044, -0.529, 0.482, -0.214, C(0.18,0.15,0.75), 0.072, BL(V("fisheye", 0.957))),
+      X(0.95, 0.287, -0.161, 0.173, 0.161, 0.667, -0.342, C(0.807,0.26,0.585), 0.026, BL(V("cylinder", 0.763))),
+      X(0.9, 0.133, -0.532, -0.041, 0.532, 0.279, -0.031, C(0.131,0.503,0.547), 0.11, BL(V("julian", 0.355, [3,2.368,0.393]), V("hyperbolic", 0.171))),
+      X(0.85, 0.24, 0.451, -0.293, -0.451, 0.502, 0.257, C(0.144,0.251,0.694), 0.019, BL(V("polar", 0.908), V("disc", 0.391))),
+      X(0.8, -0.259, -0.49, 0.008, 0.49, 0.256, 0.297, C(0.068,0.586,0.495), 0.133, BL(V("rings", 0.487, [0.84]))),
+      X(0.75, 0.054, -0.454, -0.013, 0.454, 0.768, -0.045, C(0.117,0.498,0.45), 0.186, BL(V("polar", 0.61))),
+      X(0.7, -0.219, 0.531, -0.074, -0.531, 0.543, -0.203, C(0.78,0.218,0.082), 0.051, BL(V("rings2", 0.591, [0.789]))),
+      X(0.65, 0.228, -0.257, 0.196, 0.257, 0.477, 0.122, C(0.364,0.848,0.826), 0.005, BL(V("juliascope", 0.499, [3,2.205,0.436]))),
+    ],
+  },
+  {
+    name: "EMBER VELVET", pal: 1,
+    view: { zoom: 0, cx: 0.053, cy: -0.022, rot: -0.052, ox: 30.934, oy: -18.836 },
+    final: BL(V("bent", 0.082)),
+    x: [
+      X(1, 0.07, -0.459, 0.024, 0.459, 0.556, -0.139, C(0.905,0.835,0.679), 0.005, BL(V("juliascope", 1.097, [5,2.281,0.44]), V("hyperbolic", 0.244))),
+      X(0.95, -0.298, -0.246, -0.149, 0.246, 0.502, 0.011, C(0.748,0.252,0.182), 0.106, BL(V("power", 0.642), V("cylinder", 0.38))),
+      X(0.9, 0.177, -0.424, -0.178, 0.424, 0.595, 0.016, C(0.29,0.173,0.279), 0.005, BL(V("power", 0.68))),
+      X(0.85, 0.086, -0.2, -0.099, 0.2, 0.389, -0.133, C(0.359,0,0.191), 0.02, BL(V("cosine", 0.58), V("butterfly", 0.325))),
+      X(0.8, -0.047, 0.285, -0.157, -0.285, 0.326, -0.012, C(0.943,0.864,0.703), 0.031, BL(V("rings2", 0.452, [0.482]), V("bubble", 0.388))),
+      X(0.75, -0.436, 0.113, -0.062, -0.113, 0.281, -0.21, C(0.416,0.152,0.037), 0.079, BL(V("butterfly", 0.726))),
+      X(0.7, 0.127, 0.308, 0.085, -0.308, 0.376, -0.02, C(1,0.766,0.283), 0.182, BL(V("bubble", 0.613))),
+      X(0.65, 0.134, 0.309, 0.035, -0.309, 0.845, 0.083, C(0.721,0.205,0.176), 0.033, BL(V("fan", 0.693, [2.125,0.935]))),
+    ],
+  },
+  {
+    name: "ABYSSAL", pal: 2,
+    view: { zoom: 0, cx: -0.033, cy: 0.007, rot: -0.084, ox: -43.312, oy: 7.798 },
+    final: BL(V("disc", 0.064)),
+    x: [
+      X(1, -0.073, 0.529, -0.059, -0.529, 0.83, 0.124, C(0.521,0.866,0.847), 0.166, BL(V("polar", 0.844), V("rings2", 0.125, [0.729]))),
+      X(0.95, 0.339, 0.432, -0.128, -0.432, 0.397, -0.076, C(0.9,0.926,0.951), 0.072, BL(V("eyefish", 0.651))),
+      X(0.9, 0.254, 0.286, 0.13, -0.286, 0.51, -0.078, C(0.468,0.951,0.809), 0.118, BL(V("rings", 0.931, [0.828]), V("ex", 0.482))),
+      X(0.85, 0.444, -0.365, 0.013, 0.365, 0.615, 0.162, C(0.787,0.903,1), 0.066, BL(V("disc", 1.126), V("polar", 0.237))),
+      X(0.8, 0.203, -0.364, -0.07, 0.364, 0.536, -0.116, C(0.01,0.339,0.771), 0.031, BL(V("power", 0.77))),
+      X(0.75, 0.202, 0.222, 0.396, -0.222, 0.427, 0.045, C(0,0.3,0.73), 0.01, BL(V("eyefish", 0.646))),
+      X(0.7, 0.13, -0.417, 0.083, 0.417, 0.614, 0.012, C(0.203,0.442,0.928), 0.052, BL(V("mobius", 0.645, [1.178,0.623,0.332,0.579]))),
+      X(0.65, 0.231, -0.333, 0.142, 0.333, 0.426, -0.233, C(0.84,1,0.921), 0.005, BL(V("popcorn", 0.701, [0.46,0.337]), V("sinusoidal", 0.403))),
+    ],
+  },
+  {
+    name: "ORCHID ENGINE", pal: 3,
+    view: { zoom: 0, cx: -0.052, cy: -0.008, rot: -0.084, ox: -32.714, oy: -3.704 },
+    final: BL(V("polar", 0.062)),
+    x: [
+      X(1, -0.189, 0.416, 0.216, -0.416, 0.354, 0.217, C(0.261,0.471,0.832), 0.112, BL(V("handkerchief", 0.941), V("pdj", 0.05, [1.181,1.618,1.536,1.007]))),
+      X(0.95, -0.298, -0.196, -0.072, 0.196, 0.471, 0.044, C(0.178,0.405,0.811), 0.155, BL(V("polar", 0.782))),
+      X(0.9, -0.355, -0.175, 0.18, 0.175, 0.47, -0.134, C(0.827,0.136,0.594), 0.034, BL(V("spherical", 0.34), V("blob", 0.317, [0.834,1.051,3.003]))),
+      X(0.85, -0.212, -0.108, 0.144, 0.108, 0.519, 0.067, C(0.479,0.87,0.692), 0.071, BL(V("hyperbolic", 0.535), V("sinusoidal", 0.374))),
+      X(0.8, 0.156, 0.174, -0.009, -0.174, 0.556, -0.158, C(0.272,0.429,0.799), 0.014, BL(V("swirl", 0.804), V("cylinder", 0.402))),
+      X(0.75, 0.091, -0.136, 0.129, 0.136, 0.576, -0.14, C(0.49,0.891,0.741), 0.005, BL(V("power", 0.9), V("eyefish", 0.338))),
+      X(0.7, -0.228, 0.505, -0.174, -0.505, 0.195, -0.096, C(1,0.874,0.939), 0.012, BL(V("rings2", 0.595, [0.75]))),
+      X(0.65, 0.462, -0.459, 0.031, 0.459, 0.454, 0.156, C(0.382,0.123,0.73), 0.005, BL(V("eyefish", 0.8))),
+    ],
+  },
+  {
+    name: "BRASS FILIGREE", pal: 4,
+    view: { zoom: 0, cx: 0.017, cy: -0.005, rot: 0.332, ox: -35.885, oy: -2.924 },
+    final: BL(V("disc", 0.073)),
+    x: [
+      X(1, 0.261, 0.212, 0.089, -0.212, 0.378, -0.059, C(0.661,0.418,0.036), 0.005, BL(V("cross", 0.456), V("eyefish", 0.22))),
+      X(0.95, -0.273, 0.335, -0.026, -0.335, 0.137, 0.272, C(0.102,0.542,0.316), 0.03, BL(V("swirl", 0.623))),
+      X(0.9, 0.302, 0.128, -0.392, -0.128, 0.518, -0.096, C(0.312,0.257,0.397), 0.068, BL(V("fisheye", 1.1), V("rings", 0.256, [0.837]))),
+      X(0.85, -0.036, -0.508, 0.009, 0.508, 0.519, 0.113, C(0.986,0.893,0.44), 0.116, BL(V("horseshoe", 0.597))),
+      X(0.8, -0.031, 0.482, -0.083, -0.482, 0.647, -0.188, C(0.659,0.343,0.157), 0.005, BL(V("juliascope", 0.996, [5,2.5,0.375]))),
+      X(0.75, 0.079, -0.259, 0.298, 0.259, 0.666, 0.393, C(0.947,0.778,0.474), 0.115, BL(V("spherical", 0.845), V("ex", 0.213))),
+      X(0.7, 0.008, 0.259, -0.155, -0.259, 0.531, 0.003, C(0.231,0.303,0.482), 0.124, BL(V("julian", 0.541, [3,2.533,0.429]), V("cosine", 0.492))),
+    ],
+  },
+  {
+    name: "NOCTURNAL GARDEN", pal: 5,
+    view: { zoom: 0, cx: 0.038, cy: -0.003, rot: 0.249, ox: -23.074, oy: -10.748 },
+    final: BL(V("disc", 0.055)),
+    x: [
+      X(1, -0.013, -0.245, 0.195, 0.245, 0.383, 0.266, C(0.874,1,1), 0.088, BL(V("julia", 0.791))),
+      X(0.95, 0.135, -0.171, 0.116, 0.171, 0.383, -0.11, C(0.294,0.529,0.763), 0.048, BL(V("heart", 0.459))),
+      X(0.9, -0.092, -0.473, -0.251, 0.473, 0.351, 0.145, C(0.614,0.833,0.707), 0.058, BL(V("cross", 1.181))),
+      X(0.85, -0.099, 0.142, 0.392, -0.142, 0.52, -0.003, C(0.938,0.935,1), 0.023, BL(V("spherical", 0.843))),
+      X(0.8, 0.199, 0.171, 0.225, -0.171, 0.545, 0.388, C(0.596,0.943,0.788), 0.119, BL(V("heart", 0.494), V("mobius", 0.307, [1.285,0.361,0.046,0.654]))),
+      X(0.75, -0.022, -0.424, -0.089, 0.424, 0.392, -0.128, C(0.578,0.962,0.742), 0.083, BL(V("power", 0.809))),
+      X(0.7, 0.066, 0.489, 0.21, -0.489, 0.816, 0.051, C(0.837,1,1), 0.043, BL(V("butterfly", 0.319), V("fisheye", 0.444))),
+      X(0.65, 0.055, -0.433, -0.006, 0.433, 0.52, -0.195, C(1,0.387,0.536), 0.137, BL(V("fisheye", 1.217), V("cylinder", 0.258))),
+    ],
+  },
+];
+
+/* ------------------------------------------------------ histogram state ---- */
+const hist = new Float32Array(NPIX * CB3);
+let totalSamples = 0;
+let frame = 0;
+let XFORMS = [], CUM = new Float64Array(64), FINAL = null, presetIdx = 0;
+
+/* walker state: position + colour coordinate */
+const wx = new Float64Array(WALKERS), wy = new Float64Array(WALKERS);
+const wcr = new Float64Array(WALKERS), wcg = new Float64Array(WALKERS), wcb = new Float64Array(WALKERS);
+let framePts = new Float64Array(60000);   // scratch for attractor auto-framing
+
+/* view / camera */
+let zoomMul = 1, camCX = 0, camCY = 0, camRot = 0, camOX = 0, camOY = 0,
+    camCos = 1, camSin = 0, camZoom = 240;
+
+/* display parameters */
+let exposure = 1.15, gammaC = 2.2, cycleRate = 0, vibrancy = 1.25, cyclePhase = 0;
+
+/* palette LUT: 64 entries, linear-light rgb */
+const PAL = new Float32Array(CB3 * 3);
+const PAL_SRGB = new Float32Array(CB3 * 3);
+const BG = [0.02, 0.02, 0.03];
+
+function hueRotateRGB(c, ang) {
+  const cs = Math.cos(ang), sn = Math.sin(ang);
+  return [
+    cs * c[0] + (0.213 + cs * 0.787 - sn * 0.213) * c[0] + (0.715 - cs * 0.715 - sn * 0.715) * c[1] + (0.072 - cs * 0.072 + sn * 0.928) * c[2],
+    cs * c[1] + (0.213 - cs * 0.213 + sn * 0.143) * c[0] + (0.715 + cs * 0.285 + sn * 0.140) * c[1] + (0.072 - cs * 0.072 - sn * 0.283) * c[2],
+    cs * c[2] + (0.213 - cs * 0.213 - sn * 0.787) * c[0] + (0.715 - cs * 0.715 + sn * 0.715) * c[1] + (0.072 + cs * 0.928 + sn * 0.072) * c[2],
+  ];
+}
+
+/* A pure trilinear blend of the 8 anchors averages the cube interior toward
+   grey (measured: 35% mean saturation on AURORA VEIL vs 65% for nearest-anchor).
+   So blend the two: the trilinear term keeps the field smooth, the nearest term
+   keeps the chroma. NEAREST_W was chosen from the measurement, not by eye. */
+const NEAREST_W = 0.7;
+
+/* Where the subject sits in the frame, as a fraction of the canvas. Negative
+   values pull the focal point left/up, so the subject lands on a third rather
+   than dead centre (contract 5: composed, not centred by default). */
+const COMP = [[0.10, 0.07], [0.13, -0.05], [0.08, 0.10], [0.12, 0.03], [0.09, -0.08], [0.11, 0.06]];
+
+function buildPalette(palIdx, cycle) {
+  const anchors = PALETTES[palIdx].anchors;
+  for (let bi = 0; bi < CB3; bi++) {
+    const tr = (((bi >> 4) & 3) + 0.5) / CB;
+    const tg = (((bi >> 2) & 3) + 0.5) / CB;
+    const tb = ((bi & 3) + 0.5) / CB;
+    let r = 0, g = 0, b = 0, nbest = 0, ndist = Infinity;
+    for (let i = 0; i < 8; i++) {
+      const w = ((i >> 2) & 1 ? tr : 1 - tr) * ((i >> 1) & 1 ? tg : 1 - tg) * (i & 1 ? tb : 1 - tb);
+      const c = anchors[i];
+      const cc = cycle === 0 ? c : hueRotateRGB(c, cycle);
+      r += w * cc[0]; g += w * cc[1]; b += w * cc[2];
+      const d = (tr - ((i >> 2) & 1)) ** 2 + (tg - ((i >> 1) & 1)) ** 2 + (tb - (i & 1)) ** 2;
+      if (d < ndist) { ndist = d; nbest = i; }
+    }
+    const nc = anchors[nbest];
+    const nn = cycle === 0 ? nc : hueRotateRGB(nc, cycle);
+    const kw = NEAREST_W, kw1 = 1 - kw;
+    r = r * kw1 + nn[0] * kw;
+    g = g * kw1 + nn[1] * kw;
+    b = b * kw1 + nn[2] * kw;
+    const o = bi * 3;
+    PAL_SRGB[o] = r; PAL_SRGB[o + 1] = g; PAL_SRGB[o + 2] = b;
+    PAL[o] = Math.pow(r / 255, 2.2);          // to linear light
+    PAL[o + 1] = Math.pow(g / 255, 2.2);
+    PAL[o + 2] = Math.pow(b / 255, 2.2);
+  }
+  const bgc = cycle === 0 ? anchors[0] : hueRotateRGB(anchors[0], cycle);
+  BG[0] = Math.pow(bgc[0] / 255, 2.2) * 0.7;
+  BG[1] = Math.pow(bgc[1] / 255, 2.2) * 0.7;
+  BG[2] = Math.pow(bgc[2] / 255, 2.2) * 0.7;
+}
+
+/* ------------------------------------------------ preset compilation ------- */
+function compilePreset(i) {
+  const p = PRESETS[i];
+  XFORMS = p.x.map(function (t) {
+    return {
+      w: t.w, a: t.a, b: t.b, c: t.c, d: t.d, e: t.e, f: t.f,
+      c0: t.col[0], c1: t.col[1], c2: t.col[2], s: t.s,
+      vs: t.vs.map(function (v) { return { fn: VNAME[v.name], w: v.w, p: v.p }; }),
+    };
+  });
+  let tot = 0;
+  for (let k = 0; k < XFORMS.length; k++) { tot += XFORMS[k].w; CUM[k] = tot; }
+  for (let k = 0; k < XFORMS.length; k++) CUM[k] /= tot;
+  CUM[XFORMS.length - 1] = 1.0000001;
+
+  const fv = p.final;
+  FINAL = { a: 1, b: 0, c: 0, d: 0, e: 1, f: 0,
+            vs: fv.map(function (v) { return { fn: VNAME[v.name], w: v.w, p: v.p }; }) };
+
+  camCX = p.view.cx; camCY = p.view.cy; camRot = p.view.rot;
+  camOX = p.view.ox; camOY = p.view.oy;
+  updateCamera();
+}
+function updateCamera() {
+  camCos = Math.cos(camRot); camSin = Math.sin(camRot);
+  camZoom = PRESETS[presetIdx].view.zoom * zoomMul;
+}
+
+/* Auto-framing: the attractor's own 90th-percentile radius sets the scale, so
+   every seeded transform set fills the frame without hand-tuned magic numbers.
+   `view.zoom === 0` means "frame it yourself"; the zoom slider then scales. */
+function percentile(arr, n, q) {
+  const a = Array.prototype.slice.call(arr, 0, n);
+  a.sort((p, r) => p - r);
+  return a[Math.min(n - 1, Math.max(0, Math.floor(n * q)))];
+}
+
+function frameAttractor(n) {
+  const per = Math.ceil(n / WALKERS);
+  const pxs = framePts.length >= n ? framePts : (framePts = new Float64Array(n * 2));
+  let k = 0;
+  const F = FINAL;
+  for (let w = 0; w < WALKERS && k + 2 <= n; w++) {
+    let x = rnd() * 2 - 1, y = rnd() * 2 - 1;
+    for (let s = 0; s < per && k + 2 <= n; s++) {
+      let ti = 0;
+      const r = rnd();
+      while (ti < XFORMS.length - 1 && r > CUM[ti]) ti++;
+      const xf = XFORMS[ti];
+      const ax = xf.a * x + xf.b * y + xf.c, ay = xf.d * x + xf.e * y + xf.f;
+      let nx = 0, ny = 0;
+      const vs = xf.vs;
+      for (let j = 0; j < vs.length; j++) { vs[j].fn(ax, ay, vs[j].p); nx += vs[j].w * VX; ny += vs[j].w * VY; }
+      x = nx; y = ny;
+      if (!(x * x + y * y < 1e8)) { x = rnd() * 2 - 1; y = rnd() * 2 - 1; continue; }
+      let fx = x, fy = y;
+      if (F.vs.length) {
+        let gx = 0, gy = 0;
+        for (let j = 0; j < F.vs.length; j++) { F.vs[j].fn(fx, fy, F.vs[j].p); gx += F.vs[j].w * VX; gy += F.vs[j].w * VY; }
+        fx = gx; fy = gy;
+      }
+      if (s > 120) { pxs[k++] = fx; pxs[k++] = fy; }
+    }
+  }
+  const m = k / 2;
+  if (m < 64) return false;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < m; i++) { sx += pxs[i * 2]; sy += pxs[i * 2 + 1]; }
+  sx /= m; sy /= m;
+  // Frame on the rotated bounding box, not a radius about the centroid: a
+  // radial percentile ignores the attractor's aspect, so a wide flat flame is
+  // scaled by its long axis and spills past the frame edge.
+  const v = PRESETS[presetIdx].view;
+  /* Scale from a high percentile of the rotated extent, not the absolute max:
+     a handful of stray points from the variation tail would otherwise set the
+     scale and shrink the bright core to a thread. Per-axis, so the flame's own
+     aspect is respected instead of being fitted to a circle. */
+  const ex = new Float64Array(m), ey = new Float64Array(m);
+  for (let i = 0; i < m; i++) {
+    const rx = pxs[i * 2] - sx, ry = pxs[i * 2 + 1] - sy;
+    ex[i] = Math.abs(rx * camCos - ry * camSin);
+    ey[i] = Math.abs(rx * camSin + ry * camCos);
+  }
+  const qx = percentile(ex, m, 0.985), qy = percentile(ey, m, 0.985);
+  const fitX = HW * 0.80, fitY = HH * 0.80;
+  const zx = fitX / (2 * Math.max(qx, 1e-6)), zy = fitY / (2 * Math.max(qy, 1e-6));
+  camZoom = (Math.min(zx, zy) > 0 ? Math.min(zx, zy) : 240) * zoomMul;
+  if (!Number.isFinite(camZoom) || camZoom <= 0) camZoom = 240 * zoomMul;
+
+  /* Place the subject. accumulate() maps a world point to the screen as
+        ix = ox + (dx*cos - dy*sin) * camZoom
+        iy = oy + (dx*sin + dy*cos) * camZoom
+        ox = HW/2 + camOX,  oy = HH/2 + camOY
+     with dx,dy measured from the CAMERA CENTRE (camCX, camCY), not the origin.
+   Solving for camOX directly against the desired px double-counts the HW/2
+   term: the centroid then lands at HW/2 + px instead of px, which pushed the
+   whole flame into the corner and left 87% of the frame empty. Solve against
+   the full ox/oy that accumulate() actually uses. */
+  const sxr = sx - camCX, syr = sy - camCY;
+  const shiftX = COMP[presetIdx % COMP.length][0] * HW;
+  const shiftY = COMP[presetIdx % COMP.length][1] * HH;
+  const px = HW * 0.5 - shiftX, py = HH * 0.5 - shiftY;
+  const oxWant = px - (sxr * camCos - syr * camSin) * camZoom;
+  const oyWant = py - (sxr * camSin + syr * camCos) * camZoom;
+  camOX = oxWant - HW * 0.5;
+  camOY = oyWant - HH * 0.5;
+  return true;
+}
+
+/* -------------------------------------------------------- accumulation ---- */
+function resetWalkers() {
+  for (let i = 0; i < WALKERS; i++) {
+    wx[i] = rnd() * 2 - 1; wy[i] = rnd() * 2 - 1;
+    wcr[i] = rnd(); wcg[i] = rnd(); wcb[i] = rnd();
+  }
+}
+function clearHist() { hist.fill(0); totalSamples = 0; }
+
+function accumulate(totalNew) {
+  const per = Math.ceil(totalNew / WALKERS);
+  const nt = XFORMS.length;
+  const F = FINAL, fvs = F.vs, fvn = fvs.length;
+  const cA = camCos, cS = camSin, cZ = camZoom, cX = camCX, cY = camCY;
+  const ox = HW * 0.5 + camOX, oy = HH * 0.5 + camOY;
+
+  for (let w = 0; w < WALKERS; w++) {
+    let x = wx[w], y = wy[w];
+    let cr = wcr[w], cg = wcg[w], cb = wcb[w];
+    for (let s = 0; s < per; s++) {
+      // --- chaos game: choose a transform by weight ----------------------
+      const r = rnd();
+      let ti = 0;
+      while (ti < nt - 1 && r > CUM[ti]) ti++;
+      const t = XFORMS[ti];
+
+      // --- affine into the variation blend (flam3: p0,p1 start at 0) -----
+      const ax = t.a * x + t.b * y + t.c;
+      const ay = t.d * x + t.e * y + t.f;
+      let nx = 0, ny = 0;
+      const vs = t.vs;
+      for (let k = 0; k < vs.length; k++) {
+        const v = vs[k];
+        v.fn(ax, ay, v.p);
+        nx += v.w * VX; ny += v.w * VY;
+      }
+      x = nx; y = ny;
+
+      if (!(x * x + y * y < 1e8)) {          // escaped: respawn this walker
+        x = rnd() * 2 - 1; y = rnd() * 2 - 1;
+        cr = rnd(); cg = rnd(); cb = rnd();
+        continue;
+      }
+
+      // --- colour propagation: coordinate rotates toward the xform colour ---
+      cr += (t.c0 - 0.5) * t.s; cr -= Math.floor(cr);
+      cg += (t.c1 - 0.5) * t.s; cg -= Math.floor(cg);
+      cb += (t.c2 - 0.5) * t.s; cb -= Math.floor(cb);
+
+      // --- final transform -------------------------------------------------
+      let fx = F.a * x + F.b * y + F.c;
+      let fy = F.d * x + F.e * y + F.f;
+      if (fvn) {
+        let gx = 0, gy = 0;
+        for (let k = 0; k < fvn; k++) {
+          const v = fvs[k];
+          v.fn(fx, fy, v.p); gx += v.w * VX; gy += v.w * VY;
+        }
+        fx = gx; fy = gy;
+      }
+
+      // --- camera ----------------------------------------------------------
+      const dx = fx - cX, dy = fy - cY;
+      const ix = ox + (dx * cA - dy * cS) * cZ;
+      const iy = oy + (dx * cS + dy * cA) * cZ;
+      if (ix < 0 || ix >= HW || iy < 0 || iy >= HH) continue;
+
+      // --- density estimation: trilinear splat into the colour histogram ----
+      const u = cr * CB - 0.5; let i0, fu;
+      if (u < 0) { i0 = 0; fu = 0; }
+      else if (u > CB - 2) { i0 = CB - 2; fu = 1; }
+      else { i0 = u | 0; fu = u - i0; }
+      const v0 = cg * CB - 0.5; let j0, fj;
+      if (v0 < 0) { j0 = 0; fj = 0; }
+      else if (v0 > CB - 2) { j0 = CB - 2; fj = 1; }
+      else { j0 = v0 | 0; fj = v0 - j0; }
+      const w0 = cb * CB - 0.5; let k0, fk;
+      if (w0 < 0) { k0 = 0; fk = 0; }
+      else if (w0 > CB - 2) { k0 = CB - 2; fk = 1; }
+      else { k0 = w0 | 0; fk = w0 - k0; }
+
+      const base = ((iy | 0) * HW + (ix | 0)) * CB3;
+      const a0 = 1 - fu, a1 = fu, b0 = 1 - fj, b1 = fj, d0 = 1 - fk, d1 = fk;
+      const A = i0 << 2, A1 = A + 4, B = j0 << 1, B1 = B + 2, K0 = k0, K1 = k0 + 1;
+      hist[base + A  + B  + K0] += a0 * b0 * d0;
+      hist[base + A1 + B  + K0] += a1 * b0 * d0;
+      hist[base + A  + B1 + K0] += a0 * b1 * d0;
+      hist[base + A1 + B1 + K0] += a1 * b1 * d0;
+      hist[base + A  + B  + K1] += a0 * b0 * d1;
+      hist[base + A1 + B  + K1] += a1 * b0 * d1;
+      hist[base + A  + B1 + K1] += a0 * b1 * d1;
+      hist[base + A1 + B1 + K1] += a1 * b1 * d1;
+    }
+    wx[w] = x; wy[w] = y; wcr[w] = cr; wcg[w] = cg; wcb[w] = cb;
+  }
+  totalSamples += per * WALKERS;
+}
+
+/* --------------------------------------------------------- tone mapping --- */
+const field = new Float32Array(NPIX * 3);
+const wsum = new Float32Array(NPIX);
+let meanDensity = 0, occupied = 0;
+
+function gather() {
+  let tot = 0, occ = 0;
+  for (let p = 0; p < NPIX; p++) {
+    const q = p * CB3;
+    let r = 0, g = 0, b = 0, w = 0;
+    for (let k = 0; k < CB3; k++) {
+      const n = hist[q + k];
+      if (n !== 0) {
+        const o = k * 3;
+        r += n * PAL[o]; g += n * PAL[o + 1]; b += n * PAL[o + 2];
+        w += n;
+      }
+    }
+    const p3 = p * 3;
+    field[p3] = r; field[p3 + 1] = g; field[p3 + 2] = b;
+    wsum[p] = w;
+    if (w > 0) occ++;
+    tot += w;
+  }
+  meanDensity = tot / NPIX;
+  occupied = occ / NPIX;
+}
+
+/* deterministic 2-D hash for film grain */
+function hash3(x, y, s) {
+  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+let imgData = null, octx = null, view = null, vctx = null, off = null, vw = 0, vh = 0;
+
+function setupCanvas() {
+  view = document.getElementById("view");
+  vctx = view.getContext("2d", { alpha: false });
+  off = document.createElement("canvas");
+  off.width = HW; off.height = HH;
+  octx = off.getContext("2d", { alpha: false });
+  imgData = octx.createImageData(HW, HH);
+  resize();
+}
+function resize() {
+  vw = Math.max(320, window.innerWidth);
+  vh = Math.max(240, window.innerHeight);
+  view.width = vw; view.height = vh;
+  vctx.imageSmoothingEnabled = true;
+  vctx.imageSmoothingQuality = "high";
+}
+
+function tonemap() {
+  const d = imgData.data;
+  const invG = 1 / gammaC;
+  const ex = exposure, vib = vibrancy;
+  const bgR = BG[0], bgG = BG[1], bgB = BG[2];
+  const mean = meanDensity > 1e-9 ? meanDensity : 1e-9;
+  const grainSeed = frame & 1023;
+  const cxN = (HW * 0.5 + camOX) / HW, cyN = (HH * 0.5 + camOY) / HH;
+
+  for (let y = 0; y < HH; y++) {
+    const yn = y / HH;
+    for (let x = 0; x < HW; x++) {
+      const p = y * HW + x, o = p << 2;
+      const w = wsum[p];
+
+      if (w <= 0) {
+        // soft ground: a shallow pool of light behind the subject
+        const dx = (x / HW - cxN) * 1.28, dy = (yn - cyN) * 1.9;
+        const q = Math.max(0, 1 - (dx * dx + dy * dy) * 2.1);
+        const g = q * q * 0.020;
+        let r = bgR + g, g2 = bgG + g * 0.96, b2 = bgB + g * 1.18;
+        // Same vignette + grain as the subject branch. Skipping them here left
+        // the whole ground a single exact colour, which alone was 53% of the
+        // frame and blew the contract's top-colour budget.
+        const bx = (x / HW - 0.5) * 2, by = (yn - 0.5) * 2;
+        const vgb = 1 - 0.26 * (bx * bx * 0.55 + by * by * 0.45);
+        const bgn = (hash3(x, y, grainSeed ^ 0x5bf03635) - 0.5) * 0.016;
+        r = r * vgb + bgn; g2 = g2 * vgb + bgn; b2 = b2 * vgb + bgn;
+        r = r < 0 ? 0 : r > 1 ? 1 : r;
+        g2 = g2 < 0 ? 0 : g2 > 1 ? 1 : g2;
+        b2 = b2 < 0 ? 0 : b2 > 1 ? 1 : b2;
+        d[o] = Math.pow(r, invG) * 255;
+        d[o + 1] = Math.pow(g2, invG) * 255;
+        d[o + 2] = Math.pow(b2, invG) * 255;
+        d[o + 3] = 255;
+        continue;
+      }
+
+      const p3 = p * 3;
+      const t = (w / mean) * ex;
+      const k = t / (1 + t);                       // Reinhard on density
+
+      let cr = field[p3] / w, cg2 = field[p3 + 1] / w, cb2 = field[p3 + 2] / w;
+      const lum = 0.2126 * cr + 0.7152 * cg2 + 0.0722 * cb2;
+      cr = lum + (cr - lum) * vib;
+      cg2 = lum + (cg2 - lum) * vib;
+      cb2 = lum + (cb2 - lum) * vib;
+
+      let r = bgR + (cr - bgR) * k;
+      let g2 = bgG + (cg2 - bgG) * k;
+      let b2 = bgB + (cb2 - bgB) * k;
+
+      const hl = k * k * k * k;                    // luminous core
+      r += hl * 0.34; g2 += hl * 0.26; b2 += hl * 0.15;
+
+      const vx = (x / HW - 0.5) * 2, vy = (yn - 0.5) * 2;
+      const vg = 1 - 0.26 * (vx * vx * 0.55 + vy * vy * 0.45);
+      r *= vg; g2 *= vg; b2 *= vg;
+
+      const gn = (hash3(x, y, grainSeed) - 0.5) * 0.010;
+      let o8 = r + gn; o8 = o8 < 0 ? 0 : o8 > 1 ? 1 : o8;
+      let g8 = g2 + gn; g8 = g8 < 0 ? 0 : g8 > 1 ? 1 : g8;
+      let b8 = b2 + gn; b8 = b8 < 0 ? 0 : b8 > 1 ? 1 : b8;
+
+      d[o] = Math.pow(o8, invG) * 255;
+      d[o + 1] = Math.pow(g8, invG) * 255;
+      d[o + 2] = Math.pow(b8, invG) * 255;
+      d[o + 3] = 255;
+    }
+  }
+}
+
+function draw() {
+  octx.putImageData(imgData, 0, 0);
+  vctx.fillStyle = "#05060a";
+  vctx.fillRect(0, 0, vw, vh);
+  const s = Math.min(vw / HW, vh / HH);          // letterbox-fit, keeps 1.6 aspect
+  const dw = HW * s, dh = HH * s;
+  vctx.drawImage(off, (vw - dw) * 0.5, (vh - dh) * 0.5, dw, dh);
+}
+
+/* ---------------------------------------------------------------- UI ------ */
+const $ = (id) => document.getElementById(id);
+let uiAcc = 0;
+
+function renderXformList() {
+  const p = PRESETS[presetIdx];
+  let html = "";
+  for (let i = 0; i < p.x.length; i++) {
+    const t = p.x[i];
+    const br = Math.min(3, Math.max(0, (t.col[0] * CB) | 0));
+    const bg2 = Math.min(3, Math.max(0, (t.col[1] * CB) | 0));
+    const bb = Math.min(3, Math.max(0, (t.col[2] * CB) | 0));
+    const o = ((br << 2) | (bg2 << 1) | bb) * 3;
+    const r = (PAL_SRGB[o] * 0.7 + 76.5) | 0;
+    const g = (PAL_SRGB[o + 1] * 0.7 + 76.5) | 0;
+    const b = (PAL_SRGB[o + 2] * 0.7 + 76.5) | 0;
+    html += '<div class="xrow"><span class="sw" style="background:rgb(' + r + "," + g + "," + b + ')"></span>'
+      + '<span class="xn">' + t.vs.map(function (v) { return v.name; }).join("+") + "</span>"
+      + '<span class="xv">w ' + t.w.toFixed(2) + " &middot; cs " + t.s.toFixed(3) + "</span></div>";
+  }
+  $("xlist").innerHTML = html;
+  $("fnote").innerHTML = "final &middot; " + p.final
+    .map(function (v) { return v.name + " " + v.w.toFixed(3); }).join(" + ");
+  $("presetName").textContent = p.name;
+}
+
+function updateStats() {
+  $("oSamples").textContent = totalSamples.toLocaleString("en-US");
+  $("oRate").textContent = (STEPS_PER_WALKER * WALKERS).toLocaleString("en-US");
+  $("oXf").textContent = XFORMS.length + " / "
+    + XFORMS.reduce(function (a, t) { return a + t.vs.length; }, 0);
+  $("oBins").textContent = HW + "\u00d7" + HH + "\u00d7" + CB3
+    + " (" + ((NPIX * CB3) / 1000).toFixed(0) + "k)";
+  $("oFrame").textContent = frame;
+  $("oFps").textContent = probe.fps ? probe.fps.toFixed(1) : "\u2014";
+  $("oOcc").textContent = (occupied * 100).toFixed(1) + "%";
+  $("oMean").textContent = meanDensity.toFixed(2);
+  $("oHash").textContent = probe.checksum;
+}
+
+function checksum() {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < hist.length; i += 997) {
+    h ^= (hist[i] * 64) | 0;
+    h = Math.imul(h, 16777619);
+  }
+  return ("00000000" + (h >>> 0).toString(16)).slice(-8);
+}
+
+/* ------------------------------------------------------------ controls ---- */
+function bindSlider(id, valId, fmt, onSet, onCommit) {
+  const s = $(id);
+  const apply = function () {
+    const v = parseFloat(s.value);
+    $(valId).textContent = fmt(v);
+    onSet(v);
+  };
+  s.addEventListener("input", apply);
+  if (onCommit) s.addEventListener("change", function () { apply(); onCommit(); });
+  apply();
+}
+
+function reheat(n) {
+  // frame the attractor first: the camera follows the flame, not magic numbers
+  if (PRESETS[presetIdx].view.zoom === 0) {
+    reseed(PRESETS[presetIdx].pal * 2654435761 + 12345);   // fixed framing seed
+    frameAttractor(24000);
+  } else {
+    updateCamera();
+  }
+  clearHist();
+  resetWalkers();
+  const chunks = 8;
+  const per = Math.floor(n / chunks);
+  for (let c = 0; c < chunks; c++) accumulate(per);
+  gather(); tonemap(); draw();
+}
+
+function applyPreset(i, n) {
+  presetIdx = i;
+  compilePreset(i);
+  buildPalette(PRESETS[i].pal, cyclePhase);
+  renderXformList();
+  reheat(n);
+}
+
+function randomSeed() { return (Math.random() * 4294967295) >>> 0; }
+
+function setupUI() {
+  bindSlider("sExp", "vExp", function (v) { return v.toFixed(2); },
+    function (v) { exposure = v; });
+  bindSlider("sGam", "vGam", function (v) { return v.toFixed(2); },
+    function (v) { gammaC = v; });
+  bindSlider("sCyc", "vCyc", function (v) { return v.toFixed(2); },
+    function (v) { cycleRate = v; });
+  bindSlider("sVib", "vVib", function (v) { return v.toFixed(2); },
+    function (v) { vibrancy = v; });
+  bindSlider("sZoom", "vZoom", function (v) { return v.toFixed(2); },
+    function (v) { zoomMul = v; updateCamera(); },
+    function () { reheat(WARMUP_SHUFFLE); });
+
+  $("bShuf").addEventListener("click", shuffle);
+  $("bHeat").addEventListener("click", function () { reseed(randomSeed()); reheat(WARMUP_SHUFFLE); });
+  window.addEventListener("keydown", function (e) {
+    if (e.key === "s" || e.key === "S") shuffle();
+    if (e.key === "h" || e.key === "H") { reseed(randomSeed()); reheat(WARMUP_SHUFFLE); }
+  });
+  window.addEventListener("resize", function () { resize(); draw(); });
+}
+
+/* Deterministic entry point: jump straight to a seeded preset. Used by the
+   capture harness so every palette can be photographed reproducibly. */
+function goPreset(i) {
+  reseed((i * 2654435761 + 12345) >>> 0);
+  applyPreset(((i % PRESETS.length) + PRESETS.length) % PRESETS.length, WARMUP_SHUFFLE);
+}
+window.goPreset = goPreset;
+
+function shuffle() {
+  // user-triggered: free to use Math.random here (contract 3)
+  let n = presetIdx;
+  if (PRESETS.length > 1) {
+    while (n === presetIdx) n = (Math.random() * PRESETS.length) | 0;
+  }
+  reseed(randomSeed());
+  applyPreset(n, WARMUP_SHUFFLE);
+}
+
+/* ---------------------------------------------------------- main loop ----- */
+const probe = {
+  ready: false, fps: 0, frame: 0, samples: 0, preset: "", transforms: 0,
+  variations: 0, bins: NPIX * CB3, colourBins: CB3, walkers: WALKERS,
+  samplesPerFrame: STEPS_PER_WALKER * WALKERS, occupancy: 0, meanDensity: 0,
+  checksum: "00000000", gamma: 0, brightness: 0, cycle: 0, zoom: 0,
+  internal: HW + "x" + HH, deterministic: true,
+};
+window.__probe = probe;
+
+let fpsAcc = 0, fpsN = 0, lastT = 0, ready = false;
+
+function loop(t) {
+  requestAnimationFrame(loop);
+  const dt = lastT ? t - lastT : 16.7;
+  lastT = t;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 500) { probe.fps = (fpsN * 1000) / fpsAcc; fpsAcc = 0; fpsN = 0; }
+
+  if (cycleRate > 0) {
+    cyclePhase = (cyclePhase + cycleRate * 0.020) % (Math.PI * 2);
+    buildPalette(PRESETS[presetIdx].pal, cyclePhase);
+  }
+  accumulate(STEPS_PER_WALKER * WALKERS);
+  gather();
+  tonemap();
+  draw();
+
+  frame++;
+  probe.frame = frame;
+  probe.samples = totalSamples;
+  probe.preset = PRESETS[presetIdx].name;
+  probe.transforms = XFORMS.length;
+  probe.variations = XFORMS.reduce(function (a, t) { return a + t.vs.length; }, 0);
+  probe.occupancy = occupied;
+  probe.meanDensity = meanDensity;
+  probe.gamma = gammaC;
+  probe.brightness = exposure;
+  probe.cycle = cyclePhase;
+  probe.zoom = camZoom;
+
+  if (uiAcc++ % 6 === 0) { probe.checksum = checksum(); updateStats(); }
+
+  if (!ready) {                      // set only after the first real frame
+    ready = true;
+    probe.ready = true;
+    probe.checksum = checksum();
+    updateStats();
+    window.__ready = true;
+  }
+}
+
+/* -------------------------------------------------------------- boot ------ */
+setupCanvas();
+buildPalette(0, 0);
+compilePreset(0);
+renderXformList();
+setupUI();
+reheat(WARMUP_LOAD);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CUMULUS — raymarched volumetric clouds</title>
+<style>
+  :root{
+    --ink:#eaf0f8; --dim:#8ea0b8; --accent:#ffb257; --accent2:#6fd0ff;
+    --panel:rgba(8,12,20,.74); --edge:rgba(120,170,220,.20);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#05070d;overflow:hidden;
+    font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);
+    -webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;display:block;background:#05070d;image-rendering:auto}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--edge);
+    border-radius:10px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+    box-shadow:0 12px 38px rgba(0,0,0,.6)}
+  #title{left:16px;top:14px;padding:11px 15px 12px;max-width:430px}
+  #title h1{margin:0 0 4px;font:600 16px/1.05 ui-monospace,monospace;letter-spacing:.14em}
+  #title h1 b{color:var(--accent);font-weight:600}
+  #title .sub{color:var(--dim);font-size:12px;line-height:1.55}
+  #title .tech{margin-top:7px;padding-top:7px;border-top:1px solid var(--edge);
+    color:var(--accent2);font-size:11.5px;line-height:1.55;letter-spacing:.01em}
+  #ctl{right:14px;top:14px;width:266px;padding:9px 12px 11px;max-height:calc(100vh - 28px);overflow-y:auto}
+  #ctl::-webkit-scrollbar{width:6px}#ctl::-webkit-scrollbar-thumb{background:#2a3a4d;border-radius:3px}
+  .hd{display:flex;align-items:center;gap:7px;margin:10px 0 7px;
+    font:600 11px/1 ui-monospace,monospace;letter-spacing:.15em;color:var(--accent)}
+  .hd:first-child{margin-top:2px}
+  .hd:after{content:"";flex:1;height:1px;background:var(--edge)}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:baseline;margin:0 0 1px;font-size:11px}
+  .row label{color:var(--dim);letter-spacing:.02em}
+  .row output{color:var(--accent2);font-variant-numeric:tabular-nums}
+  .sld{display:block;width:100%;height:14px;background:transparent;margin:0 0 5px;cursor:ew-resize;
+    -webkit-appearance:none;appearance:none}
+  .sld::-webkit-slider-runnable-track{height:2px;background:#2b3a4d;border-radius:2px}
+  .sld::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-4px;
+    border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,178,87,.8)}
+  .sld::-moz-range-track{height:2px;background:#2b3a4d;border-radius:2px}
+  .sld::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:var(--accent)}
+  .seg{display:grid;grid-auto-flow:column;gap:4px;margin:2px 0 5px}
+  .seg button{padding:4px 2px;font:11px ui-monospace,monospace;letter-spacing:.05em;
+    color:var(--dim);background:rgba(32,46,64,.6);border:1px solid var(--edge);border-radius:5px;cursor:pointer}
+  .seg button:hover{color:var(--ink);border-color:var(--accent)}
+  .seg button.on{background:rgba(255,178,87,.18);border-color:var(--accent);color:var(--accent)}
+  .btns{display:grid;grid-auto-flow:column;gap:5px;margin-top:8px}
+  .btns button{padding:5px 2px;font:11px ui-monospace,monospace;letter-spacing:.06em;
+    color:var(--ink);background:rgba(38,54,74,.75);border:1px solid var(--edge);border-radius:5px;cursor:pointer}
+  .btns button:hover{background:rgba(58,82,112,.9);border-color:var(--accent)}
+  #hud{left:16px;bottom:14px;padding:8px 12px 9px;min-width:246px}
+  #hud .r{display:flex;justify-content:space-between;gap:14px;font-size:11.5px;line-height:1.7}
+  #hud .r span{color:var(--dim)}
+  #hud .r b{color:var(--ink);font-weight:400;font-variant-numeric:tabular-nums}
+  #hud .r b.k{color:var(--accent2)}
+  #hud .note{margin-top:5px;padding-top:5px;border-top:1px solid var(--edge);color:var(--dim);font-size:11px}
+  #hint{right:16px;bottom:14px;padding:6px 11px;color:var(--dim);font-size:11.5px;letter-spacing:.04em}
+  #hint b{color:var(--ink);font-weight:400}
+  .off{opacity:0;pointer-events:none;transition:opacity .3s}
+  #boot{position:fixed;inset:0;background:radial-gradient(120% 95% at 50% 45%,#0b1220 0%,#05070d 72%);
+    display:flex;align-items:center;justify-content:center;z-index:20;transition:opacity .45s}
+  #boot .bx{width:470px;max-width:88vw}
+  #boot h2{margin:0 0 5px;font:600 16px/1.1 ui-monospace,monospace;letter-spacing:.14em}
+  #boot h2 b{color:var(--accent);font-weight:600}
+  #boot p{margin:0 0 12px;color:var(--dim);font-size:12px;line-height:1.55}
+  #bar{height:3px;background:#1a2534;border-radius:2px;overflow:hidden}
+  #bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .15s}
+  #stat{margin-top:7px;color:var(--dim);font-size:12px;min-height:15px;white-space:pre}
+  #err{margin-top:10px;color:#ff7b6b;font-size:11px;white-space:pre-wrap;max-height:40vh;overflow:auto;display:none}
+  body.hideui .panel{opacity:0;pointer-events:none;transition:opacity .3s}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="title">
+  <h1>CUMULUS <b>LAYER</b></h1>
+  <div class="sub">A fullscreen volumetric raymarch over a 3D density field sampled from a tiling
+    value-noise volume, animated on a fixed time step.</div>
+  <div class="tech">domain-warped FBM &rarr; height-gradient density &rarr; Beer&ndash;Lambert transmittance
+    &rarr; powder dark-edge &rarr; dual Henyey&ndash;Greenstein phase &rarr; primary/secondary march + in-scatter shafts</div>
+</div>
+
+<div class="panel" id="ctl">
+  <div class="hd">NOISE FIELD</div>
+  <div id="g-noise"></div>
+  <div class="hd">CLOUD BODY</div>
+  <div id="g-body"></div>
+  <div class="hd">LIGHT</div>
+  <div id="g-light"></div>
+  <div class="hd">MARCH</div>
+  <div class="row"><label>QUALITY</label><output id="o-q"></output></div>
+  <div class="seg" id="g-qual"></div>
+  <div class="row"><label>LIGHTING</label><output id="o-mode"></output></div>
+  <div class="seg" id="g-mode"></div>
+  <div class="btns">
+    <button id="bPause">PAUSE</button>
+    <button id="bReset">RESET</button>
+    <button id="bHide">HIDE UI</button>
+  </div>
+</div>
+
+<div class="panel" id="hud"></div>
+<div class="panel" id="hint"><b>drag</b> look &nbsp;&middot;&nbsp; <b>space</b> pause &nbsp;&middot;&nbsp; <b>h</b> hide UI</div>
+
+<div id="boot"><div class="bx">
+  <h2>CUMULUS <b>LAYER</b></h2>
+  <p>Baking a 64&sup3; tiling value-noise volume on the GPU &rarr; domain-warped FBM density
+     &rarr; Beer&ndash;Lambert light transport &rarr; hero frame.</p>
+  <div id="bar"><i></i></div>
+  <div id="stat">booting</div>
+  <div id="err"></div>
+</div></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   CUMULUS LAYER — project 01
+   Raymarched volumetric clouds.  One fullscreen fragment shader marches a
+   3D density field (tiling value-noise volume, domain-warped FBM) through
+   a horizontal slab, and lights every sample with Beer–Lambert
+   transmittance along a secondary march toward the sun plus a powder term
+   that darkens thin, back-lit edges.  Time advances on a fixed delta.
+   No external requests, no Math.random() outside user handlers.
+   ===================================================================== */
+
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smoothstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
+const $=id=>document.getElementById(id);
+
+/* --- deterministic inverse normal CDF (Acklam).  Lets COVERAGE be an
+   actual quantile of the standardised shape field instead of a hand-
+   guessed threshold that may sit outside the field's range. --- */
+function invNorm(p){
+  const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,
+           1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+  const b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,
+           6.680131188771972e+01,-1.328068155288572e+01];
+  const c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,
+           -2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+  const d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+  const pl=0.02425, lo=Math.min(p,1-p);
+  if(lo<pl){
+    const q=Math.sqrt(-2*Math.log(lo));
+    return -((((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1));
+  }
+  const q=p-0.5, r=q*q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+
+/* --- CPU mirror of the bake shader, sampled on a coarse grid, purely to
+   measure the mean and standard deviation of the shape field for the
+   current octave count.  Those two numbers are what let the shader
+   standardise the field before thresholding it.  Deterministic, ~25k
+   samples, and only re-run when OCTAVES changes. --- */
+function cpuHash(ix,iy,iz,seed){
+  let px=(ix+seed)*0.1031, py=(iy+seed)*0.1031, pz=(iz+seed)*0.1031;
+  px-=Math.floor(px); py-=Math.floor(py); pz-=Math.floor(pz);
+  const d=px*(py+33.33)+py*(pz+33.33)+pz*(px+33.33);
+  px+=d; py+=d; pz+=d;
+  px-=Math.floor(px); py-=Math.floor(py); pz-=Math.floor(pz);
+  const v=(px+py)*pz; return v-Math.floor(v);
+}
+function cpuNoise(x,y,z,period,seed){
+  const ix=Math.floor(x), iy=Math.floor(y), iz=Math.floor(z);
+  let fx=x-ix, fy=y-iy, fz=z-iz;
+  fx=fx*fx*(3-2*fx); fy=fy*fy*(3-2*fy); fz=fz*fz*(3-2*fz);
+  const ax=((ix%period)+period)%period, ay=((iy%period)+period)%period, az=((iz%period)+period)%period;
+  const bx=(ax+1)%period, by=(ay+1)%period, bz=(az+1)%period;
+  const x00=cpuHash(ax,ay,az,seed)+(cpuHash(bx,ay,az,seed)-cpuHash(ax,ay,az,seed))*fx;
+  const x10=cpuHash(ax,by,az,seed)+(cpuHash(bx,by,az,seed)-cpuHash(ax,by,az,seed))*fx;
+  const x01=cpuHash(ax,ay,bz,seed)+(cpuHash(bx,ay,bz,seed)-cpuHash(ax,ay,bz,seed))*fx;
+  const x11=cpuHash(ax,by,bz,seed)+(cpuHash(bx,by,bz,seed)-cpuHash(ax,by,bz,seed))*fx;
+  const y0=x00+(x10-x00)*fy, y1=x01+(x11-x01)*fy;
+  return y0+(y1-y0)*fz;
+}
+function cpuBand(u,v,w,f0,oct,seed){
+  let a=0.5,n=0,f=f0,s=0;
+  for(let i=0;i<5;i++){
+    if(i>=oct) break;
+    s+=a*cpuNoise(u*f,v*f,w*f,f,seed+i*19.31);
+    n+=a; a*=0.5; f*=2.0;
+  }
+  return s/n;
+}
+/* Returns [1/std_r, mean_r, 1/std_erosion, mean_erosion, shapeMean, 1/std_shape]
+   for the shape field the shader thresholds. */
+const EROSION_W=0.80;
+function measureShape(oct){
+  const G=24, vals=[];
+  let rSum=0,rSq=0,dSum=0,dSq=0;
+  const smp=[];
+  for(let z=0;z<G;z++) for(let y=0;y<G;y++) for(let x=0;x<G;x++){
+    const u=(x+0.5)/G, v=(y+0.5)/G, w=(z+0.5)/G;
+    const r=cpuBand(u,v,w,2.0,clamp(oct-1,1,4),0.0);
+    const g=cpuBand(u,v,w,8.0,clamp(oct-3,1,2),11.37);
+    const b=cpuBand(u,v,w,16.0,1,27.91);
+    const a=cpuBand(u,v,w,4.0,clamp(oct-2,1,3),41.77);
+    const ero=1.0-(g*0.40+a*0.24+b*0.36);
+    rSum+=r; rSq+=r*r; dSum+=ero; dSq+=ero*ero;
+    smp.push(r,ero);
+  }
+  const n=smp.length/2;
+  const rMean=rSum/n, rStd=Math.sqrt(Math.max(1e-8,rSq/n-rMean*rMean));
+  const dMean=dSum/n, dStd=Math.sqrt(Math.max(1e-8,dSq/n-dMean*dMean));
+  let sMean=0,sSq=0;
+  for(let i=0;i<smp.length;i+=2){
+    const f=(smp[i]-rMean)/rStd, e=(smp[i+1]-dMean)/dStd;
+    const sh=f-EROSION_W*e;
+    sMean+=sh; sSq+=sh*sh;
+  }
+  sMean/=n;
+  const sStd=Math.sqrt(Math.max(1e-8,sSq/n-sMean*sMean));
+  return [1/rStd, rMean, 1/dStd, dMean, sMean, 1/sStd];
+}
+/* ===================================================================== */
+/*  PARAMETERS                                                            */
+/* ===================================================================== */
+const DEFAULTS={
+  scale:2500, octaves:5, coverage:0.38, density:1.30, height:1500, warp:0.52,
+  az:-30, el:4.5, powder:0.62, phaseG:0.78, quality:1, mode:0
+};
+const P=Object.assign({},DEFAULTS);
+const QUAL=[
+  {name:'LOW',  steps:30, light:3},
+  {name:'MED',  steps:44, light:3},
+  {name:'HIGH', steps:60, light:5}
+];
+const MODES=['FULL','AMBIENT','SUN'];
+/* Hero framing: eye 62% up the deck, pitched down 9 deg, so lobes read in
+   profile against a horizon with the low sun off to the upper left. */
+const VIEW_DEFAULT={yaw:-0.46, pitch:-0.340, focal:0.58};
+const VIEW={yaw:VIEW_DEFAULT.yaw, pitch:VIEW_DEFAULT.pitch, focal:VIEW_DEFAULT.focal};
+
+/* [1/std_r, mean_r, 1/std_ero, mean_ero, shapeMean, 1/std_shape] — measured,
+   not guessed; re-derived whenever the octave count changes */
+let SHAPE_NORM=measureShape(P.octaves);
+
+const NOISE_DIM=64;                 // 64^3 tiling value-noise volume
+const MAXDIST=30000.0;
+const FIXED_DT=1/30;                // simulation runs on a fixed delta
+
+/* ===================================================================== */
+/*  SHADERS                                                               */
+/* ===================================================================== */
+const VS=`#version 300 es
+precision highp float;
+void main(){
+  vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  gl_Position = vec4(p*2.0-1.0, 0.0, 1.0);
+}`;
+
+/* ---- bake: one 64x64 layer of a tiling 3D value-noise volume ---------- */
+const FS_BAKE=`#version 300 es
+precision highp float;
+uniform float uOct;
+out vec4 outC;
+
+float hash1(vec3 p, float seed){
+  p = fract((p + seed) * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+/* value noise on a lattice of \`period\` cells, tiled by wrapping the
+   integer lattice indices — every octave tiles seamlessly. */
+float vnoise(vec3 x, float period, float seed){
+  vec3 i = floor(x), f = fract(x);
+  f = f*f*(3.0-2.0*f);
+  vec3 a = mod(i, period);
+  vec3 b = mod(i + vec3(1.0), period);
+  float n000 = hash1(a, seed);
+  float n100 = hash1(vec3(b.x,a.y,a.z), seed);
+  float n010 = hash1(vec3(a.x,b.y,a.z), seed);
+  float n110 = hash1(vec3(b.x,b.y,a.z), seed);
+  float n001 = hash1(vec3(a.x,a.y,b.z), seed);
+  float n101 = hash1(vec3(b.x,a.y,b.z), seed);
+  float n011 = hash1(vec3(a.x,b.y,b.z), seed);
+  float n111 = hash1(b, seed);
+  return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y),
+             mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
+}
+float fbmT(vec3 p, float f0, float oct, float seed){
+  float s=0.0, a=0.5, n=0.0, f=f0;
+  for(int i=0;i<5;i++){
+    if(float(i) >= oct) break;
+    s += a * vnoise(p*f, f, seed + float(i)*19.31);
+    n += a; a *= 0.5; f *= 2.0;
+  }
+  return s/n;
+}
+void main(){
+  vec3 uv = vec3(gl_FragCoord.xy, float(gl_FragCoord.z) + 0.5) / ${NOISE_DIM}.0;
+  float o = uOct;
+  // four decorrelated frequency bands, packed into rgba
+  float r = fbmT(uv, 2.0,  clamp(o-1.0, 1.0, 4.0), 0.0);
+  float g = fbmT(uv, 8.0,  clamp(o-3.0, 1.0, 2.0), 11.37);
+  float b = fbmT(uv, 16.0, 1.0, 27.91);
+  float a = fbmT(uv, 4.0,  clamp(o-2.0, 1.0, 3.0), 41.77);
+  outC = vec4(r,g,b,a);
+}`;
+
+/* ---- the volumetric march ------------------------------------------- */
+const FS_CLOUDS=`#version 300 es
+precision highp float;
+precision highp sampler3D;
+out vec4 outC;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform mat3  uCam;
+uniform vec3  uRo;
+uniform vec3  uSun;
+uniform vec2  uSunUV;
+uniform float uSunFront;
+uniform sampler3D uNoise;
+uniform vec3  uWind;
+uniform float uInvScale;
+uniform float uHeight;
+uniform float uCoverage;
+uniform float uDensity;
+uniform float uWarp;
+uniform float uPowder;
+uniform float uPhaseG;
+uniform float uExposure;
+uniform vec3  uNormA;   // (1/std_r, mean_r, 1/std_ero)
+uniform vec3  uNormB;   // (mean_ero, shapeMean, 1/std_shape)
+uniform float uThr;     // coverage quantile of the standardised shape field
+uniform int   uSteps;
+uniform int   uLightSteps;
+uniform int   uMode;
+
+const float MAXDIST = ${MAXDIST.toFixed(1)};
+const float SIGMA   = 0.0052;   // cloud extinction, per unit length
+const float AIR     = 1.0/22000.0;  // aerial-perspective depth
+const float GROWTH  = 1.042;      // geometric step growth along the view ray
+const vec3  SUN_COL = vec3(1.00, 0.800, 0.560);
+const vec3  MS_COL  = vec3(0.60, 0.58, 0.86);
+const vec3  ZEN_COL = vec3(0.026, 0.048, 0.122);
+const vec3  MID_COL = vec3(0.120, 0.180, 0.330);
+const vec3  HOR_COL = vec3(0.720, 0.470, 0.320);
+const vec3  LOW_COL = vec3(0.060, 0.075, 0.130);
+const vec3  AMB_TOP = vec3(0.40, 0.50, 0.72);
+const vec3  AMB_BOT = vec3(0.065, 0.080, 0.140);
+
+float hash12(vec2 p){
+  vec3 q = fract(vec3(p.xyx) * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+/* Henyey–Greenstein, un-normalised */
+float hg(float c, float g){
+  float g2 = g*g;
+  return (1.0-g2) / pow(max(1.0 + g2 - 2.0*g*c, 1e-4), 1.5);
+}
+/* Vertical profile of a cumulus: density switches on hard just above the
+   base, holds flat, then billows away over the top half.  The hard bottom
+   and soft top are what make the silhouette read as cumulus rather than
+   as fog. */
+float heightGrad(float hn){
+  return smoothstep(0.0, 0.05, hn) * (1.0 - smoothstep(0.34, 0.86, hn));
+}
+
+/* Density of the slab at p, 0..1, pre-multiplied by the density knob.
+   Mass comes from a low-frequency band and is *eroded* by the higher
+   bands — that subtraction is what turns a smooth blob into cauliflower
+   lobes with sharp, self-shadowed edges.  The shape field is recentred and
+   scaled to roughly unit standard deviation, so the coverage control reads
+   as a quantile of the field instead of a threshold that may sit outside
+   the field's own range.
+   lite=true drops the erosion detail, so the secondary march agrees with
+   the primary about where the cloud actually is while costing one
+   cheap fetch. */
+float densityAt(vec3 p, bool lite){
+  float hn = p.y / uHeight;
+  if (hn < 0.0 || hn > 1.0) return 0.0;
+  float grad = heightGrad(hn);
+  if (grad <= 0.0) return 0.0;
+  vec3 sp = p * uInvScale + uWind;
+  sp.y *= 1.0;   // vertical cells well under the slab depth, else the field
+                 // is flat in y and the deck renders as one sheet
+
+  /* Standardise both bands, then subtract.  The result is a unit-variance
+     shape field, so uThr — a normal quantile — really is the coverage knob.
+     Erosion is *height-dependent*: high in the field the detail band is
+     weighted against the mass, which is what carves cauliflower lobes
+     instead of a flat-topped deck. */
+  vec3 lo = texture(uNoise, sp*0.113 + vec3(0.0, uTime*0.0031, 0.0)).rgb;
+  float f = (lo.r - uNormA.y) * uNormA.x;
+  if (f < uThr - 2.6) return 0.0;                 // cheap empty-space reject
+  vec4 n = texture(uNoise, sp + (lo - 0.5) * uWarp);
+  float det = n.g*0.40 + n.a*0.24 + n.b*0.36;
+  float e = (1.0 - det - uNormB.x) * uNormA.z;
+  float shape = (f - ${EROSION_W.toFixed(2)}*e*(0.35 + 0.90*hn) - uNormB.y) * uNormB.z;
+  /* Sharpness, not a wide smoothstep: a ramp spanning a full standard
+     deviation leaves ~83% of the volume non-empty whatever the threshold,
+     which turns every coverage setting into flat overcast.  Scaling the
+     *distance above the threshold* keeps COVERAGE meaning what it says. */
+  float d = clamp((shape - uThr) * 3.4, 0.0, 1.0);
+  return d*d*(3.0 - 2.0*d) * grad * uDensity;
+}
+
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+
+/* Flat, low-frequency ambient used as the multiple-scatter destination
+   when a ray is fully absorbed by cloud. */
+vec3 skyAmbient(vec3 rd){
+  float hy = clamp(rd.y, 0.0, 1.0);
+  vec3 c = mix(LOW_COL, HOR_COL, smoothstep(-0.25, 0.02, rd.y));
+  c = mix(c, MID_COL, smoothstep(0.0, 0.30, hy));
+  c = mix(c, ZEN_COL, smoothstep(0.25, 0.85, hy));
+  return c;
+}
+
+vec3 sky(vec3 rd, vec2 uv){
+  float y  = rd.y;
+  float ct = dot(rd, uSun);
+  float hy = clamp(y, 0.0, 1.0);
+  vec3 col = mix(HOR_COL, MID_COL, smoothstep(0.0, 0.105, hy));
+  col = mix(col, ZEN_COL, smoothstep(0.08, 0.58, hy));
+  col = mix(LOW_COL, col, smoothstep(-0.30, 0.005, y));
+  /* mie forward-scatter halo + the disc itself */
+  float c1 = max(ct, 0.0);
+  col += SUN_COL * (0.06*pow(c1, 2.0) + 0.20*pow(c1, 12.0) + 0.42*pow(c1, 150.0));
+  col += SUN_COL * 2.3 * smoothstep(0.99980, 0.99996, ct);
+  /* high cirrus deck, read out of the same noise volume */
+  if (y > 0.012){
+    float dist = 12000.0 / y;
+    vec2 cp = (uRo.xz + rd.xz*dist) * 0.000048 + vec2(uTime*0.0016, uTime*0.0006);
+    vec4 c = texture(uNoise, vec3(cp*vec2(1.0, 2.6), 0.37));
+    float cir = smoothstep(0.50, 0.84, c.a*0.58 + c.r*0.42);
+    cir *= smoothstep(0.02, 0.17, y) * (1.0 - smoothstep(0.46, 0.92, y));
+    vec3 cirCol = mix(vec3(0.40,0.40,0.52), SUN_COL*1.7, clamp(pow(c1,3.0)*0.9+0.22, 0.0, 1.0));
+    col = mix(col, cirCol, cir*0.80);
+  }
+  /* restrained anamorphic flare so the sun reads as a light source */
+  float fl = exp(-abs(uv.y - uSunUV.y)*54.0) * exp(-abs(uv.x - uSunUV.x)*2.4);
+  col += SUN_COL * fl * 0.18 * uSunFront;
+  return col;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  vec3 rd = normalize(uCam * vec3(uv, ${VIEW.focal.toFixed(3)}));
+  vec3 ro = uRo;
+  vec3 bg = sky(rd, uv);
+
+  /* --- ray vs. the cloud slab --- */
+  float t0, t1;
+  if (abs(rd.y) < 1e-4){
+    if (ro.y < 0.0 || ro.y > uHeight){ outC = vec4(bg,1.0); return; }
+    t0 = 0.0; t1 = MAXDIST;
+  } else {
+    float ta = -ro.y/rd.y, tb = (uHeight-ro.y)/rd.y;
+    t0 = max(min(ta,tb), 0.0);
+    t1 = min(max(ta,tb), MAXDIST);
+  }
+  if (t1 <= t0){ outC = vec4(bg,1.0); return; }
+
+  /* Geometric step growth: a fixed tap budget spends most of its samples
+     where they are needed — the near, steeply-crossed cloud faces — and
+     still reaches the far side of the deck.  dt0 solves the geometric
+     series so the last step lands exactly on t1. */
+  int   n  = int(clamp(floor((t1-t0)/520.0) + 14.0, 14.0, float(uSteps)));
+  float dt0 = (t1 - t0) * (GROWTH - 1.0) / (pow(GROWTH, float(n)) - 1.0);
+  float t   = t0 + dt0*hash12(gl_FragCoord.xy + 17.3);
+  float dt  = dt0;
+
+  float cosT = dot(rd, uSun);
+  float ph   = mix(hg(cosT, uPhaseG), hg(cosT, -0.34), 0.30) * 0.26;
+  float sunOn = (uMode == 1) ? 0.0 : 1.0;
+  float ambOn = (uMode == 2) ? 0.12 : 1.0;
+
+  float T   = 1.0;
+  float air = exp(-t*AIR);
+  vec3  scat = vec3(0.0);
+  float shaft = 0.0;
+
+  for (int i=0;i<n;i++){
+    vec3  p = ro + rd*t;
+    float d = densityAt(p, false);
+    if (d > 0.004){
+      /* secondary march: optical depth toward the sun, geometric step growth
+         so a handful of taps still spans a whole cloud */
+      float od = 0.0, lstep = 260.0;
+      vec3  lp = p;
+      for (int j=0;j<6;j++){
+        if (j >= uLightSteps) break;
+        lp += uSun * lstep;
+        od += densityAt(lp, true) * lstep;
+        lstep *= 2.10;
+      }
+      float beer  = exp(-od * SIGMA);            // Beer–Lambert transmittance
+      float deep  = beer*beer;                   // crude multiple-scatter term
+      float powder= 1.0 - exp(-d * 3.4);          // thin shell -> dark edge
+      float ao    = exp(-od * 0.00075);
+      float hn    = clamp(p.y/uHeight, 0.0, 1.0);
+      vec3  amb   = mix(AMB_BOT, AMB_TOP, hn*hn) * (0.22 + 0.78*ao) * ambOn;
+      vec3  sun   = SUN_COL * sunOn * (beer*ph*mix(1.0, powder, uPowder)
+                                     + deep*MS_COL*0.75);
+      float a     = 1.0 - exp(-d * dt * SIGMA);  // analytic slab integration
+      scat  += T * a * (sun + amb) * air;
+      shaft += T * a * beer * air;                // crepuscular in-scatter
+      T     *= (1.0 - a);
+      if (T < 0.003) break;
+    }
+    t  += dt;
+    dt *= GROWTH;
+    air *= exp(-dt*AIR);
+  }
+
+  /* Transmittance compositing: what survives the cloud is attenuated
+     toward the *in-scattered* ambient, not toward the clear-sky colour —
+     this is the standard cloud approximation and it keeps thick cloud
+     luminous grey instead of letting the sky show through. */
+  float Ta = T*air;
+  vec3 col = scat + Ta*bg + (1.0 - Ta)*skyAmbient(rd)*0.55;
+  col += SUN_COL * shaft * 0.045 * pow(max(cosT, 0.0), 3.0) * uSunFront;
+  col *= uExposure;
+  col  = aces(col);
+  col  = pow(col, vec3(0.4545));
+  vec2 q = gl_FragCoord.xy / uRes;
+  col *= 0.66 + 0.34*pow(max(16.0*q.x*q.y*(1.0-q.x)*(1.0-q.y), 0.0), 0.20);
+  col += (hash12(gl_FragCoord.xy*1.73 + 3.1) - 0.5) * 0.0039;
+  outC = vec4(col, 1.0);
+}`;
+
+/* ===================================================================== */
+/*  GL PLUMBING                                                           */
+/* ===================================================================== */
+const canvas=$('gl');
+const gl=canvas.getContext('webgl2',{antialias:false,alpha:false,depth:false,stencil:false,
+  powerPreference:'high-performance',preserveDrawingBuffer:true});
+function fatal(msg){
+  const e=$('err'); e.style.display='block'; e.textContent+=msg+'\n';
+  $('stat').textContent='failed';
+  window.__probe={ready:false,error:String(msg)};
+  console.error(msg);
+}
+if(!gl){ fatal('WebGL2 is required and is unavailable in this browser.'); throw new Error('no webgl2'); }
+gl.getExtension('EXT_color_buffer_float');
+
+function compile(type,src,name){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    const log=name+': '+gl.getShaderInfoLog(s);fatal(log);throw new Error(log);
+  }
+  return s;
+}
+function buildProg(fsSrc,name){
+  const p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,VS,name+'.vs'));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fsSrc,name+'.fs'));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){
+    const log='link '+name+': '+gl.getProgramInfoLog(p);fatal(log);throw new Error(log);
+  }
+  const u={},n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){const inf=gl.getActiveUniform(p,i);
+    u[inf.name.replace(/\[0\]$/,'')]=gl.getUniformLocation(p,inf.name);}
+  return {p:p,u:u};
+}
+const PROG={};
+try{
+  PROG.bake=buildProg(FS_BAKE,'bake');
+  PROG.main=buildProg(FS_CLOUDS,'clouds');
+}catch(e){ throw e; }
+
+const vao=gl.createVertexArray();
+function draw(){gl.bindVertexArray(vao);gl.drawArrays(gl.TRIANGLES,0,3);}
+
+/* --- the noise volume --- */
+const texNoise=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_3D,texNoise);
+gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,NOISE_DIM,NOISE_DIM,NOISE_DIM,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.REPEAT);
+const fboNoise=gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER,fboNoise);
+gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,texNoise,0,0);
+const fboStatus=gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+if(fboStatus!==gl.FRAMEBUFFER_COMPLETE)
+  fatal('3D noise framebuffer incomplete 0x'+fboStatus.toString(16));
+gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+
+let bakeQueue=[];
+function startBake(){
+  bakeQueue=new Array(NOISE_DIM);
+  for(let i=0;i<NOISE_DIM;i++)bakeQueue[i]=i;
+}
+function bakeLayers(n){
+  if(!bakeQueue.length) return 0;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fboNoise);
+  gl.viewport(0,0,NOISE_DIM,NOISE_DIM);
+  gl.useProgram(PROG.bake.p);
+  gl.uniform1f(PROG.bake.u.uOct,P.octaves);
+  /* one attach + one draw per layer: attaching several layers before a
+     single draw would only ever write the last one */
+  const k=Math.min(n,bakeQueue.length);
+  for(let i=0;i<k;i++){
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,texNoise,0,bakeQueue.shift());
+    draw();
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return k;
+}
+startBake();
+
+/* ===================================================================== */
+/*  CAMERA + UNIFORM STATE                                                */
+/* ===================================================================== */
+function basis(){
+  const cy=Math.cos(VIEW.yaw), sy=Math.sin(VIEW.yaw);
+  const cp=Math.cos(VIEW.pitch), sp=Math.sin(VIEW.pitch);
+  const f=[sy*cp, sp, cy*cp];
+  let r=[-cy, 0, sy];
+  const rl=Math.hypot(r[0],r[1],r[2])||1; r=[r[0]/rl,r[1]/rl,r[2]/rl];
+  const u=[ r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0] ];
+  return {r:r,u:u,f:f};
+}
+function sunDir(){
+  const a=P.az*Math.PI/180, e=P.el*Math.PI/180;
+  const ce=Math.cos(e);
+  return [Math.sin(a)*ce, Math.sin(e), Math.cos(a)*ce];
+}
+
+/* ===================================================================== */
+/*  UI                                                                    */
+/* ===================================================================== */
+function addSlider(parent,key,label,min,max,step,fmt,onChange){
+  const host=$(parent);
+  const row=document.createElement('div');row.className='row';
+  const lab=document.createElement('label');lab.textContent=label;
+  const out=document.createElement('output');out.id='o-'+key;
+  row.appendChild(lab);row.appendChild(out);
+  const inp=document.createElement('input');
+  inp.type='range';inp.className='sld';inp.min=min;inp.max=max;inp.step=step;
+  inp.value=P[key];inp.dataset.key=key;
+  host.appendChild(row);host.appendChild(inp);
+  const sync=()=>{out.textContent=fmt(P[key]);};
+  inp.addEventListener('input',()=>{
+    P[key]=parseFloat(inp.value);
+    sync();
+    if(onChange)onChange();
+    hud();
+  });
+  sync();
+  return inp;
+}
+function addSeg(parent,id,items,get,set){
+  const host=$(parent);
+  const wrap=document.createElement('div');wrap.className='seg';wrap.id=id;
+  const btns=items.map((label,i)=>{
+    const b=document.createElement('button');b.textContent=label;
+    b.addEventListener('click',()=>{set(i);refresh();});
+    wrap.appendChild(b);return b;
+  });
+  host.appendChild(wrap);
+  const refresh=()=>{btns.forEach((b,i)=>b.classList.toggle('on',get()===i));};
+  refresh();
+  return {refresh:refresh,btns:btns};
+}
+
+addSlider('g-noise','scale','NOISE SCALE',600,9000,100,v=>(v/1000).toFixed(1)+' km');
+addSlider('g-noise','octaves','FBM OCTAVES',2,6,1,
+  v=>v+' oct  ('+(clamp(v-1,1,4)+clamp(v-2,1,3)+clamp(v-3,1,2)+1+' baked bands)') ,
+  ()=>{SHAPE_NORM=measureShape(P.octaves);startBake();});
+addSlider('g-noise','warp','DOMAIN WARP',0,1.2,0.01,v=>v.toFixed(2));
+addSlider('g-body','coverage','COVERAGE',0.05,0.75,0.005,v=>Math.round(v*100)+'%');
+addSlider('g-body','density','DENSITY',0.3,2.2,0.01,v=>v.toFixed(2));
+addSlider('g-body','height','CLOUD HEIGHT',600,3200,25,v=>(P.height/1000).toFixed(2)+' km');
+addSlider('g-light','az','LIGHT AZIMUTH',-80,80,1,v=>v.toFixed(0)+'\u00b0');
+addSlider('g-light','el','LIGHT ELEVATION',1,35,0.5,v=>v.toFixed(1)+'\u00b0');
+addSlider('g-light','powder','POWDER',0,1,0.01,v=>v.toFixed(2));
+addSlider('g-light','phaseG','PHASE g',0.1,0.94,0.01,v=>v.toFixed(2));
+
+const QUAL_SEG=addSeg('g-qual','seg-qual',QUAL.map(q=>q.name),()=>P.quality,i=>{P.quality=i;});
+const MODE_SEG=addSeg('g-mode','seg-mode',MODES,()=>P.mode,i=>{P.mode=i;});
+
+$('bPause').addEventListener('click',()=>{paused=!paused;$('bPause').textContent=paused?'RESUME':'PAUSE';});
+$('bReset').addEventListener('click',()=>{
+  Object.assign(P,DEFAULTS);
+  syncSliders();QUAL_SEG.refresh();MODE_SEG.refresh();
+  startBake();
+  VIEW.yaw=VIEW_DEFAULT.yaw;VIEW.pitch=VIEW_DEFAULT.pitch;
+  $('stat').textContent='rebaking noise volume';
+  hud();
+});
+$('bHide').addEventListener('click',()=>document.body.classList.toggle('hideui'));
+function syncSliders(){
+  document.querySelectorAll('input.sld').forEach(el=>{
+    const key=el.dataset.key;
+    el.value=P[key];
+    const out=$('o-'+key);
+    if(out) out.textContent=SLIDER_FMT[key](P[key]);
+  });
+}
+const SLIDER_FMT={
+  scale:v=>(v/1000).toFixed(1)+' km',
+  octaves:v=>v+'  ('+(clamp(v-1,1,4)+clamp(v-2,1,3)+clamp(v-3,1,2)+1)+' bands)',
+  warp:v=>v.toFixed(2),
+  coverage:v=>Math.round(v*100)+'%',
+  density:v=>v.toFixed(2),
+  height:v=>(P.height/1000).toFixed(2)+' km',
+  az:v=>v.toFixed(0)+'\u00b0',
+  el:v=>v.toFixed(1)+'\u00b0',
+  powder:v=>v.toFixed(2),
+  phaseG:v=>v.toFixed(2)
+};
+
+/* --- mouse look + keys --- */
+let dragging=false,lastX=0,lastY=0;
+canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;});
+addEventListener('pointerup',()=>{dragging=false;});
+addEventListener('pointermove',e=>{
+  if(!dragging)return;
+  VIEW.yaw   -= (e.clientX-lastX)*0.0032;
+  VIEW.pitch  = clamp(VIEW.pitch + (e.clientY-lastY)*0.0026, -0.52, 0.42);
+  lastX=e.clientX;lastY=e.clientY;
+});
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k===' '){e.preventDefault();$('bPause').click();}
+  else if(k==='h'){document.body.classList.toggle('hideui');}
+});
+
+function hud(){
+  const q=QUAL[P.quality];
+  $('o-q').textContent=q.steps+'/'+q.light;
+  $('o-mode').textContent=MODES[P.mode];
+}
+
+/* ===================================================================== */
+/*  FRAME LOOP — fixed delta, chunked bake, deterministic               */
+/* ===================================================================== */
+let t=0, paused=false, frames=0, ready=false;
+let fpsEMA=0, lastWall=0, probeFrames=0, probeAcc=0;
+const RENDERER=(()=>{const d=gl.getExtension('WEBGL_debug_renderer_info');
+  return d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER);})();
+
+function resize(){
+  const cw=Math.max(2,innerWidth), ch=Math.max(2,innerHeight);
+  canvas.style.width=cw+'px'; canvas.style.height=ch+'px';
+  let w=Math.round(cw*0.4375);
+  w=clamp(w,512,640);
+  let h=Math.round(w*ch/cw);
+  h=clamp(h,320,400);
+  w=Math.round(h*cw/ch);
+  if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
+}
+addEventListener('resize',resize);
+resize();
+
+function frame(){
+  requestAnimationFrame(frame);
+  const now=performance.now();
+  if(lastWall) fpsEMA = fpsEMA ? fpsEMA+(1000/Math.max(1,now-lastWall)-fpsEMA)*0.15 : 1000/Math.max(1,now-lastWall);
+  lastWall=now;
+
+  /* --- chunked bake of the noise volume (octaves changed / first load) --- */
+  if(bakeQueue.length){
+    bakeLayers(7);
+    $('bar').firstElementChild.style.width=((1-bakeQueue.length/NOISE_DIM)*100).toFixed(0)+'%';
+    $('stat').textContent='baking noise volume  '+(NOISE_DIM-bakeQueue.length)+'/'+NOISE_DIM+' layers';
+  } else if(!ready){
+    $('bar').firstElementChild.style.width='100%';
+    $('stat').textContent='marching';
+  }
+
+  if(!paused) t+=FIXED_DT;
+
+  const B=basis(), S=sunDir(), q=QUAL[P.quality];
+  /* eye sits above the deck looking down onto its top surface, so the
+     lobes read in profile with a horizon behind them */
+  const ro=[0, P.height*1.30+400, 0];
+  /* project the sun into the shader's screen space for the flare:
+     rd = uCam * vec3(uv, focal)  =>  uv = (dot(S,r), dot(S,u)) * focal / dot(S,f) */
+  const su=S[0]*B.r[0]+S[1]*B.r[1]+S[2]*B.r[2];
+  const sv=S[0]*B.u[0]+S[1]*B.u[1]+S[2]*B.u[2];
+  const sf=S[0]*B.f[0]+S[1]*B.f[1]+S[2]*B.f[2];
+  const invSf = sf>0.02 ? VIEW.focal/sf : 0.0;
+  const sunFront=sf>0.02?1:0;
+
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.useProgram(PROG.main.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_3D,texNoise);
+  const u=PROG.main.u;
+  gl.uniform1i(u.uNoise,0);
+  gl.uniform2f(u.uRes,canvas.width,canvas.height);
+  gl.uniform1f(u.uTime,t);
+  gl.uniformMatrix3fv(u.uCam,false,[B.r[0],B.r[1],B.r[2], B.u[0],B.u[1],B.u[2], B.f[0],B.f[1],B.f[2]]);
+  gl.uniform3f(u.uRo,ro[0],ro[1],ro[2]);
+  gl.uniform3f(u.uSun,S[0],S[1],S[2]);
+  gl.uniform2f(u.uSunUV,su*invSf,sv*invSf);
+  gl.uniform1f(u.uSunFront,sunFront);
+  gl.uniform3f(u.uWind,t*0.0105,0.0,t*0.0038);
+  gl.uniform1f(u.uInvScale,1/P.scale);
+  gl.uniform1f(u.uHeight,P.height);
+  gl.uniform1f(u.uCoverage,P.coverage);
+  gl.uniform1f(u.uDensity,P.density);
+  gl.uniform1f(u.uWarp,P.warp);
+  gl.uniform1f(u.uPowder,P.powder);
+  gl.uniform1f(u.uPhaseG,P.phaseG);
+  gl.uniform1f(u.uExposure,0.72);
+  gl.uniform3f(u.uNormA,SHAPE_NORM[0],SHAPE_NORM[1],SHAPE_NORM[2]);
+  gl.uniform3f(u.uNormB,SHAPE_NORM[3],SHAPE_NORM[4],SHAPE_NORM[5]);
+  gl.uniform1f(u.uThr,invNorm(clamp(P.coverage,0.02,0.96)));
+  gl.uniform1i(u.uSteps,q.steps);
+  gl.uniform1i(u.uLightSteps,q.light);
+  gl.uniform1i(u.uMode,P.mode);
+  draw();
+
+  frames++;
+  probeAcc += now - performance.now();
+  probeFrames++;
+  if(!ready && bakeQueue.length===0 && frames>=3){
+    ready=true;
+    window.__ready=true;
+    $('boot').style.opacity='0';
+    setTimeout(()=>{ $('boot').style.display='none'; },500);
+  }
+  if(frames%10===0){
+    const q2=QUAL[P.quality];
+    $('hud').innerHTML=
+      '<div class="r"><span>frame</span><b class="k">'+fpsEMA.toFixed(1)+' fps</b></div>'+
+      '<div class="r"><span>march</span><b>'+q2.steps+' primary &middot; '+q2.light+' light taps</b></div>'+
+      '<div class="r"><span>noise volume</span><b>'+NOISE_DIM+'&sup3; rgba8 &middot; '+P.octaves+' octaves</b></div>'+
+      '<div class="r"><span>internal</span><b>'+canvas.width+'&times;'+canvas.height+' &rarr; '+innerWidth+'&times;'+innerHeight+'</b></div>'+
+      '<div class="r"><span>extinction &sigma;</span><b>0.0075 / unit</b></div>'+
+      '<div class="note">t = '+t.toFixed(2)+' s &nbsp;(fixed &Delta; = 1/30)</div>';
+    window.__probe={
+      ready:ready, fps:+fpsEMA.toFixed(2), frames:frames, simTime:+t.toFixed(3),
+      internalW:canvas.width, internalH:canvas.height,
+      displayW:innerWidth, displayH:innerHeight,
+      primarySteps:q2.steps, lightTaps:q2.light, octaves:P.octaves,
+      scale:P.scale, coverage:P.coverage, density:P.density, height:P.height,
+      lightAzimuth:P.az, lightElevation:P.el, powder:P.powder, mode:MODES[P.mode],
+      noiseVolume:NOISE_DIM+'^3', renderer:String(RENDERER)
+    };
+  }
+}
+hud();
+syncSliders();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

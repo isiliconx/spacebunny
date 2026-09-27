@@ -1,0 +1,1125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WAVE INTERFERENCE — superposition, nodes, standing waves</title>
+<style>
+  :root{
+    --pos:#ff5e8a; --pos2:#ffbe5e; --neg:#2fdcff; --ink:#e6eefc; --dim:#8fa2c8;
+    --panel:rgba(4,8,18,.76); --edge:rgba(110,200,255,.24);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#03050c;overflow:hidden}
+  body{font-family:var(--mono);color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl,#ov{position:fixed;left:0;top:0;width:100%;height:100%;display:block}
+  #gl{z-index:1}
+  #ov{z-index:3;touch-action:none}
+
+  .hud{position:fixed;z-index:6;user-select:none;pointer-events:none}
+  .panel{
+    background:var(--panel);border:1px solid var(--edge);
+    box-shadow:0 0 0 1px rgba(0,0,0,.55),0 12px 44px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter:blur(3px);
+  }
+
+  /* ---- title ---- */
+  #title{left:26px;top:20px;max-width:400px}
+  #title h1{
+    margin:0;font-size:26px;font-weight:300;letter-spacing:.30em;color:#fff;
+    text-shadow:0 0 22px rgba(47,220,255,.55),0 0 52px rgba(255,94,138,.35);
+  }
+  #title .rule{height:1px;width:300px;margin:9px 0 8px;
+    background:linear-gradient(90deg,var(--pos),var(--pos2) 42%,var(--neg) 78%,transparent);opacity:.8}
+  #title .eq{font-size:12.5px;letter-spacing:.02em;color:#cfe0ff;line-height:1.6}
+  #title .eq b{color:#fff;font-weight:600}
+  #title .sub{font-size:11px;letter-spacing:.19em;color:var(--dim);text-transform:uppercase;margin-top:7px}
+  #title .sub2{font-size:10.5px;letter-spacing:.08em;color:#6b7ba0;margin-top:5px}
+
+  /* ---- chip ---- */
+  #chip{left:26px;top:150px;display:flex;gap:9px;align-items:center;padding:6px 12px 6px 10px;
+        font-size:11px;letter-spacing:.15em;text-transform:uppercase}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--neg);box-shadow:0 0 10px var(--neg)}
+  #chipTxt{color:#dbe7ff}
+  #chipSep{color:#3d4a68}
+  #chipSub{color:var(--pos2)}
+
+  /* ---- stats ---- */
+  #stats{right:26px;top:20px;padding:10px 13px;font-size:11.5px;letter-spacing:.05em;line-height:1.9;
+         color:#c6d4f0;min-width:248px;max-width:312px}
+  #stats .row{display:flex;justify-content:space-between;gap:12px}
+  #stats .k{color:#8ea0c6}
+  #stats .v{color:#eaf1ff;white-space:nowrap}
+  #stats .h{color:#6b7ba0;text-transform:uppercase;letter-spacing:.14em;font-size:10.5px;
+            margin-top:7px;padding-top:6px;border-top:1px solid rgba(120,190,255,.15)}
+  #stats .gpu{white-space:normal;overflow-wrap:anywhere;color:#93a6cc;font-size:10.5px;line-height:1.5}
+
+  /* ---- controls ---- */
+  #ctl{right:26px;bottom:20px;width:314px;padding:12px 14px 13px;pointer-events:auto}
+  #ctl .cap{font-size:10.5px;letter-spacing:.18em;color:#8ea0c6;text-transform:uppercase;
+            display:flex;justify-content:space-between;align-items:baseline}
+  #ctl .cap em{font-style:normal;color:#6b7ba0;font-size:10.5px;letter-spacing:.06em}
+  .seg{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin:9px 0 11px}
+  .seg button{
+    font:inherit;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:6px 2px;cursor:pointer;
+    background:rgba(28,44,78,.55);color:#a9bcdf;border:1px solid rgba(120,190,255,.20);
+    border-radius:2px;transition:background .12s,color .12s,border-color .12s}
+  .seg button:hover{background:rgba(44,70,118,.6);color:#e2ecff}
+  .seg button.on{background:linear-gradient(180deg,rgba(255,94,138,.30),rgba(255,190,94,.16));
+                 border-color:rgba(255,150,180,.62);color:#fff;text-shadow:0 0 10px rgba(255,140,180,.7)}
+  .row{display:grid;grid-template-columns:74px 1fr 52px;align-items:center;gap:8px;margin:6px 0}
+  .row label{font-size:10.5px;letter-spacing:.08em;color:#93a5cb;text-transform:uppercase}
+  .row .num{font-size:11px;color:#e6eefc;text-align:right;letter-spacing:.02em}
+  .row input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:pointer;margin:0}
+  .row input[type=range]::-webkit-slider-runnable-track{height:2px;background:rgba(140,180,255,.22);border-radius:2px}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:13px;margin-top:-5.5px;
+    background:var(--neg);border-radius:1px;box-shadow:0 0 8px rgba(47,220,255,.8)}
+  .row input[type=range]:hover::-webkit-slider-thumb{background:var(--pos2);box-shadow:0 0 10px rgba(255,190,94,.9)}
+  .row.warm input[type=range]::-webkit-slider-thumb{background:var(--pos);box-shadow:0 0 8px rgba(255,94,138,.8)}
+  .row.hid{display:none}
+  .grp{color:#6b7ba0;font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;
+       margin:9px 0 3px;padding-top:7px;border-top:1px solid rgba(120,190,255,.13)}
+  .btn{font:inherit;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;cursor:pointer;
+       background:rgba(28,44,78,.5);color:#9fb2d6;border:1px solid rgba(120,190,255,.20);
+       border-radius:2px;padding:5px 8px;margin-top:9px;width:100%}
+  .btn:hover{background:rgba(44,70,118,.6);color:#e2ecff}
+
+  /* ---- legend / probe ---- */
+  #legend{left:26px;bottom:20px;width:340px;padding:11px 13px 12px}
+  #legend .cap{font-size:10.5px;letter-spacing:.15em;color:#93a5cb;text-transform:uppercase;margin-bottom:7px}
+  #legend .cap em{font-style:normal;color:#6b7ba0;letter-spacing:.05em}
+  #legend .lg{display:flex;flex-wrap:wrap;gap:5px 13px;font-size:10.5px;color:#b9c8e6;margin-bottom:8px}
+  #legend .lg span{display:flex;align-items:center;gap:5px}
+  #swc{width:11px;height:9px;border-radius:1px;display:inline-block}
+  #probeCv{display:block;width:314px;height:60px;margin-top:2px}
+  #legend .note{font-size:10.5px;line-height:1.62;color:#8798bd;margin-top:7px;letter-spacing:.01em}
+  #legend .note b{color:#a8bbdd;font-weight:600}
+  .vis-hidden{visibility:hidden}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ov"></canvas>
+
+<div class="hud" id="title">
+  <h1>INTERFERENCE</h1>
+  <div class="rule"></div>
+  <div class="eq">ψ(<b>r</b>,t) = <b>Σ</b><sub>i</sub> A<sub>i</sub> · e<sup>−γr</sup> · sin(k·r − ωt + φ<sub>i</sub>)</div>
+  <div class="sub">superposition of coherent waves · nodes &amp; antinodes</div>
+  <div class="sub2">analytic superposition in one fragment shader · 640×400 · strobed ×26</div>
+</div>
+
+<div class="hud panel" id="chip">
+  <div class="dot" id="chipDot"></div>
+  <div id="chipTxt">POINT SOURCES</div>
+  <div id="chipSep">/</div>
+  <div id="chipSub">n = 3</div>
+</div>
+
+<div class="hud panel" id="stats">
+  <div class="row"><span class="k">frequency f</span><span class="v" id="sF">1000 Hz</span></div>
+  <div class="row"><span class="k">wavelength λ</span><span class="v" id="sL">0.340 m</span></div>
+  <div class="row"><span class="k">phase speed c=fλ</span><span class="v" id="sC">340 m/s</span></div>
+  <div class="row"><span class="k">wavenumber k</span><span class="v" id="sK">18.48 m⁻¹</span></div>
+  <div class="row"><span class="k">angular ω</span><span class="v" id="sW">6283 rad/s</span></div>
+  <div class="row"><span class="k">damping γ</span><span class="v" id="sG">0.45 m⁻¹</span></div>
+  <div class="row"><span class="k">sim clock</span><span class="v" id="sT">0.000 s</span></div>
+  <div class="h">render</div>
+  <div class="row"><span class="k">fps / frame</span><span class="v" id="sFps">— / 0</span></div>
+  <div class="row"><span class="k">internal</span><span class="v" id="sRes">640×400</span></div>
+  <div class="row"><span class="k">driver</span><span class="v gpu" id="sGl">—</span></div>
+</div>
+
+<div class="hud panel" id="ctl">
+  <div class="cap"><span>field</span><em id="ctlHint">drag the probe row</em></div>
+  <div class="seg" id="seg">
+    <button data-m="0" class="on">point</button>
+    <button data-m="1">plane</button>
+    <button data-m="2">pipe</button>
+  </div>
+
+  <div class="row" id="rNs"><label>sources</label><input type="range" id="cN" min="1" max="6" step="1" value="3"><span class="num" id="nN">3</span></div>
+  <div class="row" id="rCo"><label>coherence</label><input type="range" id="cCo" min="0" max="3.1416" step="0.02" value="0"><span class="num" id="nCo">0.00</span></div>
+  <div class="row hid" id="rSp"><label>beam spread</label><input type="range" id="cSp" min="0" max="1.1" step="0.01" value="0.18"><span class="num" id="nSp">0.18</span></div>
+  <div class="row hid" id="rSt"><label>steer</label><input type="range" id="cSt" min="-0.9" max="0.9" step="0.01" value="0"><span class="num" id="nSt">0.00</span></div>
+  <div class="row hid" id="rN"><label>mode n</label><input type="range" id="cN2" min="1" max="9" step="1" value="3"><span class="num" id="nN2">3</span></div>
+  <div class="seg" id="segB" style="display:none">
+    <button data-b="0" class="on">closed│closed</button>
+    <button data-b="1">closed│open</button>
+  </div>
+
+  <div class="grp">wave</div>
+  <div class="row warm"><label>frequency</label><input type="range" id="cF" min="80" max="4000" step="5" value="1000"><span class="num" id="nF">1000</span></div>
+  <div class="row warm" id="rL"><label>wavelength</label><input type="range" id="cL" min="0.06" max="1.2" step="0.005" value="0.34"><span class="num" id="nL">0.340</span></div>
+  <div class="row hid" id="rPh"><label>strobe φ</label><input type="range" id="cPh" min="0" max="6.2832" step="0.01" value="1.15"><span class="num" id="nPh">1.15</span></div>
+  <div class="row hid" id="rD"><label>drive f/f<sub>n</sub></label><input type="range" id="cR" min="0.55" max="1.6" step="0.005" value="1.0"><span class="num" id="nR">1.000</span></div>
+  <div class="row"><label>damping</label><input type="range" id="cG" min="0" max="2" step="0.01" value="0.85"><span class="num" id="nG">0.85</span></div>
+  <div class="row" id="rPr"><label>probe row</label><input type="range" id="cPr" min="-0.95" max="0.95" step="0.01" value="-0.18"><span class="num" id="nPr">-0.18</span></div>
+  <div class="seg" id="segR" style="margin-bottom:0">
+    <button data-r="0" class="on">◼ hold</button>
+    <button data-r="1">▶ run</button>
+    <button data-r="2">⟳ sweep</button>
+  </div>
+  <button class="btn" id="btnLayout">reset layout</button>
+</div>
+
+<div class="hud panel" id="legend">
+  <div class="cap"><em id="lgTitle">probe · ψ(x) on the marked row</em></div>
+  <div class="lg">
+    <span><i id="swc" style="background:linear-gradient(90deg,#ff2f6a,#ffbe5e,#fff3e0)"></i>compression +ψ</span>
+    <span><i id="swc" style="background:linear-gradient(90deg,#071026,#2fdcff,#d5fffb)"></i>rarefaction −ψ</span>
+    <span><i id="swc" style="background:#0c1424;box-shadow:inset 0 0 0 1px #2fdcff"></i>node</span>
+    <span><i id="swc" style="background:#0c1424;box-shadow:inset 0 0 0 1px #ffbe5e"></i>antinode</span>
+  </div>
+  <canvas id="probeCv"></canvas>
+  <div class="note" id="lgNote"><b>Node</b> = permanent zero (paths cancel). <b>Antinode</b> = constructive maximum.
+    Cyan hairlines trace |ψ|→0, warm hairlines trace |ψ|→max.</div>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   WAVE INTERFERENCE  —  analytic superposition of plane waves / circular waves
+   from N coherent sources, plus a standing-wave mode in a pipe with node lines.
+
+   Technique: one WebGL2 fragment shader evaluates the closed-form field
+   ψ(r,t) = Σ Aᵢ e^{−γ r} sin(k r − ωt + φᵢ) per pixel. No simulation state,
+   no render targets, no textures. Internal 640×400, bilinear upscale.
+   Time advances by a FIXED delta (1/60 s) so two cold loads match.
+   ========================================================================== */
+
+/* ------------------------------------------------ deterministic randomness --- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : (v > b ? b : v);
+const $ = id => document.getElementById(id);
+
+/* ---------------------------------------------------------- field constants -- */
+const IW = 640, IH = 400;      // internal render resolution (contract: 512×320 … 640×400)
+const MET = 1.2;               // metres per field unit
+const ASPECT = IW / IH;        // 1.6
+const PIPE_HL = 1.05;          // pipe half length, units  (L = 2.52 m)
+const PIPE_CX = -0.30, PIPE_CY = -0.12;   // pipe centre on the field (clears the panels)
+const TUBE = 0.28;             // pipe half height, units
+const SPREAD_1 = 0.55, R = 0.05;   // near-source softening
+const DT = 1 / 60;             // fixed simulation delta
+/* Displayed time runs SLOWMO× slower than the acoustic time it represents —
+   a ripple tank / stroboscope. On a 3-5 fps software rasteriser, drawing a
+   1 kHz field at real speed means the screenshot catches whichever strobe
+   frame the compositor happened to grab, so two cold loads disagree. Slowing
+   the sweep keeps the animation legible AND makes the captured phase
+   reproducible. Frequency still drives the sweep rate and the readouts. */
+const SLOWMO = 26;
+const visHz = () => clamp((P.mode === 2 ? modeFreq(P.standN) * P.ratio : P.f) / SLOWMO, 0.12, 2.4);
+
+/* ------------------------------------------------------------------ params -- */
+const P = {
+  mode: 0,        // 0 point sources | 1 plane waves | 2 standing wave in pipe
+  run: 0,         // 0 hold (strobe) | 1 run | 2 sweep (auto-scrub the phase)
+  n: 3,
+  f: 1000,        // Hz
+  lam: 0.34,      // m
+  gamma: 0.85,    // 1/m  (absorption + spreading)
+  coher: 0,       // rad, per-source phase spread
+  spread: 0.18,    // rad, beam spread between array elements (plane mode only)
+  steer: 0,       // rad, beam steering (plane mode only)
+  standN: 3,
+  standOpen: 0,   // 0 closed|closed, 1 closed|open
+  ratio: 1,       // drive frequency as a multiple of the mode's resonance
+  probeY: -0.18
+};
+
+/* ------------------------------------------------------------------- WebGL -- */
+const glCanvas = $('gl');
+const gl = glCanvas.getContext('webgl2', { antialias:false, alpha:false, depth:false, stencil:false,
+                                            preserveDrawingBuffer:false, powerPreference:'high-performance' });
+let glOk = !!gl;
+let glName = 'no webgl2';
+if (gl){
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  glName = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+  glCanvas.width = IW; glCanvas.height = IH;
+}
+
+const VS = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform vec2  uRes;
+uniform float uPh;     // global phase accumulator, rad
+uniform int   uMode;   // 0 point, 1 plane, 2 standing
+uniform int   uN;
+uniform vec4  uSrc[8]; // xy = position (units), z = amplitude, w = phase offset
+uniform vec2  uDir[8]; // unit propagation direction (plane mode)
+uniform float uK;      // wavenumber, rad per unit
+uniform float uG;      // damping, per unit
+uniform float uPHL;    // pipe half length
+uniform float uTube;   // pipe half height
+uniform float uEN;     // standing mode number
+uniform float uEMix;   // 0 = closed|closed, 1 = closed|open
+uniform vec2  uFocus;  // centroid of the source array (composition focal point)
+uniform vec2  uPipeC;  // pipe centre in field units
+uniform float uPipeAmp; // driven-oscillator response amplitude (resonance)
+
+const float PI = 3.141592653589793;
+
+vec3 rampPos(float x){
+  vec3 c = mix(vec3(0.135,0.020,0.080), vec3(0.880,0.170,0.430), smoothstep(0.0,0.52,x));
+  c = mix(c, vec3(1.000,0.600,0.270), smoothstep(0.48,0.88,x));
+  c = mix(c, vec3(1.000,0.940,0.840), smoothstep(0.86,1.00,x));
+  return c;
+}
+vec3 rampNeg(float x){
+  vec3 c = mix(vec3(0.018,0.045,0.120), vec3(0.085,0.400,0.690), smoothstep(0.0,0.52,x));
+  c = mix(c, vec3(0.190,0.860,0.970), smoothstep(0.48,0.88,x));
+  c = mix(c, vec3(0.830,1.000,0.975), smoothstep(0.86,1.00,x));
+  return c;
+}
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+vec3 ground(vec2 p){
+  float r = length(p / vec2(1.6, 1.0));
+  vec3 g = mix(vec3(0.026,0.036,0.074), vec3(0.004,0.008,0.020), smoothstep(0.15,1.30,r));
+  vec2 gp = p * ${MET.toFixed(3)};
+  vec2 gw = max(fwidth(gp), vec2(1e-4));
+  vec2 gd = abs(fract(gp - 0.5) - 0.5) / gw;
+  float grid = 1.0 - min(min(gd.x, gd.y), 1.0);
+  g += vec3(0.10,0.17,0.28) * grid * 0.18;
+  return g;
+}
+float vignette(vec2 fc, vec2 res){
+  return 1.0 - 0.46 * pow(length((fc / res) - 0.5) * 1.42, 2.1);
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * 2.0;   // x∈[-1.6,1.6], y∈[-1,1]
+  float ax_ = abs(p.x);
+
+  if(uMode == 2){
+    /* ---------------- standing wave: displacement ribbon inside a pipe ------ */
+    vec2 q = p - uPipeC;                 // pipe-local coordinates
+    float inTube = step(abs(q.x), uPHL) * step(abs(q.y), uTube);
+    vec3 col = ground(p);
+    col = mix(col, vec3(0.013,0.019,0.038), inTube);
+    float s01 = clamp((q.x + uPHL) / (2.0 * uPHL), 0.0, 1.0);
+    float e = mix(sin(PI * uEN * s01), cos(PI * (2.0 * uEN - 1.0) * s01 * 0.5), uEMix);
+    float d = 0.92 * e * cos(uPh) * uPipeAmp;
+    float ax = abs(d);
+    float ay = abs(q.y);
+    float ins = step(ay, ax) * inTube;
+    float g = clamp(ay / max(ax, 1e-3), 0.0, 1.0);
+    vec3 body = (d >= 0.0) ? rampPos(0.22 + 0.78 * g) : rampNeg(0.22 + 0.78 * g);
+    // shade across the ribbon: ramped body, brighter core, soft outer lip
+    float sh = pow(g, 0.75);
+    col = mix(col, body * (0.30 + 0.66 * sh), ins);
+    float core = smoothstep(0.0, 0.30, 1.0 - g) * ins;
+    col += body * core * 0.30;
+    float halo = exp(-max(ay - ax, 0.0) * 18.0) * inTube;
+    col += body * 0.22 * halo;
+    float rim = smoothstep(0.020, 0.0, abs(ay - ax)) * inTube;
+    vec3 rimC = (d >= 0.0) ? vec3(1.00,0.94,0.84) : vec3(0.82,1.00,0.98);
+    col += rimC * rim * 0.72;
+    // node pinch: a permanent zero, so it never pulses — a cool marker
+    float pinch = exp(-e * e * 2600.0) * exp(-ay * 11.0) * inTube;
+    col += vec3(0.32,0.95,1.00) * pinch * 0.80;
+    col *= clamp(vignette(gl_FragCoord.xy, uRes), 0.0, 1.0);
+    col += (hash21(gl_FragCoord.xy) - 0.5) * 0.011;
+    O = vec4(col, 1.0);
+    return;
+  }
+
+  /* ---------------- free field: N coherent sources ------------------------- */
+  float S = 0.0, A = 0.0;
+  for(int i = 0; i < 8; i++){
+    if(i >= uN) break;
+    vec2 d = p - uSrc[i].xy;
+    float ph = uPh + uSrc[i].w;
+    float a;
+    if(uMode == 1){
+      float sl = dot(d, uDir[i]);                 // path length along propagation
+      a = exp(-uG * max(sl, 0.0));
+      S += a * sin(uK * sl - ph);
+    } else {
+      float r = max(length(d), ${R.toFixed(3)});  // circular wavefront
+      a = exp(-uG * r) / (1.0 + 0.55 * r);        // absorption + 1/r spreading
+      S += a * sin(uK * r - ph);
+    }
+    A += a;
+  }
+  A /= float(uN);
+  float u = tanh(S / (A * 1.15 + 1e-5));
+  float au = abs(u);
+  float vis = smoothstep(0.020, 0.20, A);
+
+  /* Ribbon rather than wash: a wavefront is a CREST, so paint a band of
+     finite thickness around the isoline |u| = t, not the whole plane. The
+     band width follows |∇ψ|/|ψ| — it self-thins where ψ peaks, so each
+     wavefront keeps a constant apparent thickness. Everything between
+     wavefronts stays dark ground, which is what makes fringes legible. */
+  float t   = 0.46;
+  float eps = 0.07;
+  float wdt = clamp(au * 0.62, 0.10, 0.62);       // apparent band half-width
+  float band = 1.0 - smoothstep(wdt * 0.35, wdt, abs(au - t));
+  float crest = smoothstep(wdt * 0.55, wdt * 0.06, abs(au - t));  // hot inner core
+
+  vec3 col = ground(p);
+  vec3 body = (u >= 0.0) ? rampPos(0.30 + 0.70 * clamp((au - 0.25) / 0.75, 0.0, 1.0))
+                         : rampNeg(0.30 + 0.70 * clamp((au - 0.25) / 0.75, 0.0, 1.0));
+  col = mix(col, body * 0.80, band * vis);
+  col += body * crest * 0.55 * vis;
+  // lobe fill: a faint wash so the enclosed regions still read as light/dark
+  col = mix(col, col + body * 0.20, smoothstep(t * 0.45, 0.95, au) * vis * (1.0 - band));
+
+  /* ---- node / antinode lines, drawn on the analytic field ------------- */
+  float nl = (1.0 - smoothstep(0.0, 0.042, au)) * smoothstep(0.012, 0.05, A);
+  col += vec3(0.30,0.92,1.00) * nl * 0.55 * vis;
+  float al = smoothstep(0.905, 0.995, au) * smoothstep(0.012, 0.05, A);
+  col += vec3(1.00,0.80,0.55) * al * 0.60 * vis;
+
+  /* focus falloff — the array is the subject, the far field is context */
+  float fd = length(p - uFocus);
+  col *= mix(0.30, 1.0, smoothstep(1.85, 0.42, fd));
+  col *= clamp(vignette(gl_FragCoord.xy, uRes), 0.0, 1.0);
+  col += (hash21(gl_FragCoord.xy) - 0.5) * 0.011;
+  O = vec4(col, 1.0);
+}`;
+
+let prog = null, U = {};
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
+  return s;
+}
+if (glOk){
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    U.res = gl.getUniformLocation(prog, 'uRes');
+    U.ph  = gl.getUniformLocation(prog, 'uPh');
+    U.mode= gl.getUniformLocation(prog, 'uMode');
+    U.n   = gl.getUniformLocation(prog, 'uN');
+    U.src = gl.getUniformLocation(prog, 'uSrc[0]');
+    U.dir = gl.getUniformLocation(prog, 'uDir[0]');
+    U.k   = gl.getUniformLocation(prog, 'uK');
+    U.g   = gl.getUniformLocation(prog, 'uG');
+    U.phl = gl.getUniformLocation(prog, 'uPHL');
+    U.tube= gl.getUniformLocation(prog, 'uTube');
+    U.en  = gl.getUniformLocation(prog, 'uEN');
+    U.emix= gl.getUniformLocation(prog, 'uEMix');
+    U.focus=gl.getUniformLocation(prog, 'uFocus');
+    U.pipeC=gl.getUniformLocation(prog, 'uPipeC');
+    U.pamp =gl.getUniformLocation(prog, 'uPipeAmp');
+    gl.bindVertexArray(gl.createVertexArray());
+    gl.viewport(0, 0, IW, IH);
+  } catch (e) { glOk = false; glName = 'shader error: ' + e.message; }
+}
+
+/* ------------------------------------------------------------ source layout - */
+const SRC = [];
+const srcBuf = new Float32Array(32);
+const dirBuf = new Float32Array(16);
+const jitRand = mulberry32(0x9E3779B9);
+const JIT = []; for (let i = 0; i < 8; i++) JIT.push(1 + (jitRand() - 0.5) * 0.08);  // ±4 % source trim
+
+function buildSources(){
+  const n = P.n;
+  // A plane-wave array only merges into clean parallel fronts when the elements
+  // are spaced well under one wavelength (k·d ≪ 1). Point sources can be metres
+  // apart, so they get a wide legible layout; the plane array stays tight.
+  const lamU = P.lam * MET;
+  const sp = P.mode === 1 ? lamU * 0.30 : (n > 1 ? Math.min(0.60, 2.30 / (n - 1)) : 0);
+  const y = P.mode === 1 ? 0.80 : 0.58;
+  SRC.length = 0;
+  for (let i = 0; i < 8; i++){
+    const th = P.steer + (i - (n - 1) / 2) * P.spread;
+    const g = (i * 0.61803398875) % 1;
+    const x = (i - (n - 1) / 2) * sp;
+    const s = { x:x, y:y, amp:JIT[i], ph:P.coher * (g - 0.5) * 2,
+                dx:Math.sin(th), dy:-Math.cos(th) };
+    SRC.push(s);
+    srcBuf[i*4] = x; srcBuf[i*4+1] = y; srcBuf[i*4+2] = s.amp; srcBuf[i*4+3] = s.ph;
+    dirBuf[i*2] = s.dx; dirBuf[i*2+1] = s.dy;
+  }
+  SRC.length = n;
+}
+
+/* --------------------------------------------- CPU mirror of the field ----- */
+function kUnit(){ return TAU / P.lam * MET; }     // rad per unit
+function gUnit(){ return P.gamma / MET; }         // 1/unit
+function envAt(s01){
+  return P.standOpen ? Math.cos(Math.PI * (2 * P.standN - 1) * s01 * 0.5)
+                     : Math.sin(Math.PI * P.standN * s01);
+}
+function psiAt(x, y){
+  const K = kUnit(), G = gUnit();
+  let S = 0, A = 0;
+  for (let i = 0; i < P.n; i++){
+    const s = SRC[i];
+    const dx = x - s.x, dy = y - s.y;
+    let a;
+    if (P.mode === 1){
+      const sl = dx * s.dx + dy * s.dy;
+      a = Math.exp(-G * Math.max(sl, 0));
+      S += a * Math.sin(K * sl - s.ph);
+    } else {
+      const r = Math.max(Math.hypot(dx, dy), R);
+      a = Math.exp(-G * r) / (1 + 0.55 * r);
+      S += a * Math.sin(K * r - s.ph);
+    }
+    A += a;
+  }
+  return { s:S, a:A / Math.max(P.n, 1) };
+}
+
+/* --------------------------------------------- standing-wave node/antinode -- */
+function nodeAntinodes(){
+  const n = P.standN, nodes = [], antis = [];
+  if (!P.standOpen){
+    for (let j = 0; j <= n; j++) nodes.push(j / n);
+    for (let j = 0; j < n; j++) antis.push((j + 0.5) / n);
+  } else {
+    for (let j = 0; j < n; j++) nodes.push(2 * j / (2 * n - 1));
+    for (let j = 0; j < n; j++) antis.push((2 * j + 1) / (2 * n - 1));
+  }
+  return { nodes, antis };
+}
+
+/* ---- standing-wave resonance: mode n fixes λ = 2L/n (closed│closed) ---- */
+const PIPE_L_M = 2 * PIPE_HL * MET;                 // pipe length in metres
+function modeLambda(n){ return (P.standOpen ? PIPE_L_M / (2 * n - 1) : PIPE_L_M * 2 / (2 * n)); }
+function modeFreq(n){ return C_MPS / modeLambda(n); }
+/** Driven damped oscillator: H(r) = 1/√((1−r²)² + (r/Q)²), which peaks at
+ *  H(1) = Q. Divide by Q so r = 1 reads exactly 1.0 (resonance) and detuning
+ *  shows as a real dip. Floored at 0.32 so an off-resonance pipe stays legible. */
+function driveAmp(r, Q){
+  const q = Math.max(Q, 0.05);
+  const h = 1 / Math.sqrt(Math.pow(1 - r * r, 2) + Math.pow(r / q, 2));
+  return Math.max(0.32, h / q);          // H(r)/H(1), and H(1) = q
+}
+const C_MPS = 343;                                   // air at 20 °C
+
+/* ================================================================ overlay == */
+const ov = $('ov');
+const octx = ov.getContext('2d');
+let W = 0, Hh = 0, SC = 1, CX = 0, CY = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; Hh = window.innerHeight;
+  ov.width = Math.round(W * DPR); ov.height = Math.round(Hh * DPR);
+  ov.style.width = W + 'px'; ov.style.height = Hh + 'px';
+  const sx = W / (2 * ASPECT), sy = Hh / 2;
+  SC = Math.min(sx, sy); CX = W / 2; CY = Hh / 2;
+  octx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const pc = $('probeCv');
+  const pw = 314, ph = 60;
+  pc.width = Math.round(pw * DPR * 2); pc.height = Math.round(ph * DPR * 2);
+  pc.style.width = pw + 'px'; pc.style.height = ph + 'px';
+  pctx.setTransform(DPR * 2, 0, 0, DPR * 2, 0, 0);
+  PCW = pw; PCH = ph;
+}
+const X = x => CX + x * SC;
+const Y = y => CY - y * SC;
+const Xf = px => (px - CX) / SC;
+
+let PCW = 314, PCH = 60;
+const pctx = $('probeCv').getContext('2d');
+
+function drawOverlay(ph){
+  octx.clearRect(0, 0, W, Hh);
+  if (P.mode === 2) drawPipe(ph); else drawFree(ph);
+}
+
+/* ---- free field: wavefronts, source markers, probe row, metre ruler ------- */
+function drawFree(ph){
+  const K = kUnit(), G = gUnit();
+
+  // metre ruler along the bottom edge of the field
+  octx.save();
+  octx.font = '10.5px ui-monospace, monospace';
+  octx.textAlign = 'center';
+  for (let m = -1; m <= 1; m += 0.5){
+    const x = X(m * MET);
+    octx.strokeStyle = 'rgba(140,185,255,.22)';
+    octx.lineWidth = 1;
+    octx.beginPath(); octx.moveTo(x, Y(-0.985)); octx.lineTo(x, Y(-0.945)); octx.stroke();
+    octx.fillStyle = 'rgba(160,195,245,.55)';
+    octx.fillText((m * MET).toFixed(1), x, Y(-0.90));
+  }
+  octx.restore();
+
+  if (P.mode === 0){
+    // expanding wavefronts: radii at which k·r − ωt = crest
+    octx.save();
+    octx.lineWidth = 1;
+    for (let i = 0; i < P.n; i++){
+      const s = SRC[i];
+      for (let m = 0; m < 9; m++){
+        let r = (ph + TAU * m) / K;
+        if (r <= 0.03) continue;
+        const rr = r / MET;                       // units
+        if (rr > 2.6) continue;
+        const a = 0.13 * Math.exp(-G * r);
+        octx.strokeStyle = 'rgba(' + (s.amp > 1 ? '255,170,120' : '150,225,255') + ',' + a.toFixed(3) + ')';
+        octx.beginPath();
+        octx.arc(X(s.x), Y(s.y), rr * SC, 0, TAU);
+        octx.stroke();
+      }
+    }
+    octx.restore();
+  }
+
+  // array rail + source markers
+  const xs = SRC.map(s => X(s.x)), y0 = Y(SRC[0] ? SRC[0].y : 0.58);
+  if (xs.length > 1){
+    octx.save();
+    octx.strokeStyle = 'rgba(150,200,255,.28)'; octx.lineWidth = 1;
+    octx.beginPath(); octx.moveTo(xs[0], y0 - 20); octx.lineTo(xs[xs.length-1], y0 - 20); octx.stroke();
+    for (let i = 0; i < xs.length; i++){
+      octx.strokeStyle = 'rgba(150,200,255,.22)';
+      octx.beginPath(); octx.moveTo(xs[i], y0 - 20); octx.lineTo(xs[i], y0 - 11); octx.stroke();
+    }
+    octx.restore();
+  }
+  octx.save();
+  octx.font = '10.5px ui-monospace, monospace';
+  octx.textAlign = 'center';
+  for (let i = 0; i < P.n; i++){
+    const s = SRC[i], x = X(s.x), y = Y(s.y);
+    const g = octx.createRadialGradient(x, y, 0, x, y, 16);
+    g.addColorStop(0, 'rgba(255,255,255,.75)');
+    g.addColorStop(0.35, 'rgba(120,220,255,.30)');
+    g.addColorStop(1, 'rgba(120,220,255,0)');
+    octx.fillStyle = g; octx.beginPath(); octx.arc(x, y, 16, 0, TAU); octx.fill();
+    octx.strokeStyle = 'rgba(210,245,255,.95)'; octx.lineWidth = 1.2;
+    octx.beginPath(); octx.arc(x, y, 3.2, 0, TAU); octx.stroke();
+    octx.fillStyle = 'rgba(190,225,255,.8)';
+    octx.fillText('S' + (i + 1), x, y - 14);
+    if (P.mode === 1){
+      // long direction arrows: makes the parallel propagation unmistakable
+      const th = Math.atan2(s.dy, s.dx);
+      octx.save();
+      octx.strokeStyle = 'rgba(255,190,94,.75)'; octx.lineWidth = 1.4;
+      const L = 30 + 8 * i;
+      octx.beginPath();
+      octx.moveTo(x + Math.cos(th) * 8, y - Math.sin(th) * 8 - 5);
+      octx.lineTo(x + Math.cos(th) * L, y - Math.sin(th) * L - 5);
+      octx.stroke();
+      const hx = x + Math.cos(th) * L, hy = y - Math.sin(th) * L - 5;
+      octx.fillStyle = 'rgba(255,200,120,.9)';
+      octx.beginPath();
+      octx.moveTo(hx, hy);
+      octx.lineTo(hx - Math.cos(th - 0.42) * 7, hy + Math.sin(th - 0.42) * 7);
+      octx.lineTo(hx - Math.cos(th + 0.42) * 7, hy + Math.sin(th + 0.42) * 7);
+      octx.closePath(); octx.fill();
+      octx.restore();
+    }
+  }
+  octx.restore();
+
+  // plane mode: name the k vectors, the whole point of the mode
+  if (P.mode === 1){
+    octx.save();
+    octx.font = '11px ui-monospace, monospace';
+    octx.textAlign = 'left';
+    octx.fillStyle = 'rgba(255,205,140,.92)';
+    octx.fillText('plane waves · k⃗ = ' + SRC.map(s => Math.round(Math.atan2(s.dy, s.dx) * 180 / Math.PI)).join('°, ') + '°',
+                  X(-ASPECT) + 12, Y(0.86));
+    octx.restore();
+  }
+
+  // probe row
+  const py = Y(P.probeY);
+  octx.save();
+  octx.strokeStyle = 'rgba(120,240,255,.55)'; octx.lineWidth = 1;
+  octx.setLineDash([5, 4]);
+  octx.beginPath(); octx.moveTo(X(-ASPECT), py); octx.lineTo(X(ASPECT), py); octx.stroke();
+  octx.setLineDash([]);
+  octx.fillStyle = 'rgba(150,245,255,.95)';
+  octx.beginPath(); octx.moveTo(X(-ASPECT), py - 4); octx.lineTo(X(-ASPECT) + 7, py); octx.lineTo(X(-ASPECT), py + 4);
+  octx.closePath(); octx.fill();
+  octx.font = '10.5px ui-monospace, monospace'; octx.textAlign = 'left';
+  octx.fillText('PROBE', X(-ASPECT) + 11, py - 5);
+  octx.restore();
+}
+
+/* ---- pipe: walls, envelope, component waves, node & antinode lines ------- */
+function drawPipe(ph){
+  const { nodes, antis } = nodeAntinodes();
+  const XC = X(PIPE_CX), YC = Y(PIPE_CY);
+  const xl = XC - PIPE_HL * SC, xr = XC + PIPE_HL * SC;
+  const yt = YC + TUBE * SC, yb = YC - TUBE * SC;
+  const HW = PIPE_HL * SC, A0 = 0.92 * SC;
+
+  // wall hatching outside the tube
+  octx.save();
+  octx.strokeStyle = 'rgba(140,180,240,.20)'; octx.lineWidth = 1;
+  for (let x = xl - 16; x < xr + 18; x += 9){
+    for (const y of [yt, yb]){
+      const dir = y === yt ? 1 : -1;
+      octx.beginPath(); octx.moveTo(x, y); octx.lineTo(x + 5, y + 5 * dir); octx.stroke();
+    }
+  }
+  octx.restore();
+
+  // walls
+  octx.save();
+  for (const y of [yt, yb]){
+    const g = octx.createLinearGradient(0, y - 3, 0, y + 3);
+    g.addColorStop(0, 'rgba(190,220,255,.55)'); g.addColorStop(0.5, 'rgba(110,150,210,.85)');
+    g.addColorStop(1, 'rgba(190,220,255,.45)');
+    octx.strokeStyle = g; octx.lineWidth = 3;
+    octx.beginPath(); octx.moveTo(xl, y); octx.lineTo(xr, y); octx.stroke();
+  }
+  // closed end caps
+  octx.strokeStyle = 'rgba(150,190,245,.75)'; octx.lineWidth = 2.5;
+  if (!P.standOpen){
+    for (const x of [xl, xr]){ octx.beginPath(); octx.moveTo(x, yt); octx.lineTo(x, yb); octx.stroke(); }
+  } else {
+    // open end: a light frame with three pressure-release bars
+    octx.lineWidth = 2;
+    octx.strokeStyle = 'rgba(150,190,245,.42)';
+    octx.beginPath(); octx.moveTo(xr, yt); octx.lineTo(xr, yb); octx.stroke();
+    octx.strokeStyle = 'rgba(255,190,94,.9)'; octx.lineWidth = 3;
+    const top = yt + 5, bot = yb - 5;
+    for (let k = 0; k < 3; k++){
+      const y = top + (bot - top) * (k / 2);
+      octx.beginPath(); octx.moveTo(xr + 2, y); octx.lineTo(xr + 12, y); octx.stroke();
+    }
+    octx.fillStyle = 'rgba(255,205,130,.9)';
+    octx.font = '10px ui-monospace, monospace';
+    octx.fillText('OPEN', xr + 15, yb - 4);
+  }
+  octx.restore();
+
+  // node & antinode lines
+  octx.save();
+  octx.font = '10px ui-monospace, monospace'; octx.textAlign = 'center';
+  for (const s of nodes){
+    const x = XC - HW + 2 * HW * s;
+    octx.strokeStyle = 'rgba(47,220,255,.85)'; octx.lineWidth = 1.3;
+    octx.beginPath(); octx.moveTo(x, yt - 9); octx.lineTo(x, yb + 9); octx.stroke();
+    octx.fillStyle = 'rgba(120,240,255,.95)';
+    octx.beginPath(); octx.arc(x, YC, 2.6, 0, TAU); octx.fill();
+  }
+  // interior node labels only — the two end nodes are obvious from the caps
+  for (let i = 1; i < nodes.length - 1; i++){
+    octx.fillStyle = 'rgba(120,240,255,.92)';
+    octx.fillText('NODE', XC - HW + 2 * HW * nodes[i], yt - 13);
+  }
+  octx.font = '10px ui-monospace, monospace';
+  for (let j = 0; j < antis.length; j++){
+    const s = antis[j], x = XC - HW + 2 * HW * s;
+    octx.strokeStyle = 'rgba(255,190,94,.70)'; octx.lineWidth = 1;
+    octx.setLineDash([3, 3]);
+    octx.beginPath(); octx.moveTo(x, yt - 4); octx.lineTo(x, yb + 4); octx.stroke();
+    octx.setLineDash([]);
+    octx.fillStyle = 'rgba(255,200,120,.8)';
+    octx.beginPath(); octx.arc(x, YC, 2.0, 0, TAU); octx.fill();
+    // label every antinode that has room; stagger the dense ones below the axis
+    const low = (j % 2) === 1;
+    octx.fillStyle = 'rgba(255,205,130,.9)';
+    octx.fillText('ANTINODE', x, low ? yb + 17 : yb + 17);
+  }
+  octx.restore();
+
+  // component waves ψ+ and ψ− (counter-propagating) and the envelope
+  const N = 240;
+  octx.save();
+  octx.lineWidth = 1;
+  for (const sgn of [1, -1]){
+    octx.strokeStyle = sgn > 0 ? 'rgba(90,200,255,.34)' : 'rgba(255,110,160,.34)';
+    octx.beginPath();
+    for (let i = 0; i <= N; i++){
+      const u = i / N, px = XC - HW + 2 * HW * u;
+      const py = YC - A0 * 0.30 * Math.sin(kUnit() * ((u * 2 * PIPE_HL) * MET) - sgn * ph);
+      i ? octx.lineTo(px, py) : octx.moveTo(px, py);
+    }
+    octx.stroke();
+  }
+  // envelope ±2A·E(s)
+  octx.setLineDash([4, 4]);
+  octx.strokeStyle = 'rgba(255,190,94,.55)'; octx.lineWidth = 1;
+  for (const s of [1, -1]){
+    octx.beginPath();
+    for (let i = 0; i <= N; i++){
+      const u = i / N, px = XC - HW + 2 * HW * u;
+      const py = YC - s * A0 * 0.42 * envAt(u);
+      i ? octx.lineTo(px, py) : octx.moveTo(px, py);
+    }
+    octx.stroke();
+  }
+  octx.setLineDash([]);
+  octx.restore();
+
+  // travel arrows
+  octx.save();
+  octx.font = '10.5px ui-monospace, monospace'; octx.textAlign = 'center';
+  octx.strokeStyle = 'rgba(120,215,255,.6)'; octx.fillStyle = 'rgba(140,220,255,.8)'; octx.lineWidth = 1;
+  const ay = yt - 30;
+  for (const sgn of [1, -1]){
+    const x0 = sgn > 0 ? xl + 40 : xr - 40, x1 = sgn > 0 ? xl + 12 : xr - 12;
+    octx.beginPath(); octx.moveTo(x0, ay); octx.lineTo(x1, ay); octx.stroke();
+    octx.beginPath();
+    if (sgn > 0){ octx.moveTo(x1, ay); octx.lineTo(x1 + 5, ay - 3); octx.lineTo(x1 + 5, ay + 3); }
+    else { octx.moveTo(x1, ay); octx.lineTo(x1 - 5, ay - 3); octx.lineTo(x1 - 5, ay + 3); }
+    octx.closePath(); octx.fill();
+    octx.fillText('ψ' + (sgn > 0 ? '+' : '−'), sgn > 0 ? xl + 56 : xr - 56, ay - 5);
+  }
+  octx.restore();
+}
+
+/* ---------------------------------------------------------- probe strip ---- */
+function drawProbe(ph){
+  const c = pctx, w = PCW, h = PCH;
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = 'rgba(6,10,22,.85)';
+  c.fillRect(0, 0, w, h);
+  const mid = h / 2;
+
+  c.strokeStyle = 'rgba(120,170,240,.18)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(0, mid); c.lineTo(w, mid); c.stroke();
+
+  const N = 240;
+  if (P.mode === 2){
+    // standing: envelope + instantaneous displacement, at the mode's own λ
+    const amp = clamp(driveAmp(P.ratio, Q_OF_GAMMA(P.gamma)), 0, 1.6);
+    c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,190,94,.6)';
+    for (const s of [1, -1]){
+      c.beginPath();
+      for (let i = 0; i <= N; i++){
+        const u = i / N, y = s * amp * envAt(u);
+        const px = u * w, py = mid - y * (mid - 4);
+        i ? c.lineTo(px, py) : c.moveTo(px, py);
+      }
+      c.stroke();
+    }
+    c.setLineDash([]);
+    c.beginPath(); c.moveTo(0, mid);
+    for (let i = 0; i <= N; i++){
+      const u = i / N, y = amp * envAt(u) * Math.cos(ph);
+      const px = u * w, py = mid - y * (mid - 4);
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    for (let i = N; i >= 0; i--){
+      const u = i / N, y = amp * envAt(u) * Math.cos(ph);
+      c.lineTo(u * w, mid - y * (mid - 4));
+    }
+    c.closePath();
+    c.fillStyle = Math.cos(ph) >= 0 ? 'rgba(255,94,138,.30)' : 'rgba(47,220,255,.30)';
+    c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 1.2; c.stroke();
+    const na = nodeAntinodes();
+    c.strokeStyle = 'rgba(47,220,255,.9)'; c.lineWidth = 1;
+    for (const s of na.nodes){ c.beginPath(); c.moveTo(s * w, 3); c.lineTo(s * w, h - 3); c.stroke(); }
+    c.setLineDash([2, 2]); c.strokeStyle = 'rgba(255,190,94,.8)';
+    for (const s of na.antis){ c.beginPath(); c.moveTo(s * w, 3); c.lineTo(s * w, h - 3); c.stroke(); }
+    c.setLineDash([]);
+  } else {
+    const vals = new Array(N + 1), amp = new Array(N + 1);
+    let mx = 1e-4;
+    for (let i = 0; i <= N; i++){
+      const x = -ASPECT + 2 * ASPECT * (i / N);
+      const r = psiAt(x, P.probeY);
+      vals[i] = r.s; amp[i] = r.a; mx = Math.max(mx, r.a);
+    }
+    // visibility envelope
+    c.setLineDash([2, 3]); c.strokeStyle = 'rgba(140,200,255,.35)';
+    for (const s of [1, -1]){
+      c.beginPath();
+      for (let i = 0; i <= N; i++){
+        const px = (i / N) * w, py = mid - s * (amp[i] / mx) * (mid - 4);
+        i ? c.lineTo(px, py) : c.moveTo(px, py);
+      }
+      c.stroke();
+    }
+    c.setLineDash([]);
+    // filled displacement
+    c.beginPath(); c.moveTo(0, mid);
+    for (let i = 0; i <= N; i++) c.lineTo((i / N) * w, mid - (vals[i] / mx) * (mid - 4));
+    for (let i = N; i >= 0; i--) c.lineTo((i / N) * w, mid);
+    c.closePath();
+    c.fillStyle = 'rgba(80,190,255,.26)'; c.fill();
+    c.beginPath();
+    for (let i = 0; i <= N; i++){
+      const px = (i / N) * w, py = mid - (vals[i] / mx) * (mid - 4);
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    c.strokeStyle = '#bfe9ff'; c.lineWidth = 1.3; c.stroke();
+    // node crossings
+    c.fillStyle = 'rgba(47,220,255,.95)';
+    for (let i = 1; i <= N; i++){
+      if ((vals[i-1] < 0) !== (vals[i] < 0)){
+        const px = (i / N) * w;
+        c.beginPath(); c.arc(px, mid, 1.8, 0, TAU); c.fill();
+      }
+    }
+  }
+  c.strokeStyle = 'rgba(120,190,255,.22)'; c.lineWidth = 1;
+  c.strokeRect(0.5, 0.5, w - 1, h - 1);
+}
+
+/* ================================================================ rendering */
+let phase = 1.15, frame = 0, fps = 0, lastT = 0, accT = 0, accN = 0;
+let firstDrawDone = false;
+
+function drawGL(){
+  if (!glOk) return;
+  gl.uniform2f(U.res, IW, IH);
+  gl.uniform1f(U.ph, phase);
+  gl.uniform1i(U.mode, P.mode);
+  gl.uniform1i(U.n, P.mode === 2 ? 0 : P.n);
+  gl.uniform4fv(U.src, srcBuf);
+  gl.uniform2fv(U.dir, dirBuf);
+  gl.uniform1f(U.k, kUnit());
+  gl.uniform1f(U.g, gUnit());
+  gl.uniform1f(U.phl, PIPE_HL);
+  gl.uniform1f(U.tube, TUBE);
+  gl.uniform1f(U.en, P.standN);
+  gl.uniform1f(U.emix, P.standOpen ? 1 : 0);
+  gl.uniform2f(U.focus, P.mode === 2 ? 0 : (SRC[0] ? SRC[0].y * 0.62 : 0.36), 0.34);
+  gl.uniform2f(U.pipeC, PIPE_CX, PIPE_CY);
+  gl.uniform1f(U.pamp, P.mode === 2 ? clamp(driveAmp(P.ratio, Q_OF_GAMMA(P.gamma)), 0.0, 1.6) : 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+/* ================================================================== probe == */
+const probe = {
+  mode:'point', sources:0, frame:0, fps:0, ready:false, simTime:0, phase:0,
+  f:0, lambda:0, c:0, k:0, omega:0, gamma:0, nodeLines:0, antinodeLines:0,
+  internal:[IW, IH], driver:glName, channelsN:0,
+  modeN:0, fMode:0, driveRatio:1, driveAmp:1, Q:0, pipeLengthM:0, run:0, slowmo:26
+};
+window.__probe = probe;
+
+function updateProbe(){
+  const isPipe = P.mode === 2;
+  probe.mode = ['point','plane','pipe'][P.mode];
+  probe.sources = P.n;
+  probe.frame = frame;
+  probe.fps = Math.round(fps * 10) / 10;
+  probe.ready = !!window.__ready;
+  probe.phase = phase;
+  probe.run = P.run;
+  probe.internal = [IW, IH];
+  probe.c = C_MPS;
+  probe.gamma = P.gamma;
+  if (isPipe){
+    const fn = modeFreq(P.standN);
+    probe.f = fn * P.ratio; probe.lambda = modeLambda(P.standN);
+    probe.k = TAU / probe.lambda; probe.omega = TAU * probe.f;
+    probe.simTime = phase / (TAU * visHz()); probe.slowmo = SLOWMO;
+    probe.nodeLines = nodeAntinodes().nodes.length;
+    probe.antinodeLines = nodeAntinodes().antis.length;
+    probe.modeN = P.standN; probe.fMode = fn;
+    probe.driveRatio = P.ratio;
+    probe.driveAmp = Math.round(driveAmp(P.ratio, Q_OF_GAMMA(P.gamma)) * 1000) / 1000;
+    probe.Q = Math.round(Q_OF_GAMMA(P.gamma) * 10) / 10;
+    probe.pipeLengthM = Math.round(PIPE_L_M * 100) / 100;
+  } else {
+    probe.f = P.f; probe.lambda = P.lam;
+    probe.k = TAU / P.lam; probe.omega = TAU * P.f;
+    probe.simTime = phase / (TAU * visHz()); probe.slowmo = SLOWMO;
+    probe.nodeLines = P.n ? 1 : 0; probe.antinodeLines = 0;
+    probe.modeN = 0; probe.fMode = 0; probe.driveRatio = 1; probe.driveAmp = 1; probe.Q = 0;
+  }
+}
+
+/* ---- optional pixel tap for the harness / debugging --------------------- */
+window.__sample = function(x, y, w, h){
+  if (!glOk) return null;
+  drawGL();
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(x, IH - y - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let n = 0; const set = new Set();
+  for (let i = 0; i < px.length; i += 4) set.add((px[i] << 16) | (px[i+1] << 8) | px[i+2]);
+  return { w, h, colours:set.size };
+};
+window.__field = psiAt;
+window.__envAt = envAt;
+window.__nodeAntinodes = nodeAntinodes;
+
+/* ==================================================================== loop = */
+function tick(ts){
+  requestAnimationFrame(tick);
+  if (lastT){
+    const dt = ts - lastT;
+    accT += dt; accN++;
+    if (accT > 420){ fps = accN * 1000 / accT; accT = 0; accN = 0; }
+  }
+  lastT = ts;
+  // FIXED delta — never wall clock. SLOWMO scales the sweep, not the physics.
+  if (P.run === 1){
+    phase += TAU * visHz() * DT;
+    phase -= Math.floor(phase / TAU) * TAU;
+  } else if (P.run === 2){
+    // sweep: walk the strobe phase one full cycle, so the whole cycle is seen
+    phase = (phase + TAU * visHz() * DT * 0.35) % TAU;
+  }
+  // P.run === 0: hold — phase is whatever the strobe slider says (default state)
+  drawGL();
+  drawOverlay(phase);
+  drawProbe(phase);
+  frame++;
+  if (frame >= 3 && !firstDrawDone){ firstDrawDone = true; window.__ready = true; }
+  if (frame % 3 === 0){ updateProbe(); updateReadouts(); }
+}
+
+/* ============================================================== readouts == */
+const fmt = (v, d) => v.toFixed(d);
+function updateReadouts(){
+  const isPipe = P.mode === 2;
+  const fn = isPipe ? modeFreq(P.standN) : P.f;
+  const lam = isPipe ? modeLambda(P.standN) : P.lam;
+  const r = isPipe ? P.ratio : 1;
+  const amp = isPipe ? driveAmp(r, Q_OF_GAMMA(P.gamma)) : 1;
+  $('sF').textContent = isPipe
+    ? (P.ratio < 0.999 || P.ratio > 1.001 ? fmt(fn * r, 1) + ' Hz  (f' + P.standN + '=' + fmt(fn, 1) + ')' : fmt(fn, 1) + ' Hz  = f' + P.standN)
+    : P.f.toFixed(0) + ' Hz';
+  $('sL').textContent = fmt(lam, 3) + ' m';
+  $('sC').textContent = fmt(C_MPS, 0) + ' m/s';
+  $('sK').textContent = fmt(TAU / lam, 2) + ' m⁻¹';
+  $('sW').textContent = TAU * fn * r < 10000 ? (TAU * fn * r).toFixed(0) + ' rad/s' : (TAU * fn * r / 1000).toFixed(2) + ' krad/s';
+  $('sG').textContent = isPipe ? 'Q ≈ ' + fmt(Q_OF_GAMMA(P.gamma), 1) : fmt(P.gamma, 2) + ' m⁻¹';
+  $('sT').textContent = P.run === 0 ? 'held  φ=' + fmt(phase, 2) + ' rad'
+                  : 'running ×' + SLOWMO + '  φ=' + fmt(phase, 2);
+  $('sFps').textContent = (fps ? fps.toFixed(1) : '—') + ' / ' + frame;
+  $('sRes').textContent = IW + '×' + IH;
+  $('sGl').textContent = glName;
+  $('chipTxt').textContent = ['POINT SOURCES', 'PLANE WAVES', 'STANDING WAVE'][P.mode];
+  $('chipSub').textContent = isPipe
+    ? (P.standOpen ? 'closed│open · n=' + P.standN : 'closed│closed · n=' + P.standN) +
+      (Math.abs(amp - 1) > 0.02 ? ' · ' + (amp > 1 ? 'resonant ×' : fmt(amp, 2) + '×') : ' · on resonance')
+    : (P.coher > 0.02 ? 'n=' + P.n + ' · incoherent' : 'n=' + P.n + ' · coherent');
+  $('chipDot').style.background = isPipe ? '#ffbe5e' : (P.coher > 0.02 ? '#8fa2c8' : '#2fdcff');
+  $('chipDot').style.boxShadow = '0 0 10px ' + (isPipe ? '#ffbe5e' : (P.coher > 0.02 ? '#8fa2c8' : '#2fdcff'));
+  $('lgTitle').textContent = isPipe
+    ? 'probe · displacement d(s) inside the pipe'
+    : 'probe · ψ(x) on the marked row';
+  $('ctlHint').textContent = P.run === 0 ? 'strobe held — scrub φ' : (isPipe ? 'detuned: ×' + fmt(amp, 2) + ' response' : 'live sweep ×' + SLOWMO);
+  $('lgNote').innerHTML = isPipe
+    ? '<b>Node</b> lines pinch to a permanent zero. <b>Antinode</b> lines reach full ±2A. ' +
+      'Pipe length L = ' + fmt(PIPE_L_M, 2) + ' m, so mode n=' + P.standN + ' needs λ = 2L/n = ' + fmt(lam, 3) + ' m.'
+    : '<b>Node</b> = permanent zero (paths cancel). <b>Antinode</b> = constructive maximum. ' +
+      'Cyan hairlines trace |ψ|→0, warm hairlines trace |ψ|→max.';
+}
+
+/** Q of a pipe mode from the wall/absorption damping coefficient (1/m). */
+function Q_OF_GAMMA(g){ return 1 / (0.10 + 1.7 * g); }
+
+/* ==================================================================== UI == */
+function bindSlider(id, key, out, fmtFn, after){
+  const el = $(id), lab = $(out);
+  const upd = () => {
+    const v = parseFloat(el.value);
+    P[key] = v; lab.textContent = fmtFn(v);
+    if (after) after();
+  };
+  el.addEventListener('input', upd);
+  upd();
+}
+buildSources();
+bindSlider('cN',  'n',      'nN',  v => v.toFixed(0), buildSources);
+bindSlider('cCo', 'coher', 'nCo', v => v.toFixed(2), buildSources);
+bindSlider('cSp', 'spread','nSp', v => v.toFixed(2), buildSources);
+bindSlider('cSt', 'steer', 'nSt', v => v.toFixed(2), buildSources);
+bindSlider('cN2', 'standN','nN2', v => v.toFixed(0));
+bindSlider('cF',  'f',      'nF',  v => v.toFixed(0));
+bindSlider('cL',  'lam',    'nL',  v => v.toFixed(3));
+bindSlider('cR',  'ratio',  'nR',  v => v.toFixed(3));
+bindSlider('cG',  'gamma',  'nG',  v => v.toFixed(2));
+bindSlider('cPr', 'probeY', 'nPr', v => v.toFixed(2));
+// the strobe slider drives the held phase directly when the run mode is HOLD
+$('cPh').addEventListener('input', () => {
+  if (P.run === 0){ phase = parseFloat($('cPh').value); $('nPh').textContent = phase.toFixed(2); }
+});
+function setRun(r){
+  if (r === 0) phase = parseFloat($('cPh').value);   // snap to the strobe phase
+  P.run = r;
+  [...$('segR').children].forEach(b => b.classList.toggle('on', +b.dataset.r === r));
+  $('rPh').classList.toggle('hid', r !== 0);
+  updateReadouts();
+}
+[...$('segR').children].forEach(b => b.addEventListener('click', () => setRun(+b.dataset.r)));
+
+const segRows = { rNs:1, rCo:1, rSp:0, rSt:0, rN:0, rPr:1, rD:0 };
+function setMode(m){
+  P.mode = m;
+  [...$('seg').children].forEach(b => b.classList.toggle('on', +b.dataset.m === m));
+  $('segB').style.display = m === 2 ? 'grid' : 'none';
+  for (const id in segRows){
+    // spread/steer only mean something for a steered plane-wave array
+    const want = m === 2 ? (id === 'rN' || id === 'rD')
+               : m === 1 ? (id !== 'rN' && id !== 'rD')
+               : (id !== 'rN' && id !== 'rD' && id !== 'rSp' && id !== 'rSt');
+    $(id).classList.toggle('hid', !want);
+  }
+  // the pipe has fixed geometry, so its wavelength is set by L and n; the
+  // frequency slider becomes inert and the drive-ratio slider takes over
+  $('cF').parentElement.style.opacity = m === 2 ? 0.4 : 1;
+  $('cF').disabled = m === 2;
+  $('cL').parentElement.style.opacity = m === 2 ? 0.4 : 1;
+  $('cL').disabled = m === 2;
+  buildSources(); updateReadouts();
+}
+[...$('seg').children].forEach(b => b.addEventListener('click', () => setMode(+b.dataset.m)));
+[...$('segB').children].forEach(b => b.addEventListener('click', () => {
+  P.standOpen = +b.dataset.b;
+  [...$('segB').children].forEach(x => x.classList.toggle('on', x === b));
+  updateReadouts();
+}));
+
+$('btnLayout').addEventListener('click', () => {
+  // user-triggered: seeded PRNG, so still reproducible for a given click sequence
+  const r = mulberry32((frame * 2654435761) >>> 0);
+  P.probeY = Math.round((r() * 1.6 - 0.8) * 100) / 100;
+  $('cPr').value = P.probeY; $('nPr').textContent = P.probeY.toFixed(2);
+  P.coher = [0, 0.9, 1.9, 3.14][Math.floor(r() * 4)];
+  $('cCo').value = P.coher; $('nCo').textContent = P.coher.toFixed(2);
+  buildSources(); updateReadouts();
+});
+
+// drag the probe row directly on the canvas
+let dragging = false;
+function pToField(ev){
+  const t = ev.touches ? ev.touches[0] : ev;
+  return clamp(Yf(t.clientY), -0.95, 0.95);
+}
+ov.addEventListener('pointerdown', ev => {
+  const y = pToField(ev);
+  if (Math.abs(y - P.probeY) < 0.11 && P.mode !== 2){ dragging = true; ov.setPointerCapture(ev.pointerId); P.probeY = y; syncProbe(); }
+});
+ov.addEventListener('pointermove', ev => { if (dragging){ P.probeY = pToField(ev); syncProbe(); } });
+ov.addEventListener('pointerup',   ev => { dragging = false; try{ ov.releasePointerCapture(ev.pointerId); }catch(e){} });
+function syncProbe(){ $('cPr').value = P.probeY; $('nPr').textContent = P.probeY.toFixed(2); }
+
+window.addEventListener('resize', resize);
+resize();
+setMode(0);
+buildSources();
+updateReadouts();
+updateProbe();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

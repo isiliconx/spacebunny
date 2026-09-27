@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Least-Squares Fitting Lab</title>
+<style>
+  :root{
+    --bg:#04070c;
+    --stage:#070c14;
+    --panel:rgba(8,15,24,.82);
+    --edge:rgba(127,227,255,.16);
+    --edge-hot:rgba(127,227,255,.42);
+    --ink:#e7f2fa;
+    --muted:#8ea4b8;
+    --dim:#5d7185;
+    --cyan:#58cfff;
+    --amber:#ffb95e;
+    --violet:#b78cff;
+    --mint:#4ee0a8;
+    --mono:ui-monospace,"JetBrains Mono","DejaVu Sans Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--mono);font-size:12px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;overflow:hidden;
+  }
+  #app{height:100vh;display:grid;grid-template-rows:auto 1fr auto;gap:0}
+
+  /* ── header ─────────────────────────────────────────── */
+  header{
+    display:flex;align-items:flex-end;justify-content:space-between;gap:18px;
+    padding:13px 20px 11px;border-bottom:1px solid var(--edge);
+    background:linear-gradient(180deg,rgba(127,227,255,.055),rgba(4,7,12,0));
+  }
+  .brand{display:flex;align-items:flex-start;gap:14px;min-width:0}
+  .mark{
+    width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;
+    border:1px solid var(--edge-hot);color:var(--cyan);
+    font-size:15px;letter-spacing:.02em;
+    box-shadow:inset 0 0 22px rgba(88,207,255,.10);
+  }
+  h1{margin:0;font-size:16px;font-weight:600;letter-spacing:.20em;text-transform:uppercase}
+  .tech{
+    margin:4px 0 0;font-size:11px;color:var(--muted);letter-spacing:.01em;line-height:1.5;
+  }
+  .tech b{color:var(--cyan);font-weight:500}
+  .hstats{display:flex;gap:1px;flex:0 0 auto;border:1px solid var(--edge)}
+  .hstats div{padding:5px 10px;background:rgba(127,227,255,.035);min-width:64px}
+  .hstats span{display:block;font-size:10px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .hstats b{display:block;font-size:13px;font-weight:500;color:var(--ink);letter-spacing:.02em}
+
+  /* ── main ───────────────────────────────────────────── */
+  main{display:grid;grid-template-columns:1fr 292px;gap:0;min-height:0}
+  #stage{position:relative;min-width:0;padding:0;overflow:hidden}
+  #plot{display:block;position:absolute;inset:0}
+  #stage::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 90px rgba(2,5,9,.85);
+  }
+
+  /* ── rail ───────────────────────────────────────────── */
+  #rail{
+    border-left:1px solid var(--edge);background:linear-gradient(180deg,rgba(127,227,255,.03),rgba(4,7,12,.6));
+    padding:10px 13px 12px;overflow:hidden;display:flex;flex-direction:column;gap:9px;
+  }
+  .sec{display:flex;flex-direction:column;gap:6px}
+  .lbl{
+    display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.2em;
+    color:var(--dim);text-transform:uppercase;white-space:nowrap;
+  }
+  .lbl::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--edge),transparent)}
+  .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+  .chip{
+    font:inherit;font-size:10.5px;letter-spacing:.04em;padding:5px 2px;cursor:pointer;
+    background:rgba(127,227,255,.05);color:var(--muted);
+    border:1px solid rgba(127,227,255,.14);transition:background .12s,color .12s;
+  }
+  .chip:hover{background:rgba(127,227,255,.12);color:var(--ink)}
+  .chip[aria-pressed="true"]{background:rgba(127,227,255,.2);color:var(--ink);border-color:var(--edge-hot)}
+  .sl{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center}
+  .sl label{font-size:11px;color:var(--muted);letter-spacing:.03em}
+  .sl output{font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;text-align:right}
+  .sl .hint{grid-column:1/-1;font-size:10px;color:var(--dim);letter-spacing:.02em;margin-top:-2px}
+  .sl input[type=range]{grid-column:1/-1}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;cursor:pointer;margin:1px 0;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:3px;border-radius:0;
+    background:linear-gradient(90deg,rgba(88,207,255,.55),rgba(88,207,255,.10));
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;width:9px;height:15px;margin-top:-6px;background:var(--cyan);
+    box-shadow:0 0 10px rgba(88,207,255,.6);
+  }
+  input[type=range]::-moz-range-track{height:3px;background:rgba(88,207,255,.35)}
+  input[type=range]::-moz-range-thumb{width:9px;height:15px;border:0;border-radius:0;background:var(--cyan)}
+
+  .btn{
+    font:inherit;font-size:11px;letter-spacing:.14em;text-transform:uppercase;padding:7px 8px;cursor:pointer;
+    background:rgba(127,227,255,.08);color:var(--ink);border:1px solid var(--edge-hot);
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .btn:hover{background:rgba(127,227,255,.2)}
+  .btn:active{background:rgba(88,207,255,.34)}
+
+  /* scoreboard */
+  .rows{display:flex;flex-direction:column;gap:3px}
+  .mrow{
+    position:relative;display:grid;grid-template-columns:12px 1fr 54px;align-items:center;gap:7px;
+    padding:4px 6px;cursor:pointer;border:1px solid transparent;background:rgba(127,227,255,.03);
+    font:inherit;font-size:11.5px;color:var(--muted);text-align:left;width:100%;
+  }
+  .mrow:hover{background:rgba(127,227,255,.10);color:var(--ink)}
+  .mrow .sw{width:12px;height:3px;box-shadow:0 0 8px currentColor}
+  .mrow .nm{color:inherit;letter-spacing:.02em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .mrow .r2{text-align:right;font-variant-numeric:tabular-nums;color:inherit}
+  .mrow .bar{position:absolute;left:0;bottom:0;height:2px;opacity:.85}
+  .mrow[aria-pressed="true"]{border-color:var(--edge-hot);color:var(--ink);background:rgba(127,227,255,.11)}
+  .mrow.best .r2{color:var(--mint)}
+
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;font-size:11.5px}
+  .kv dt{color:var(--dim);letter-spacing:.04em;white-space:nowrap}
+  .kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .eq{
+    font-size:11.5px;color:var(--ink);padding:5px 7px;background:rgba(0,0,0,.35);
+    border-left:2px solid var(--focus,#58cfff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .note{font-size:10.5px;color:var(--dim);line-height:1.4}
+  .note b{color:var(--mint);font-weight:500}
+  .note i{color:var(--amber);font-style:normal}
+
+  /* ── footer ─────────────────────────────────────────── */
+  footer{
+    border-top:1px solid var(--edge);padding:7px 20px;
+    display:flex;justify-content:space-between;gap:16px;align-items:center;
+    font-size:10.5px;color:var(--dim);letter-spacing:.05em;
+    background:linear-gradient(0deg,rgba(127,227,255,.04),rgba(4,7,12,0));
+  }
+  footer b{color:var(--muted);font-weight:500}
+  #foot-r{color:var(--muted);white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="mark">34</div>
+      <div style="min-width:0">
+        <h1>Least-Squares Fitting Lab</h1>
+        <p class="tech">minimise &Sigma;(y<sub>i</sub> &minus; f(x<sub>i</sub>;&theta;))&sup2; &middot; <b>normal equations</b> by Gaussian elimination with partial pivoting &middot; sine with fixed &omega; is <b>linear in its coefficients</b> &middot; exponential by <b>Levenberg&ndash;Marquardt</b> from a profile warm start</p>
+      </div>
+    </div>
+    <div class="hstats">
+      <div><span>seed</span><b id="h-seed">&mdash;</b></div>
+      <div><span>n</span><b id="h-n">&mdash;</b></div>
+      <div><span>sigma</span><b id="h-sig">&mdash;</b></div>
+      <div><span>snr</span><b id="h-snr">&mdash;</b></div>
+      <div><span>frames</span><b id="h-fps">&mdash;</b></div>
+    </div>
+  </header>
+
+  <main>
+    <section id="stage"><canvas id="plot"></canvas></section>
+
+    <aside id="rail">
+      <div class="sec">
+        <div class="lbl">generating truth</div>
+        <div class="chips" id="truth">
+          <button class="chip" data-v="linear"     aria-pressed="false">lin</button>
+          <button class="chip" data-v="quadratic"  aria-pressed="false">quad</button>
+          <button class="chip" data-v="exponential" aria-pressed="true">exp</button>
+          <button class="chip" data-v="sine"       aria-pressed="false">sine</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="lbl">data</div>
+        <div class="sl">
+          <label for="sig">noise &sigma;</label><output id="o-sig">0.32</output>
+          <input type="range" id="sig" min="0" max="1" step="0.01" value="0.32">
+        </div>
+        <div class="sl">
+          <label for="nn">samples n</label><output id="o-nn">120</output>
+          <input type="range" id="nn" min="20" max="320" step="10" value="120">
+        </div>
+        <div class="sl">
+          <label for="fq">&omega; known (cycles)</label><output id="o-fq">1.40</output>
+          <input type="range" id="fq" min="0.25" max="4" step="0.05" value="1.4">
+          <div class="hint">held fixed &mdash; never fitted</div>
+        </div>
+        <button class="btn" id="reseed"><span>reseed noise</span><span>&rarr;</span></button>
+      </div>
+
+      <div class="sec">
+        <div class="lbl">focus fit &middot; r&sup2;</div>
+        <div class="rows" id="fits"></div>
+      </div>
+
+      <div class="sec">
+        <div class="lbl">coefficients</div>
+        <div class="eq" id="eq">&mdash;</div>
+        <dl class="kv" id="coef"></dl>
+      </div>
+
+      <div class="sec">
+        <div class="lbl">diagnostics</div>
+        <dl class="kv" id="diag"></dl>
+        <div class="note" id="verdict"></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <span><b>focus</b> a model to re-solve &middot; <b>&sigma;</b> rescales the noise &middot; <b>n</b> grows the sample (the first points never move) &middot; <b>reseed</b> draws a new sample</span>
+    <span id="foot-r"></span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════
+   34 — least-squares fitting lab
+   Seeded RNG, fixed-step animation, one canvas, no external requests.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ---------- seeded randomness ---------- */
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hash32(str){
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+/* White noise keyed to the sample's own position rather than to a draw
+   order: N(u) is a fresh mulberry32 stream seeded from the data key and the
+   point's lattice slot. Same x always gets the same eps, so raising n fills
+   the gaps without teleporting the points that are already on screen. */
+const SLOT_BITS = 1048576;                    // 2^20 slots: no two points collide
+const INV_SQRT3 = 1.7320508075688772;          // uniform[-1,1] -> unit variance
+function noiseAt(key, u){
+  const slot = Math.min(SLOT_BITS - 1, Math.max(0, Math.floor(u * SLOT_BITS)));
+  const seed = (hash32(key) ^ Math.imul(slot, 0x9E3779B1)) >>> 0;
+  // uniform on [-sqrt(3), sqrt(3)] has unit variance, so sigma means sigma
+  return mulberry32(seed)() * 2 * INV_SQRT3 - INV_SQRT3;
+}
+
+/* ---------- tiny linear algebra ---------- */
+const dot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+
+/* Gaussian elimination with partial pivoting. Returns null if singular. */
+function solveNormal(Ain, bin){
+  const n = bin.length;
+  const M = Ain.map((row, i) => row.concat([bin[i]]));
+  for (let c = 0; c < n; c++){
+    let p = c, best = Math.abs(M[c][c]);
+    for (let r = c + 1; r < n; r++){ const v = Math.abs(M[r][c]); if (v > best){ best = v; p = r; } }
+    if (!(best > 1e-13)) return null;
+    if (p !== c){ const t = M[p]; M[p] = M[c]; M[c] = t; }
+    const d = M[c][c];
+    for (let r = c + 1; r < n; r++){
+      const f = M[r][c] / d;
+      if (f === 0) continue;
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--){
+    let s = M[r][n];
+    for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+    x[r] = s / M[r][r];
+  }
+  for (let i = 0; i < n; i++) if (!isFinite(x[i])) return null;
+  return x;
+}
+
+/* ordinary least squares for a design matrix of plain functions of t */
+function lsq(basis, t, y){
+  const n = basis.length, N = t.length;
+  const A = Array.from({ length: n }, () => new Array(n).fill(0));
+  const b = new Array(n).fill(0);
+  const v = new Array(n);
+  for (let i = 0; i < N; i++){
+    for (let k = 0; k < n; k++) v[k] = basis[k](t[i]);
+    for (let r = 0; r < n; r++){
+      b[r] += v[r] * y[i];
+      for (let c = r; c < n; c++) A[r][c] += v[r] * v[c];
+    }
+  }
+  for (let r = 0; r < n; r++) for (let c = 0; c < r; c++) A[r][c] = A[c][r];
+  for (let i = 0; i < n; i++) A[i][i] += 1e-11 * (1 + Math.abs(A[i][i]));
+  return solveNormal(A, b);
+}
+
+/* Levenberg–Marquardt on ||r(p)||^2, residuals from finite differences */
+function lm(resFn, p0, maxIter){
+  let p = p0.slice();
+  let r = resFn(p), cost = dot(r, r);
+  let lam = 1e-3, used = 0, ok = isFinite(cost);
+  for (let it = 0; it < maxIter; it++){
+    const n = p.length, m = r.length;
+    const J = new Array(m);
+    for (let i = 0; i < m; i++) J[i] = new Array(n);
+    for (let k = 0; k < n; k++){
+      const h = 1e-7 * (1 + Math.abs(p[k]));
+      const pp = p.slice(); pp[k] += h;
+      const rp = resFn(pp);
+      for (let i = 0; i < m; i++) J[i][k] = (rp[i] - r[i]) / h;
+    }
+    const A = Array.from({ length: n }, () => new Array(n).fill(0));
+    const g = new Array(n).fill(0);
+    for (let i = 0; i < m; i++){
+      for (let r0 = 0; r0 < n; r0++){
+        g[r0] += J[i][r0] * r[i];
+        for (let c0 = r0; c0 < n; c0++) A[r0][c0] += J[i][r0] * J[i][c0];
+      }
+    }
+    for (let r0 = 0; r0 < n; r0++) for (let c0 = 0; c0 < r0; c0++) A[r0][c0] = A[c0][r0];
+    const before = cost;
+    let stepped = false;
+    for (let trial = 0; trial < 10; trial++){
+      const At = A.map(row => row.slice());
+      for (let i = 0; i < n; i++) At[i][i] += lam * (Math.abs(At[i][i]) + 1e-9);
+      const d = solveNormal(At, g.map(v => -v));
+      if (!d){ lam *= 12; continue; }
+      const pn = p.map((v, i) => v + d[i]);
+      if (pn.some(v => !isFinite(v))){ lam *= 12; continue; }
+      const rn = resFn(pn), cn = dot(rn, rn);
+      if (cn < cost){
+        p = pn; r = rn; cost = cn; used++;
+        lam = Math.max(lam * 0.35, 1e-10);
+        stepped = true;
+        break;
+      }
+      lam *= 12;
+      if (lam > 1e10) break;
+    }
+    if (!stepped) break;
+    if (Math.abs(before - cost) <= 1e-13 * (1 + cost)) { used++; break; }
+  }
+  if (!isFinite(cost)) ok = false;
+  return { p, r, cost, iters: used, ok };
+}
+
+/* ---------- domain ---------- */
+const X0 = 0, X1 = 10, SPAN = X1 - X0;
+
+/* ---------- models ---------- */
+const MODELS = [
+  {
+    id: 'linear', name: 'linear', short: 'lin', color: '#58cfff', k: 2,
+    fit(t, y, o){
+      const p = lsq([() => 1, (u) => u], t, y);
+      if (!p) return null;
+      return { predict: (u) => p[0] + p[1] * u,
+               eq: `y = ${fx(p[0],3)} ${sg(p[1] / SPAN)}·x`,
+               rows: [['a  intercept', p[0], 4], ['b  slope', p[1] / SPAN, 5]],
+               solver: 'normal equations 2×2' };
+    }
+  },
+  {
+    id: 'quadratic', name: 'quadratic', short: 'quad', color: '#ffb95e', k: 3,
+    fit(t, y, o){
+      const p = lsq([() => 1, (u) => u, (u) => u * u], t, y);
+      if (!p) return null;
+      const c = p[2] / (SPAN * SPAN), b = p[1] / SPAN;
+      return { predict: (u) => p[0] + p[1] * u + p[2] * u * u,
+               eq: `y = ${fx(p[0],3)} ${sg(b)}·x ${sg(c)}·x²`,
+               rows: [['a  intercept', p[0], 4], ['b  linear', b, 5], ['c  quadratic', c, 6]],
+               solver: 'normal equations 3×3' };
+    }
+  },
+  {
+    id: 'exponential', name: 'exponential', short: 'exp', color: '#b78cff', k: 3,
+    fit(t, y, o){
+      // 1-D profile over the growth rate c, each step a 2×2 linear solve
+      let best = null;
+      for (let s = 0; s < 26; s++){
+        const c = 0.2 * Math.pow(9 / 0.2, s / 25);
+        const p = lsq([() => 1, (u) => Math.exp(c * u)], t, y);
+        if (!p) continue;
+        let e = 0; for (let i = 0; i < t.length; i++){ const d = y[i] - (p[0] + p[1] * Math.exp(c * t[i])); e += d * d; }
+        if (!best || e < best.e) best = { e, p, c };
+      }
+      if (!best) return null;
+      const resFn = (q) => {
+        const k = Math.min(18, Math.max(-6, q[2]));
+        const out = new Array(t.length);
+        for (let i = 0; i < t.length; i++) out[i] = y[i] - (q[0] + q[1] * Math.exp(k * t[i]));
+        return out;
+      };
+      const r = lm(resFn, [best.p[0], best.p[1], best.c], 80);
+      const q = r.p, cc = Math.min(18, Math.max(-6, q[2]));
+      return { predict: (u) => q[0] + q[1] * Math.exp(cc * u),
+               eq: `y = ${fx(q[0],3)} ${sg(q[1])}·e^(${fx(cc / SPAN,3)}x)`,
+               rows: [['a  asymptote', q[0], 4], ['b  scale', q[1], 4], ['c  rate', cc / SPAN, 4]],
+               solver: `profile(26) → LM ×${r.iters}` };
+    }
+  },
+  {
+    id: 'sine', name: 'sine (ω known)', short: 'sine', color: '#4ee0a8', k: 3,
+    fit(t, y, o){
+      const w = 2 * Math.PI * o.fq;
+      const p = lsq([() => 1, (u) => Math.cos(w * u), (u) => Math.sin(w * u)], t, y);
+      if (!p) return null;
+      const amp = Math.hypot(p[1], p[2]);
+      const ph = Math.atan2(p[1], p[2]);
+      return { predict: (u) => p[0] + p[1] * Math.cos(w * u) + p[2] * Math.sin(w * u),
+               eq: `y = ${fx(p[0],3)} + ${fx(amp,4)}·sin(${fx(w / SPAN,3)}x ${sg(ph)})`,
+               rows: [['a  offset', p[0], 4], ['A  amplitude', amp, 4], ['φ  phase', ph, 4], ['ω  known', w / SPAN, 4]],
+               solver: `normal equations 3×3, ω=${o.fq.toFixed(2)} fixed` };
+    }
+  }
+];
+
+const TRUTHS = {
+  linear:     { name: 'linear',     f: (x) => 1.8 + 0.86 * x },
+  quadratic:  { name: 'quadratic',  f: (x) => 0.6 + 1.10 * x - 0.085 * x * x },
+  exponential:{ name: 'exponential',f: (x) => 0.8 + 0.45 * Math.exp(0.26 * x) },
+  sine:       { name: 'sine',       f: (x, o) => 2.2 + 1.5 * Math.sin(2 * Math.PI * o.fq * x / SPAN + 0.7) }
+};
+
+/* ---------- state ---------- */
+const S = {
+  seedIdx: 7,
+  truth: 'exponential',
+  focus: 'exponential',
+  sig: 0.32,
+  n: 120,
+  fq: 1.4,
+  animFrame: 0
+};
+const SWEEP = 30, FADE = 10, INTRO = SWEEP + FADE;
+
+let DATA = null, FITS = {}, YSCALE = null;
+
+function buildData(){
+  const t = TRUTHS[S.truth].f;
+  const ys = new Float64Array(S.n), ts = new Float64Array(S.n), xs = new Float64Array(S.n);
+  for (let i = 0; i < S.n; i++){
+    const u = (i + 0.5) / S.n;
+    ts[i] = u; xs[i] = X0 + SPAN * u;
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < S.n; i++){
+    const v = t(xs[i], S);
+    if (v < lo) lo = v; if (v > hi) hi = v;
+  }
+  const sigma = S.sig * 0.20 * (hi - lo);
+  const key = S.seedIdx + '|' + S.truth + '|' + S.sig.toFixed(2);
+  const yTrue = new Float64Array(S.n);
+  for (let i = 0; i < S.n; i++){
+    const u = (i + 0.5) / S.n;
+    const clean = t(xs[i], S);
+    yTrue[i] = clean;
+    ys[i] = clean + noiseAt(key, u) * sigma;
+  }
+  DATA = { xs, ys, ts, yTrue, sigma, span: hi - lo, mean: 0 };
+  let m = 0; for (let i = 0; i < S.n; i++) m += ys[i]; m /= S.n;
+  DATA.mean = m;
+  let sst = 0; for (let i = 0; i < S.n; i++){ const d = ys[i] - m; sst += d * d; }
+  DATA.sst = sst;
+}
+
+function solveAll(keepFocus){
+  FITS = {};
+  for (const m of MODELS){
+    const r = m.fit(DATA.ts, DATA.ys, S);
+    if (!r){ FITS[m.id] = null; continue; }
+    let ssr = 0; const res = new Float64Array(S.n);
+    for (let i = 0; i < S.n; i++){ const d = DATA.ys[i] - r.predict(DATA.ts[i]); res[i] = d; ssr += d * d; }
+    let num = 0, den = 0;
+    for (let i = 0; i < S.n - 1; i++) num += res[i] * res[i + 1];
+    for (let i = 0; i < S.n; i++) den += res[i] * res[i];
+    const rho1 = den > 0 ? num / den : 0;
+    FITS[m.id] = {
+      model: m, ...r, res, ssr,
+      r2: DATA.sst > 0 ? 1 - ssr / DATA.sst : 0,
+      rms: Math.sqrt(ssr / S.n),
+      rmse: Math.sqrt(ssr / Math.max(1, S.n - m.k)),
+      rho1
+    };
+  }
+  const b = bestId();
+  if (!keepFocus || !FITS[S.focus]) S.focus = b;
+  // Y range is set by the data and the truth, using 2nd/98th percentiles so one
+  // stray point cannot flatten the plot. A mis-specified fit is allowed to run
+  // off the panel -- that is the honest picture, and letting it set the scale
+  // would waste most of the frame on a model that is simply wrong.
+  const sorted = Array.from(DATA.ys).sort((a, b) => a - b);
+  const q = (f) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(f * (sorted.length - 1))))];
+  let lo = Math.min(q(0.02), DATA.yTrue[0], DATA.yTrue[S.n - 1]);
+  let hi = Math.max(q(0.98), DATA.yTrue[0], DATA.yTrue[S.n - 1]);
+  for (let i = 0; i < S.n; i++){ const v = TRUTHS[S.truth].f(DATA.xs[i], S); if (v < lo) lo = v; if (v > hi) hi = v; }
+  // scale the residual panel to the residuals actually on screen (the focus
+  // model, plus the faint ghost of the best model when that is a different one)
+  let rmax = 0.05;
+  const bump = (f) => { for (let i = 0; i < S.n; i++) rmax = Math.max(rmax, Math.abs(f.res[i])); };
+  if (FITS[S.focus]) bump(FITS[S.focus]);
+  if (FITS[b] && b !== S.focus) bump(FITS[b]);
+  rmax = Math.max(rmax, DATA.sigma * 1.7) * 1.12;
+  rmax = Math.min(rmax, DATA.span * 0.9);
+  YSCALE = niceRange(lo, hi, 0.11);
+  YSCALE.rmax = rmax;
+  return b;
+}
+function bestId(){
+  let b = null;
+  for (const m of MODELS){ const f = FITS[m.id]; if (f && (!b || f.r2 > FITS[b].r2)) b = m.id; }
+  return b;
+}
+function niceRange(lo, hi, pad){
+  lo -= (hi - lo) * pad; hi += (hi - lo) * pad;
+  const raw = (hi - lo) / 5;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const nrm = raw / mag;
+  const step = (nrm <= 1 ? 1 : nrm <= 2 ? 2 : nrm <= 2.5 ? 2.5 : nrm <= 5 ? 5 : 10) * mag;
+  return { lo: Math.floor(lo / step) * step, hi: Math.ceil(hi / step) * step, step };
+}
+function ticks(lo, hi, step){
+  const out = [];
+  const k0 = Math.ceil(lo / step - 1e-9), k1 = Math.floor(hi / step + 1e-9);
+  for (let k = k0; k <= k1; k++) out.push(k * step);
+  return out;
+}
+
+/* ---------- formatting ---------- */
+/* '+' or a real minus sign in front of a term, so an equation never reads
+   "+ −0.700" and a negative coefficient never reads "+ 0.700" */
+function sg(v){
+  return (v < 0 ? '\u2212' : '+') + ' ' + fx(Math.abs(v), 4);
+}
+function fx(v, d){
+  if (v === undefined || v === null || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 1e-4 || a >= 1e6)) return v.toExponential(2);
+  let s = v.toFixed(d);
+  if (s === '-' + (0).toFixed(d)) s = (0).toFixed(d);
+  if (s[0] === '-') s = '\u2212' + s.slice(1);
+  return s;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   canvas
+   ═══════════════════════════════════════════════════════════════ */
+const cv = document.getElementById('plot');
+const ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+let W = 0, H = 0, DPR = 1, BOX = null;
+
+function layout(){
+  const r = stage.getBoundingClientRect();
+  W = Math.max(360, Math.round(r.width));
+  H = Math.max(260, Math.round(r.height));
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  while (W * DPR * H * DPR > 2.7e6 && DPR > 0.75) DPR *= 0.9;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const padL = 66, padR = 22, padT = 36, padB = 40, gap = 54;
+  const pw = W - padL - padR;
+  const avail = H - padT - padB - gap;
+  const dh = Math.round(avail * 0.615);
+  const rh = avail - dh;
+  BOX = {
+    padL, padR, pw,
+    data: { x: padL, y: padT, w: pw, h: dh },
+    res:  { x: padL, y: padT + dh + gap, w: pw, h: rh }
+  };
+}
+const T = (b, u) => b.x + b.w * u;                 // t -> px
+const Y = (b, v) => { const s = YSCALE; return b.y + b.h * (1 - (v - s.lo) / (s.hi - s.lo)); };
+const RY = (b, v) => b.y + b.h * (0.5 - 0.5 * (v / YSCALE.rmax));
+
+function draw(){
+  if (!BOX || !DATA) return;
+  const d = BOX.data, r = BOX.res;
+  const prog = Math.min(1, S.animFrame / SWEEP);
+  const fade = Math.max(0, Math.min(1, (S.animFrame - SWEEP) / FADE));
+  const ease = prog < 1 ? 1 - Math.pow(1 - prog, 2.1) : 1;
+
+  /* ground */
+  const bg = ctx.createLinearGradient(0, 0, W * 0.35, H);
+  bg.addColorStop(0, '#080f1a');
+  bg.addColorStop(0.55, '#060b13');
+  bg.addColorStop(1, '#03060b');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  // radius spans the canvas diagonal, so the wash never ends on a visible
+  // straight edge partway across the frame
+  const gx = W * 0.44, gy = d.y + d.h * 0.34, gr = Math.hypot(W, H) * 0.62;
+  const glow = ctx.createRadialGradient(gx, gy, 8, gx, gy, gr);
+  glow.addColorStop(0, 'rgba(72,140,200,.15)');
+  glow.addColorStop(0.45, 'rgba(60,120,180,.05)');
+  glow.addColorStop(1, 'rgba(60,120,180,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  /* frame corners */
+  frameBox(d, 'rgba(127,227,255,.30)');
+  frameBox(r, 'rgba(127,227,255,.22)');
+
+  /* ---- grids ---- */
+  const s = YSCALE;
+  ctx.lineWidth = 1;
+  ctx.font = '10.5px ' + MONO;
+  ctx.textBaseline = 'middle';
+  // vertical minor grid across both panels
+  for (let k = 0; k <= 50; k++){
+    const u = k / 50, x = Math.round(T(d, u)) + 0.5;
+    if (x > d.x + d.w) break;
+    const major = Math.abs(u * 5 - Math.round(u * 5)) < 1e-6;
+    ctx.strokeStyle = major ? 'rgba(127,227,255,.085)' : 'rgba(127,227,255,.028)';
+    ctx.beginPath(); ctx.moveTo(x, d.y); ctx.lineTo(x, d.y + d.h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, r.y); ctx.lineTo(x, r.y + r.h); ctx.stroke();
+  }
+  // data-panel horizontal grid + labels
+  ctx.textAlign = 'right';
+  for (const v of ticks(s.lo, s.hi, s.step)){
+    const y = Math.round(Y(d, v)) + 0.5;
+    if (y < d.y - 1 || y > d.y + d.h + 1) continue;
+    const zero = Math.abs(v) < s.step * 1e-6;
+    ctx.strokeStyle = zero ? 'rgba(127,227,255,.30)' : 'rgba(127,227,255,.075)';
+    ctx.beginPath(); ctx.moveTo(d.x, y); ctx.lineTo(d.x + d.w, y); ctx.stroke();
+    ctx.fillStyle = zero ? 'rgba(150,190,215,.95)' : 'rgba(110,140,165,.9)';
+    ctx.fillText(fmtTick(v), d.x - 8, y);
+  }
+  // residual grid: zero line, +/- rmax, and the 95% band a correct model
+  // should keep its residuals inside
+  const rm = YSCALE.rmax, band = 1.64 * DATA.sigma;
+  ctx.textAlign = 'right';
+  if (band < rm * 0.95){
+    ctx.strokeStyle = 'rgba(78,224,168,.24)';
+    ctx.setLineDash([3, 4]);
+    for (const v of [band, -band]){
+      const y = Math.round(RY(r, v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(78,224,168,.8)';
+    ctx.textAlign = 'left';
+    ctx.fillText('95% ± 1.64σ', r.x + r.w - 62, RY(r, band) - 7);
+    ctx.textAlign = 'right';
+  }
+  for (const f of [-1, -0.5, 0, 0.5, 1]){
+    const y = Math.round(RY(r, f * rm)) + 0.5;
+    ctx.strokeStyle = f === 0 ? 'rgba(127,227,255,.38)' : 'rgba(127,227,255,.07)';
+    ctx.setLineDash(f === 0 ? [] : [2, 4]);
+    ctx.beginPath(); ctx.moveTo(r.x, y); ctx.lineTo(r.x + r.w, y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (f === 1 || f === -1){
+      ctx.fillStyle = 'rgba(110,140,165,.8)';
+      ctx.fillText((f > 0 ? '+' : '−') + fx(rm, 2), r.x - 8, y);
+    }
+  }
+  // x labels
+  ctx.textAlign = 'center';
+  for (let k = 0; k <= 5; k++){
+    const u = k / 5, x = T(d, u);
+    ctx.fillStyle = 'rgba(110,140,165,.9)';
+    ctx.fillText(String(X0 + SPAN * u), x, r.y + r.h + 15);
+    ctx.strokeStyle = 'rgba(127,227,255,.18)';
+    ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, r.y + r.h); ctx.lineTo(Math.round(x) + 0.5, r.y + r.h + 4); ctx.stroke();
+  }
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(150,180,205,.9)';
+  ctx.fillText('x', d.x + d.w / 2, r.y + r.h + 27);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(150,180,205,.9)';
+  ctx.fillText('y', 14, d.y + 5);
+  ctx.fillText('yᵢ', 14, r.y + 5);
+
+  /* panel tags */
+  tag(d.x + 10, d.y - 17, 'OBSERVED  yᵢ = f(xᵢ) + εᵢ', 'rgba(150,190,215,.9)');
+  tag(d.x + d.w, d.y - 17, 'R² = 1 − SSᵣ/SSₜ', 'rgba(90,115,140,.85)', 'right');
+  tag(r.x + 10, r.y - 14, 'RESIDUALS  yᵢ − f(xᵢ;θ)  ·  σ̂ = ' + fx(DATA.sigma, 2), 'rgba(150,190,215,.9)');
+
+  /* ---- curves + points ---- */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(d.x, d.y, d.w, d.h); ctx.clip();
+
+  // generating truth, faint dashed
+  ctx.setLineDash([4, 5]);
+  ctx.strokeStyle = 'rgba(196,216,232,.30)';
+  ctx.lineWidth = 1.2;
+  tracePath(d, (u) => TRUTHS[S.truth].f(X0 + SPAN * u, S), 0, 1);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // dim fits first
+  for (const m of MODELS){
+    if (m.id === S.focus) continue;
+    const f = FITS[m.id];
+    if (!f) continue;
+    ctx.strokeStyle = hexA(m.color, 0.26 * fade);
+    ctx.lineWidth = 1.1;
+    tracePath(d, f.predict, 0, 1);
+    ctx.stroke();
+  }
+
+  // residual-free focus curve, swept in
+  const f = FITS[S.focus];
+  if (f){
+    ctx.save();
+    ctx.beginPath(); ctx.rect(d.x - 2, d.y - 4, d.w + 4, d.h + 8); ctx.clip();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = hexA(f.model.color, 0.30);
+    ctx.lineWidth = 5; ctx.shadowColor = hexA(f.model.color, 0.75); ctx.shadowBlur = 9;
+    tracePath(d, f.predict, 0, ease);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#ffffff';
+    ctx.globalAlpha = 0.55 * fade;
+    ctx.lineWidth = 1.4;
+    tracePath(d, f.predict, 0, ease);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // sweep head
+    if (prog < 1){
+      const ux = ease, hx = T(d, ux), hy = Y(d, f.predict(ux));
+      const gr = ctx.createRadialGradient(hx, hy, 0, hx, hy, 22);
+      gr.addColorStop(0, hexA(f.model.color, 0.75));
+      gr.addColorStop(1, hexA(f.model.color, 0));
+      ctx.fillStyle = gr;
+      ctx.fillRect(hx - 24, hy - 24, 48, 48);
+      ctx.strokeStyle = 'rgba(190,225,245,.28)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(Math.round(hx) + 0.5, d.y); ctx.lineTo(Math.round(hx) + 0.5, d.y + d.h); ctx.stroke();
+      // head readout
+      const tx = Math.min(hx + 10, d.x + d.w - 118);
+      const label = 'x=' + fx(X0 + SPAN * ux, 2) + '  f=' + fx(f.predict(ux), 2);
+      ctx.font = '10.5px ' + MONO;
+      const tw = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(4,9,15,.9)';
+      ctx.fillRect(Math.min(tx, d.x + d.w - tw - 2), d.y + d.h - 24, tw, 15);
+      ctx.strokeStyle = hexA(f.model.color, 0.5);
+      ctx.strokeRect(Math.min(tx, d.x + d.w - tw - 2) + 0.5, d.y + d.h - 23.5, tw - 1, 14);
+      ctx.fillStyle = hexA(f.model.color, 1);
+      ctx.textAlign = 'left';
+      ctx.fillText(label, Math.min(tx, d.x + d.w - tw - 2) + 5, d.y + d.h - 16);
+    }
+  }
+
+  // data points last so they read on top of every curve
+  for (let i = 0; i < S.n; i++){
+    const x = T(d, DATA.ts[i]), y = Y(d, DATA.ys[i]);
+    if (y < d.y - 4 || y > d.y + d.h + 4) continue;
+    const a = 0.30 + 0.44 * fade;
+    ctx.fillStyle = 'rgba(4,8,14,.75)';
+    ctx.beginPath(); ctx.arc(x, y, 3.1, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(216,234,246,' + a.toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(x, y, 2.0, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+
+  /* ---- residual panel ---- */
+  ctx.save();
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();
+  // best model, faint, when it is not the focus
+  const bid = bestId();
+  if (bid !== S.focus && FITS[bid]){
+    const bf = FITS[bid];
+    ctx.strokeStyle = hexA(bf.model.color, 0.20 * fade);
+    ctx.lineWidth = 1;
+    for (let i = 0; i < S.n; i++){
+      const x = T(r, DATA.ts[i]);
+      ctx.beginPath(); ctx.moveTo(x, RY(r, 0)); ctx.lineTo(x, RY(r, bf.res[i])); ctx.stroke();
+    }
+  }
+  if (f){
+    const shown = Math.min(S.n, Math.ceil(S.n * (prog < 1 ? ease : 1)));
+    ctx.lineWidth = 1;
+    for (let i = 0; i < shown; i++){
+      const x = T(r, DATA.ts[i]), y0 = RY(r, 0), y1 = RY(r, f.res[i]);
+      ctx.strokeStyle = hexA(f.model.color, 0.40 * fade);
+      ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+    }
+    for (let i = 0; i < shown; i++){
+      const x = T(r, DATA.ts[i]), y1 = RY(r, f.res[i]);
+      ctx.fillStyle = hexA(f.model.color, 0.95 * fade);
+      ctx.fillRect(x - 1.1, y1 - 1.1, 2.2, 2.2);
+    }
+  }
+  ctx.restore();
+
+  // legend chips in the reserved top band of the data panel
+  drawKeys(d);
+}
+const TAU = Math.PI * 2;
+const MONO = 'ui-monospace,"JetBrains Mono","DejaVu Sans Mono",Menlo,Consolas,monospace';
+
+function tracePath(b, fn, u0, u1){
+  const N = 240;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++){
+    const u = u0 + (u1 - u0) * (i / N);
+    const x = T(b, u), y = Y(b, fn(u));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+function frameBox(b, col){
+  ctx.strokeStyle = col; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(b.x + 0.5, b.y + 0.5); ctx.lineTo(b.x + b.w - 0.5, b.y + 0.5);
+  ctx.lineTo(b.x + b.w - 0.5, b.y + b.h - 0.5); ctx.lineTo(b.x + 0.5, b.y + b.h - 0.5);
+  ctx.closePath(); ctx.stroke();
+  const L = 9;
+  ctx.strokeStyle = 'rgba(127,227,255,.75)'; ctx.lineWidth = 1.4;
+  for (const [cx, cy, sx, sy] of [[b.x, b.y, 1, 1], [b.x + b.w, b.y, -1, 1], [b.x, b.y + b.h, 1, -1], [b.x + b.w, b.y + b.h, -1, -1]]){
+    ctx.beginPath();
+    ctx.moveTo(cx + 0.5 + sx * L, cy + 0.5); ctx.lineTo(cx + 0.5, cy + 0.5); ctx.lineTo(cx + 0.5, cy + 0.5 + sy * L);
+    ctx.stroke();
+  }
+}
+function tag(x, y, txt, col, align){
+  ctx.font = '10.5px ' + MONO;
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = col;
+  ctx.fillText(txt, x, y);
+  ctx.textAlign = 'left';
+}
+function drawKeys(d){
+  const y = d.y - 20;
+  let x = d.x + 128;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.font = '10.5px ' + MONO;
+  const keys = [{ c: 'rgba(216,234,246,.95)', t: 'data', dash: 0 }]
+    .concat(MODELS.map(m => ({ c: m.color, t: m.short })));
+  for (const k of keys){
+    ctx.strokeStyle = k.c; ctx.lineWidth = k.id === 2 ? 2.4 : 1.8;
+    ctx.beginPath(); ctx.moveTo(x, y + 0.5); ctx.lineTo(x + 15, y + 0.5); ctx.stroke();
+    if (k.id === 2){ ctx.fillStyle = k.c; ctx.beginPath(); ctx.arc(x + 7.5, y + 0.5, 2.2, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = k.id === 2 ? 'rgba(216,234,246,.8)' : hexA(k.c, .92);
+    ctx.fillText(k.t, x + 21, y + 0.5);
+    x += 26 + ctx.measureText(k.t).width;
+  }
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = 'rgba(196,216,232,.5)';
+  ctx.beginPath(); ctx.moveTo(x, y + 0.5); ctx.lineTo(x + 15, y + 0.5); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(196,216,232,.75)';
+  ctx.fillText('truth', x + 21, y + 0.5);
+}
+function fmtTick(v){
+  const a = Math.abs(v);
+  if (a === 0) return '0';
+  if (a < 0.01) return v.toExponential(1);
+  if (a < 1) return v.toFixed(2);
+  if (a < 10) return v.toFixed(1);
+  return v.toFixed(0);
+}
+function hexA(hex, a){
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   rail
+   ═══════════════════════════════════════════════════════════════ */
+/* probeState is the live report; window.__probe is a view over it whose
+   `frames` is a getter, so a harness polling it sees the sweep advance. */
+const probeState = {};
+const el = {
+  seed: document.getElementById('h-seed'), n: document.getElementById('h-n'),
+  sig: document.getElementById('h-sig'), snr: document.getElementById('h-snr'),
+  fps: document.getElementById('h-fps'), fits: document.getElementById('fits'),
+  eq: document.getElementById('eq'), coef: document.getElementById('coef'),
+  diag: document.getElementById('diag'), verdict: document.getElementById('verdict'),
+  footR: document.getElementById('foot-r')
+};
+
+function buildFits(){
+  el.fits.innerHTML = '';
+  for (const m of MODELS){
+    const b = document.createElement('button');
+    b.className = 'mrow'; b.type = 'button'; b.dataset.v = m.id;
+    b.innerHTML = '<span class="sw" style="background:' + m.color + ';color:' + m.color + '"></span>' +
+                  '<span class="nm">' + m.short + '</span><span class="r2">—</span>' +
+                  '<span class="bar" style="background:' + m.color + '"></span>';
+    b.addEventListener('click', () => { S.focus = m.id; S.animFrame = 0; syncUI(); kick(); });
+    el.fits.appendChild(b);
+  }
+}
+function syncUI(){
+  const bid = bestId();
+  for (const b of el.fits.children){
+    const m = MODELS.find(x => x.id === b.dataset.v);
+    const f = FITS[b.dataset.v];
+    b.setAttribute('aria-pressed', String(b.dataset.v === S.focus));
+    b.classList.toggle('best', b.dataset.v === bid);
+    b.querySelector('.r2').textContent = f ? f.r2.toFixed(4) : 'singular';
+    const w = f ? Math.max(2, Math.max(0, f.r2) * 100) : 0;
+    b.querySelector('.bar').style.width = w.toFixed(1) + '%';
+  }
+  const f = FITS[S.focus];
+  document.documentElement.style.setProperty('--focus', f ? f.model.color : '#58cfff');
+  el.eq.textContent = f ? f.eq : 'normal equations singular';
+  el.coef.innerHTML = '';
+  if (f) for (const [name, v, dg] of f.rows){
+    const dt = document.createElement('dt'); dt.textContent = name;
+    const dd = document.createElement('dd'); dd.textContent = fx(v, dg);
+    el.coef.appendChild(dt); el.coef.appendChild(dd);
+  }
+  el.diag.innerHTML = '';
+  const kvs = f ? [
+    ['r²', f.r2.toFixed(5)],
+    ['rms resid', fx(f.rms, 4)],
+    ['rₘₛₑ (dof)', fx(f.rmse, 4)],
+    ['ssᵣ', fx(f.ssr, 3)],
+    ['solver', f.solver]
+  ] : [['r²', '—']];
+  for (const [k, v] of kvs){
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    el.diag.appendChild(dt); el.diag.appendChild(dd);
+  }
+  if (f){
+    const good = Math.abs(f.rho1) < 0.20;
+    el.verdict.innerHTML = 'lag-1 autocorrelation of residuals ρ₁ = <b>' + fx(f.rho1, 3) + '</b> — ' +
+      (good ? 'white. <b>model is adequate.</b>'
+            : 'structure remains. <i>residuals still know the shape of the truth — pick a better model.</i>');
+  } else el.verdict.textContent = '';
+  el.seed.textContent = '0x' + hash32(S.seedIdx + '|' + S.truth + '|' + S.sig.toFixed(2)).toString(16).toUpperCase().padStart(8, '0').slice(-6);
+  el.n.textContent = String(S.n);
+  el.sig.textContent = fx(DATA.sigma, 2);
+  el.snr.textContent = fx(DATA.span / (2 * DATA.sigma), 1) + '×';
+  el.footR.textContent = 'best = ' + MODELS.find(m => m.id === bid).name +
+    '  r² ' + FITS[bid].r2.toFixed(4) + '  ·  ' + S.n + ' pts  ·  ' + (S.n - MODELS.find(m => m.id === S.focus).k) + ' dof';
+  for (const c of document.querySelectorAll('#truth .chip'))
+    c.setAttribute('aria-pressed', String(c.dataset.v === S.truth));
+  document.getElementById('o-sig').textContent = S.sig.toFixed(2);
+  document.getElementById('o-nn').textContent = String(S.n);
+  document.getElementById('o-fq').textContent = S.fq.toFixed(2);
+  probeState.seed = S.seedIdx; probeState.truth = S.truth; probeState.focus = S.focus;
+  probeState.n = S.n; probeState.sigma = +DATA.sigma.toFixed(4);
+  probeState.omega = S.fq; probeState.best = bid;
+  Object.assign(probeState, {
+    r2: Object.fromEntries(MODELS.map(m => [m.id, FITS[m.id] ? +FITS[m.id].r2.toFixed(5) : null])),
+    rms: Object.fromEntries(MODELS.map(m => [m.id, FITS[m.id] ? +FITS[m.id].rms.toFixed(4) : null])),
+    rho1: FITS[S.focus] ? +FITS[S.focus].rho1.toFixed(4) : null
+  });
+  if (!window.__probeSet){
+    window.__probeSet = true;
+    // own enumerable properties, so JSON.stringify(window.__probe) carries
+    // everything; `frames` is a live getter so polling sees the sweep advance
+    window.__probe = { get frames(){ return S.animFrame; } };
+  }
+  for (const k of ['seed', 'truth', 'focus', 'n', 'sigma', 'omega', 'best', 'r2', 'rms', 'rho1'])
+    window.__probe[k] = probeState[k];
+}
+
+function recompute(animate, keepFocus){
+  buildData();
+  solveAll(keepFocus);
+  S.animFrame = animate ? 0 : INTRO;
+  syncUI();
+  draw();
+  if (animate) kick();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   controls
+   ═══════════════════════════════════════════════════════════════ */
+for (const c of document.querySelectorAll('#truth .chip')){
+  c.addEventListener('click', () => { S.truth = c.dataset.v; recompute(true); });
+}
+const rSig = document.getElementById('sig'), rNn = document.getElementById('nn'), rFq = document.getElementById('fq');
+rSig.addEventListener('input', () => { S.sig = +rSig.value; recompute(true, true); });
+rNn .addEventListener('input', () => { S.n   = +rNn.value;  recompute(true, true); });
+rFq .addEventListener('input', () => { S.fq  = +rFq.value;  recompute(true, true); });
+document.getElementById('reseed').addEventListener('click', () => { S.seedIdx++; recompute(true); });
+addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R'){ S.seedIdx++; recompute(true); }
+  if (e.key >= '1' && e.key <= '4'){ S.focus = MODELS[+e.key - 1].id; S.animFrame = 0; syncUI(); kick(); }
+});
+
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { layout(); draw(); }, 90);
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   loop — fixed 1/60 s step, so every machine walks the same frames
+   ═══════════════════════════════════════════════════════════════ */
+/* The sweep is a fixed 40-step state machine, not a wall-clock animation: a
+   slow software rasteriser walks exactly the same 40 states as a fast GPU one.
+   The ticker is setTimeout-driven rather than requestAnimationFrame-driven
+   because a headless compositor may never schedule a frame, and readiness must
+   not hang on that. Nothing is redrawn once the sweep lands, so the final
+   image is a painted canvas and two cold loads are identical. */
+const STEP_MS = 16, SWEEP_BUDGET_MS = 200;
+let timer = 0, tickAt = 0;
+function step(){
+  timer = 0;
+  if (S.animFrame >= INTRO) return;
+  // Background tabs clamp timers to ~1 Hz, which would stretch a 40-step sweep
+  // into 40 s. If a tick arrives late, burn off the steps it should have
+  // covered: the sweep still visits every one of the 40 states, it just gets
+  // there without waiting on a throttled clock.
+  const late = performance.now() - tickAt;
+  let adv = 1 + (late > SWEEP_BUDGET_MS ? Math.ceil((late - SWEEP_BUDGET_MS) / STEP_MS) : 0);
+  tickAt = performance.now();
+  S.animFrame = Math.min(INTRO, S.animFrame + adv);
+  draw();
+  if (S.animFrame === INTRO){
+    el.fps.textContent = String(INTRO) + '/' + INTRO;
+    if (!window.__ready) window.__ready = true;
+    return;
+  }
+  schedule();
+}
+function schedule(){ if (!timer) timer = setTimeout(step, STEP_MS); }
+function kick(){
+  if (S.animFrame >= INTRO) return;
+  tickAt = performance.now();
+  schedule();
+}
+
+buildFits();
+layout();
+recompute(false);
+// run the opening sweep to completion before advertising readiness
+S.animFrame = 0;
+draw();
+kick();
+</script>
+</body>
+</html>
