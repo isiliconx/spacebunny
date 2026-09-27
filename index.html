@@ -2,126 +2,126 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>Lunar Hopper — Space Bunny on the Moon</title>
-<link rel="stylesheet" href="./css/style.css" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>spacebunny — demos &amp; experiments</title>
+<meta name="description" content="A space bunny on the Moon, plus eight GPU graphics demos: particles, raymarching, fluid, soft-body physics, reaction-diffusion, audio visualisers, data visualisation, and path tracing." />
+<link rel="stylesheet" href="./css/dashboard.css" />
 <!-- Inline favicon: a crescent Moon with a pair of ears. -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23070d16'/%3E%3Cpath d='M20 7c-5 1.5-8 5-8 9.5S15 25 20 25a9 9 0 0 1-4-17z' fill='%23cfd6e0'/%3E%3Cellipse cx='12' cy='9' rx='2.6' ry='5.5' fill='%23cfd6e0' transform='rotate(-18 12 9)'/%3E%3Cellipse cx='19' cy='8' rx='2.6' ry='5.5' fill='%23cfd6e0' transform='rotate(14 19 8)'/%3E%3Ccircle cx='17' cy='16' r='1.5' fill='%237fe3ff'/%3E%3C/svg%3E" />
-
-<!--
-  Three.js is vendored locally (r186, WebGPU build) so the scene runs with no
-  network access. `three/webgpu` re-exports the whole core, and the core pulls
-  in ./three.core.js through a relative import, so all three files live in
-  ./vendor. TSL lives in its own entry point, and addons/ only holds the one
-  display node we use (bloom).
--->
-<script type="importmap">
-{
-  "imports": {
-    "three": "./vendor/three.webgpu.js",
-    "three/webgpu": "./vendor/three.webgpu.js",
-    "three/tsl": "./vendor/three.tsl.js",
-    "three/addons/": "./vendor/addons/"
-  }
-}
-</script>
 </head>
 <body>
 
-<canvas id="scene"></canvas>
+<header class="masthead">
+  <div class="masthead-inner">
+    <p class="eyebrow">isiliconx / spacebunny</p>
+    <h1>space<span>bunny</span></h1>
+    <p class="tagline">
+      A space bunny on the Moon, and eight GPU graphics demos — every scene
+      generated procedurally at runtime, no external assets, no network.
+    </p>
+  </div>
+</header>
 
-<!-- ─────────────────────────  HUD  ───────────────────────── -->
-<div id="hud" class="hud" hidden>
+<main>
 
-  <div class="hud-corner tl">
-    <div class="panel">
-      <div class="panel-title">Lunar Hopper</div>
-      <div class="stat">
-        <span class="stat-label">Helium&#8209;3 crystals</span>
-        <span class="stat-value"><b id="crystalCount">0</b><i>/</i><span id="crystalTotal">14</span></span>
+  <!-- ─────────────────  The game  ───────────────── -->
+  <section class="band" id="game">
+    <div class="band-head">
+      <h2>Featured</h2>
+      <p class="band-sub">A complete three.js game on the WebGPU backend.</p>
+    </div>
+    <a class="card card-feature" href="./lunar-hopper/">
+      <div class="card-thumb thumb-feature">
+        <img src="./lunar-hopper/preview.png" alt="Lunar Hopper — a space bunny exploring a lunar basin" loading="lazy" decoding="async" />
       </div>
-      <div class="crystal-pips" id="crystalPips"></div>
-      <div class="stat">
-        <span class="stat-label">Mission clock</span>
-        <span class="stat-value" id="clock">00:00</span>
+      <div class="card-body">
+        <p class="card-kicker">WebGPU · three.js r186</p>
+        <h3 class="card-title">Lunar Hopper</h3>
+        <p class="card-desc">
+          Collect 14 helium-3 crystals across a procedurally eroded lunar basin,
+          then plant the mission flag. Articulated bunny rig, asymmetric lunar
+          gravity, terrain-aware camera, footprints baked as real pits.
+        </p>
+        <p class="card-meta">play →</p>
       </div>
+    </a>
+  </section>
+
+  <!-- ─────────────────  Demos  ───────────────── -->
+  <section class="band" id="demos">
+    <div class="band-head">
+      <h2>Demos</h2>
+      <p class="band-sub">
+        Eight self-contained WebGL2 pieces. Each is a single HTML file with no
+        CDN, no build step, and no network access — open one straight from disk
+        and it runs.
+      </p>
     </div>
-  </div>
+    <div class="grid" id="demo-grid"><!-- populated by demo-data.js --></div>
+  </section>
 
-  <div class="hud-corner tr">
-    <div class="panel right">
-      <div class="stat"><span class="stat-label">Renderer</span><span class="stat-value" id="backend">—</span></div>
-      <div class="stat"><span class="stat-label">FPS</span><span class="stat-value" id="fps">—</span></div>
-      <div class="stat"><span class="stat-label">Altitude</span><span class="stat-value"><span id="altitude">0.0</span><i>m</i></span></div>
-      <div class="stat"><span class="stat-label">Speed</span><span class="stat-value"><span id="speed">0.0</span><i>m/s</i></span></div>
-      <div class="stat"><span class="stat-label">Gravity</span><span class="stat-value"><i>1.62 m/s²</i></span></div>
+  <!-- ─────────────────  How it was built  ───────────────── -->
+  <section class="band" id="notes">
+    <div class="band-head">
+      <h2>How it was built</h2>
+      <p class="band-sub">
+        The demos were authored in parallel by a fleet of agents, then verified
+        by rendering each one headlessly and measuring the result.
+      </p>
     </div>
-  </div>
-
-  <!-- bearing to the nearest uncollected crystal -->
-  <div class="compass" id="compass" title="Nearest crystal">
-    <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true">
-      <circle cx="20" cy="20" r="18" fill="none" stroke="rgba(120,220,255,.28)" stroke-width="1.5"/>
-      <g id="compassNeedle">
-        <path d="M20 5 L25 22 L20 18.5 L15 22 Z" fill="#7fe3ff"/>
-      </g>
-    </svg>
-    <span id="compassDist">—</span>
-  </div>
-
-  <div class="hud-corner bl">
-    <div class="panel controls">
-      <div class="panel-title">Controls</div>
-      <ul>
-        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>walk</span></li>
-        <li><kbd>Shift</kbd><span>sprint</span></li>
-        <li><kbd>Space</kbd><span>jump · tap again mid-air to hop again</span></li>
-        <li><kbd>Drag</kbd><span>orbit camera</span></li>
-        <li><kbd>Wheel</kbd><span>zoom</span></li>
-        <li><kbd>C</kbd><span>first / third person</span></li>
-        <li><kbd>E</kbd><span>plant the mission flag</span></li>
-        <li><kbd>Q</kbd><span>lunar wiggle</span></li>
-        <li><kbd>R</kbd><span>respawn at the lander</span></li>
-        <li><kbd>G</kbd><span>toggle bloom</span></li>
-        <li><kbd>M</kbd><span>mute</span></li>
-      </ul>
-      <div class="hint" id="objective">Collect every crystal, then plant the flag.</div>
+    <div class="notes">
+      <article class="note">
+        <h4>Rendered, then measured</h4>
+        <p>
+          A screenshot proves something drew, not that it drew correctly. Every
+          demo sets <code>window.__ready</code> when its scene is live, and a
+          small CDP harness waits for that flag, captures the frame, and reports
+          colour count, clipping, and tonal spread. Verdicts are objective.
+        </p>
+      </article>
+      <article class="note">
+        <h4>The bugs had no error messages</h4>
+        <p>
+          An inverted SDF sign collapsed an entire terrain to one flat plane. A
+          pressure solver rendered into the texture it was sampling. sRGB colour
+          values clamped as linear light turned every soft body pure white. All
+          four presented as "looks slightly wrong" and all four were logic
+          errors — only a render could catch them.
+        </p>
+      </article>
+      <article class="note">
+        <h4>Calibrated by measurement</h4>
+        <p>
+          One demo was a featureless white disc. The cause was a 640×400 internal
+          buffer — below one pixel per filament — plus exposure parked on the
+          tonemap shoulder, where small input changes do nothing. A sweep scored
+          candidates on tonal spread rather than brightness. 3,718 → 11,699
+          colours.
+        </p>
+      </article>
+      <article class="note">
+        <h4>Reusable, not one-off</h4>
+        <p>
+          The verification harness lives in <code>demos/tools/</code>: a
+          zero-dependency CDP renderer, an image health checker, a tiling
+          detector, and a static self-containment audit. Run
+          <code>demos/tools/verify_all.sh</code> to re-verify all eight in about
+          eight minutes.
+        </p>
+      </article>
     </div>
-  </div>
+  </section>
 
-  <div class="toast-stack" id="toasts"></div>
-  <div class="center-toast" id="centerToast"></div>
-  <div class="reticle" id="reticle" hidden></div>
-  <div class="damage-vignette" id="vignette"></div>
-</div>
+</main>
 
-<!-- ─────────────────────  Title / loading  ───────────────────── -->
-<div id="overlay" class="overlay">
-  <div class="overlay-inner">
-    <div class="eyebrow">WebGPU · Mare Tranquillitatis</div>
-    <h1>Lunar<span>Hopper</span></h1>
-    <p class="tagline">A space bunny. One-sixth gravity. Endless regolith.</p>
+<footer class="foot">
+  <p>
+    Built with <a href="https://threejs.org/">three.js</a> and raw WebGL2.
+    Everything is procedural — regolith, fur, terrain, fluids, HDR environments.
+  </p>
+</footer>
 
-    <div class="loader" id="loader">
-      <div class="loader-bar"><i id="loaderFill"></i></div>
-      <div class="loader-text" id="loaderText">warming up the lander…</div>
-    </div>
-
-    <button id="startBtn" class="start-btn" hidden>
-      <span>Launch</span>
-      <small>click to enable sound</small>
-    </button>
-
-    <div class="overlay-foot">
-      <span id="backendFoot">detecting renderer…</span>
-      <span class="dot">·</span>
-      <span>procedural world — no external assets</span>
-    </div>
-  </div>
-</div>
-
-<div id="fatal" class="fatal" hidden><div class="fatal-inner"><h2>Could not start</h2><pre id="fatalMsg"></pre></div></div>
-
-<script type="module" src="./src/main.js"></script>
+<script src="./js/demo-data.js"></script>
+<script src="./js/dashboard.js"></script>
 </body>
 </html>

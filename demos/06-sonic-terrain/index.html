@@ -1,0 +1,1627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SONIC TERRAIN — procedural audio → WebGL2</title>
+<style>
+  :root{
+    --a:#ff2f8e; --b:#ffc46b; --c:#63e6ff; --ink:#e4ecff; --dim:#93a3c8;
+    --panel:rgba(5,8,18,.74); --edge:rgba(130,205,255,.26);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#04030a;overflow:hidden}
+  body{font-family:var(--mono);color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+
+  .hud{position:fixed;pointer-events:none;user-select:none;z-index:5}
+  .panel{
+    background:var(--panel); border:1px solid var(--edge);
+    box-shadow:0 0 0 1px rgba(0,0,0,.5), 0 10px 40px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.045);
+  }
+
+  #title{left:26px;top:22px}
+  #title h1{
+    margin:0;font-size:27px;font-weight:300;letter-spacing:.30em;
+    color:#fff; text-shadow:0 0 22px var(--a), 0 0 46px rgba(255,47,142,.45);
+  }
+  #title .rule{height:1px;width:252px;margin:10px 0 8px;
+    background:linear-gradient(90deg,var(--a),var(--c) 55%,transparent);opacity:.75}
+  #title .sub{font-size:12px;letter-spacing:.20em;color:#9fb0d4;text-transform:uppercase}
+  #title .legend{font-size:12px;letter-spacing:.03em;color:#c3d0ea;line-height:1.85;max-width:372px;margin-top:10px}
+  #title .legend b{color:#eef3ff;font-weight:600}
+
+  #chip{left:26px;top:196px;display:flex;gap:8px;align-items:center;padding:7px 12px 7px 10px;
+        font-size:10.5px;letter-spacing:.14em;text-transform:uppercase}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--a);box-shadow:0 0 10px var(--a)}
+  .dot.live{background:#38ffab;box-shadow:0 0 10px #38ffab}
+  #chipTxt{color:#d5e2ff}
+  #chipSep{color:#43506e}
+  #chipBar{color:var(--b)}
+
+  #stats{right:26px;top:22px;padding:10px 13px;font-size:11px;letter-spacing:.08em;line-height:1.95;
+         color:#c2d0ee;min-width:192px}
+  #stats .k{color:#9dadd0}
+  #stats .v{color:#e6eeff;float:right;margin-left:14px}
+  #stats .row{display:flex;justify-content:space-between}
+  /* the driver string is long; let it use the full panel width instead of being
+     clipped mid-word by a fixed min-width + float */
+  #stats{min-width:236px;max-width:300px}
+  #stats .row.gpu{display:block}
+  #stats .row.gpu .k{display:block;margin-bottom:2px}
+  #stats .row.gpu .v{float:none;margin-left:0;display:block;font-size:9.5px;line-height:1.55;
+                    color:#a9b8d8; overflow-wrap:anywhere; word-break:break-word}
+
+  #spectrum{left:26px;bottom:24px;padding:11px 13px 10px}
+  #spectrum .cap{font-size:10px;letter-spacing:.16em;color:#9dadd0;text-transform:uppercase;margin-bottom:8px}
+  #spectrum .cap em{color:#b3c2e0;font-style:normal}
+  #specCv{display:block;width:280px;height:48px}
+  .bands{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:10px;width:280px}
+  .band{font-size:9.5px;letter-spacing:.12em;color:#9dadd0}
+  .band .bar{height:2px;background:rgba(140,180,255,.14);margin:4px 0 3px;position:relative;overflow:hidden}
+  .band .bar i{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--a);box-shadow:0 0 8px var(--a)}
+  .band .n{color:#dde6fb;font-size:10px}
+
+  #ctl{right:26px;bottom:24px;padding:13px 15px 12px;width:300px;pointer-events:auto}
+  #ctl .cap{font-size:10px;letter-spacing:.16em;color:#9dadd0;text-transform:uppercase;margin-bottom:10px}
+  .btns{display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap}
+  button{
+    font-family:var(--mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+    color:#e6edff;background:rgba(255,255,255,.05);border:1px solid var(--edge);
+    padding:7px 10px;cursor:pointer;transition:background .16s,border-color .16s;
+  }
+  button:hover{background:rgba(120,200,255,.16);border-color:rgba(150,215,255,.55)}
+  button.on{background:rgba(255,47,142,.16);border-color:var(--a);color:#fff;box-shadow:0 0 16px rgba(255,47,142,.26)}
+  .row{display:flex;align-items:center;gap:9px;margin:8px 0}
+  .row label{font-size:9.5px;letter-spacing:.10em;color:#8494ba;width:58px;flex:0 0 58px}
+  .row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:2px;background:rgba(140,180,255,.20);outline:none}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:14px;background:var(--c);
+    box-shadow:0 0 10px var(--c);cursor:pointer;border:none}
+  .row .num{font-size:10px;color:#dde6fb;width:32px;text-align:right;flex:0 0 32px}
+  #keys{margin-top:11px;padding-top:9px;border-top:1px solid rgba(120,200,255,.18);
+        font-size:10px;letter-spacing:.03em;color:#8b9ac0;line-height:2.0}
+  #keys b{color:#ccd8f2;font-weight:600}
+  #fatal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+         color:#ff7a9c;font-size:13px;letter-spacing:.12em;text-align:center;padding:40px;z-index:20}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="fatal"></div>
+
+<div class="hud" id="title">
+  <h1>SONIC TERRAIN</h1>
+  <div class="rule"></div>
+  <div class="sub">Procedural 120&nbsp;BPM track &rarr; WebAudio FFT &rarr; WebGL2</div>
+  <div class="legend">
+    <b>Ridge height</b> = spectral energy &middot; <b>x</b> = 28&nbsp;Hz&ndash;16&nbsp;kHz &middot; <b>depth</b> = 4&nbsp;s of history<br>
+    <b>Ring</b> = 96-bin circular spectrum, drift marks are peak-hold decay<br>
+    Every sound is synthesised live &mdash; oscillators + seeded noise, zero audio files.
+  </div>
+</div>
+
+<div class="hud panel" id="chip">
+  <span class="dot" id="chipDot"></span>
+  <span id="chipTxt">source: simulated spectrum</span>
+  <span id="chipSep">/</span>
+  <span id="chipBar">bar 1&middot;1</span>
+</div>
+
+<div class="hud panel" id="stats">
+  <div class="row"><span class="k">fps</span><span class="v" id="sFps">&ndash;</span></div>
+  <div class="row"><span class="k">backend</span><span class="v" id="sBackend">&ndash;</span></div>
+  <div class="row"><span class="k">frames</span><span class="v" id="sFrames">0</span></div>
+  <div class="row"><span class="k">draw calls</span><span class="v" id="sDraw">0</span></div>
+  <div class="row"><span class="k">terrain tris</span><span class="v" id="sTris">0</span></div>
+  <div class="row"><span class="k">embers</span><span class="v" id="sPts">0</span></div>
+  <div class="row"><span class="k">audio</span><span class="v" id="sAudio">off</span></div>
+  <div class="row"><span class="k">targets</span><span class="v" id="sFmt">&ndash;</span></div>
+  <div class="row gpu"><span class="k">renderer</span><span class="v" id="sGl">&ndash;</span></div>
+</div>
+
+<div class="hud panel" id="spectrum">
+  <div class="cap">spectrum <em>&middot; 96 log bands &middot; 28 Hz&ndash;16 kHz</em></div>
+  <canvas id="specCv" width="280" height="48"></canvas>
+  <div class="bands">
+    <div class="band">SUB<div class="bar"><i id="bSub"></i></div><div class="n" id="nSub">0.00</div></div>
+    <div class="band">BASS<div class="bar"><i id="bBass"></i></div><div class="n" id="nBass">0.00</div></div>
+    <div class="band">MID<div class="bar"><i id="bMid"></i></div><div class="n" id="nMid">0.00</div></div>
+    <div class="band">AIR<div class="bar"><i id="bAir"></i></div><div class="n" id="nAir">0.00</div></div>
+  </div>
+</div>
+
+<div class="hud panel" id="ctl">
+  <div class="cap">transport &amp; shaping</div>
+  <div class="btns">
+    <button id="bPlay" class="on">&#9646;&#9646; transport running</button>
+    <button id="bAudio">&#9835; start audio</button>
+    <button id="bPal">palette: ember</button>
+  </div>
+  <div class="row"><label>sensitivity</label><input type="range" id="rGain" min="0.35" max="6.0" step="0.01" value="1.45"><span class="num" id="nGain">1.45</span></div>
+  <div class="row"><label>relief</label><input type="range" id="rRelief" min="0.25" max="2.4" step="0.01" value="1.00"><span class="num" id="nRelief">1.00</span></div>
+  <div class="row"><label>glow</label><input type="range" id="rBloom" min="0.0" max="3.0" step="0.01" value="1.55"><span class="num" id="nBloom">1.55</span></div>
+  <div id="keys">
+    <b>space</b> play/pause &nbsp; <b>A</b> start audio &nbsp; <b>S</b> palette<br>
+    <b>1&nbsp;2&nbsp;3</b> sensitivity &nbsp; <b>&uarr;&darr;</b> nudge &nbsp; <b>H</b> hide UI
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================================
+   SONIC TERRAIN — 06
+   A procedurally synthesised 120 BPM techno loop (oscillators + seeded noise, no files)
+   drives a WebGL2 scene: a scrolling spectral ridge range with topographic shading, a
+   circular radial spectrum, embers and a 3-level bloom chain.
+
+   Audio is created ONLY on a user gesture. When it exists and is really producing
+   signal, a real AnalyserNode FFT is folded in. Headless browsers have no audio sink
+   at all, so by default a deterministic *virtual spectrum* — a procedural model of the
+   very same arrangement, evaluated from the same transport clock — drives everything.
+   Nothing is seeded from Math.random in the render path.
+   ===================================================================================== */
+
+/* ---------------------------------------------------------------- 0. utilities --- */
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp  = (a, b, t) => a + (b - a) * t;
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const mtof  = m => 440 * Math.pow(2, (m - 69) / 12);
+const pad16 = s => (s + "................").slice(0, 16);
+const pat   = s => { const a = []; for (let i = 0; i < 16; i++) if (s[i] === "x") a.push(i); return a; };
+
+/* ------------------------------------------------------------- 1. the arrangement --- */
+/* 16 bars @ 120 BPM. One bar = 2 s, one slot = a 16th = 0.125 s. These patterns are the
+   single source of truth: the WebAudio scheduler plays them, and the virtual-spectrum
+   model mimics them, so both paths are literally the same piece of music. */
+const BPM = 120, SPB = 60 / BPM, BAR = SPB * 4, SIXT = SPB / 4, NBARS = 16, LOOP = NBARS * BAR;
+const R = {                                    // i–VI–III–VII in A minor
+  Am: { root: 45, tones: [0, 3, 7, 12, 15, 19] },
+  F:  { root: 41, tones: [0, 4, 7, 12, 16, 19] },
+  C:  { root: 48, tones: [0, 4, 7, 12, 16, 19] },
+  G:  { root: 43, tones: [0, 4, 7, 12, 14, 19] }
+};
+const CHORD_SEQ = ['Am','Am','F','F','C','C','G','G','Am','Am','F','F','G','G','C','Am'];
+
+const BARDEF = [
+  { n:'INTRO',  k:'x.......x.......', h:'............x...', c:'................', b:'x...x...x...x...', a:'................', pad:1, ris:0, lead:0 },
+  { n:'INTRO',  k:'x.......x.......', h:'..........x...x.', c:'................', b:'x...x...x...x...', a:'....x.......x...', pad:1, ris:0, lead:0 },
+  { n:'BUILD',  k:'x...x...x...x...', h:'..x...x...x...x.', c:'....x.......x...', b:'x..x.x...x..x.x.', a:'x.x.x.x.x.x.x.x.', pad:1, ris:0, lead:0 },
+  { n:'BUILD',  k:'x...x...x...x...', h:'.x...x...x...x.x', c:'....x.......x...', b:'x..x.x...x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:0 },
+  { n:'DROP A', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:0 },
+  { n:'DROP A', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:0 },
+  { n:'DROP A', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'DROP A', k:'x...x.x.x...x.x.', h:'xxxxxxxxxxxxxxxx', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'BREAK',  k:'x...............', h:'................', c:'................', b:'x.......x.......', a:'x...x...x...x...', pad:1, ris:0, lead:0 },
+  { n:'BREAK',  k:'x...............', h:'....x.......x...', c:'................', b:'x.......x.......', a:'x.x.x.x.x.x.x.x.', pad:1, ris:0, lead:0 },
+  { n:'RISER',  k:'x...x...x...x...', h:'xxxxxxxxxxxxxxxx', c:'....x.......x...', b:'x..x.x...x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:1, lead:0 },
+  { n:'DROP B', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'DROP B', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'DROP B', k:'x...x.x.x...x.x.', h:'x.x.x.x.x.x.x.x.', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'DROP B', k:'x...x.x.x...x.x.', h:'xxxxxxxxxxxxxxxx', c:'....x.......x...', b:'x..x.x.x.x..x.x.', a:'xxxxxxxxxxxxxxxx', pad:1, ris:0, lead:1 },
+  { n:'OUTRO',  k:'x...x...x.......', h:'....x.......x...', c:'................', b:'x...x...x.......', a:'x...x...x...x...', pad:1, ris:0, lead:0 }
+];
+const BARS = BARDEF.map(d => ({
+  n:d.n, pad:d.pad, ris:d.ris, lead:d.lead,
+  k:pat(pad16(d.k)), h:pat(pad16(d.h)), c:pat(pad16(d.c)),
+  b:pat(pad16(d.b)), a:pat(pad16(d.a))
+}));
+const INTENSITY = [0.30,0.30,0.42,0.56,1.00,1.00,1.00,0.94,0.44,0.36,0.78,1.00,1.00,0.96,0.82,0.56];
+function intensityAt(tt) {
+  const x = tt / BAR, i = Math.floor(x), f = x - i;
+  const a = INTENSITY[((i % NBARS) + NBARS) % NBARS];
+  const b = INTENSITY[(((i + 1) % NBARS) + NBARS) % NBARS];
+  return lerp(a, b, f * f * (3 - 2 * f));
+}
+
+/* ------------------------------------------------------------- 2. band structure --- */
+const NBINS = 96, F_LO = 28, F_HI = 16000;
+const LOG_LO = Math.log(F_LO), LOG_SPAN = Math.log(F_HI) - LOG_LO;
+const binHz = i => F_LO * Math.exp(LOG_SPAN * (i / (NBINS - 1)));
+const lbin  = f => (Math.log(clamp(f, F_LO, F_HI)) - LOG_LO) / LOG_SPAN;   // 0..1
+const BINS = new Float32Array(NBINS);
+for (let i = 0; i < NBINS; i++) BINS[i] = lbin(binHz(i));
+
+/* Static per-band spectral footprints, Gaussian in log-frequency. Precomputed so the
+   per-frame model is multiply-add only — no exp() in the hot loop. */
+const FOOT = {
+  kick:new Float32Array(NBINS), bass:new Float32Array(NBINS), pad:new Float32Array(NBINS),
+  hat:new Float32Array(NBINS), clap:new Float32Array(NBINS), air:new Float32Array(NBINS)
+};
+const gauss = (b, c, w) => { const d = (b - c) / w; return Math.exp(-0.5 * d * d); };
+for (let i = 0; i < NBINS; i++) {
+  const b = BINS[i];
+  FOOT.kick[i] = 0.90*gauss(b,0.018,0.070) + 0.30*gauss(b,0.100,0.055) + 0.08*gauss(b,0.185,0.060);
+  FOOT.bass[i] = 0.75*gauss(b,0.105,0.070) + 0.30*gauss(b,0.190,0.055);
+  FOOT.pad[i]  = 0.80*gauss(b,0.430,0.095) + 0.35*gauss(b,0.640,0.080);
+  FOOT.hat[i]  = 0.15*gauss(b,0.540,0.120) + 0.90*gauss(b,0.880,0.110) + 0.22*gauss(b,0.660,0.070);
+  FOOT.clap[i] = 0.25*gauss(b,0.300,0.070) + 0.85*gauss(b,0.480,0.050) + 0.40*gauss(b,0.600,0.060);
+  FOOT.air[i]  = 0.30*gauss(b,0.965,0.110) + 0.02;
+}
+const ARP_BUMP = CHORD_SEQ.map(name => {
+  const ch = R[name], out = [];
+  for (let s = 0; s < 16; s++) {
+    const f = mtof(ch.root + (s >= 8 ? 36 : 24) + ch.tones[(s * 5) % ch.tones.length]);
+    const c = lbin(f), w = 0.055;
+    const bump = new Float32Array(NBINS), tail = new Float32Array(NBINS);
+    for (let i = 0; i < NBINS; i++) { bump[i] = gauss(BINS[i], c, w); tail[i] = gauss(BINS[i], c, w * 4.2) * 0.32; }
+    out.push({ bump, tail });
+  }
+  return out;
+});
+const BASS_BUMP = {};
+for (const name in R) {
+  const arr = new Float32Array(NBINS), r0 = R[name].root;
+  for (let i = 0; i < NBINS; i++) arr[i] = 0.85*gauss(BINS[i], lbin(mtof(r0)), 0.070) + 0.22*gauss(BINS[i], lbin(mtof(r0 + 12)), 0.055);
+  BASS_BUMP[name] = arr;
+}
+
+/* ------------------------------------------------- 3. virtual spectrum model --- */
+/* Evaluate the arrangement's spectral envelope at loop-wrapped transport time tt.
+   Deterministic, allocation-free, and the only audio source when the real analyser
+   is unavailable (headless) or silent. */
+const _spec = new Float32Array(NBINS);
+const _ev  = { kick:0, clap:0, hat:0, bass:0, arp:0, arpSlot:0, inten:0, bar:0, frac:0 };
+function evalSpec(tt, out) {
+  const x = tt / BAR, i0 = Math.floor(x), frac = x - i0;
+  const bar = ((i0 % NBARS) + NBARS) % NBARS;
+  const barStart = i0 * BAR;
+  const bfoot = BASS_BUMP[CHORD_SEQ[bar]];
+  const inten = intensityAt(tt);
+  let kick = 0, clap = 0, hat = 0, bass = 0, arp = 0, arpSlot = 0;
+
+  for (let b = 0; b < 2; b++) {                       // current bar + one before (decay tails)
+    const idx = ((bar - b) % NBARS + NBARS) % NBARS, S = BARS[idx], base = barStart - b * BAR;
+    for (let n = 0; n < S.k.length; n++) {
+      const age = tt - (base + S.k[n] * SIXT);
+      if (age >= 0 && age < 0.62) { const e = Math.exp(-age * 8.2) * (1 - Math.exp(-age * 620)); if (e > kick) kick = e; }
+    }
+    for (let n = 0; n < S.c.length; n++) {
+      const age = tt - (base + S.c[n] * SIXT);
+      if (age >= 0 && age < 0.30) { const e = Math.exp(-age * 17) * (1 - Math.exp(-age * 900)); if (e > clap) clap = e; }
+    }
+    for (let n = 0; n < S.h.length; n++) {
+      const age = tt - (base + S.h[n] * SIXT);
+      if (age >= 0 && age < 0.22) { const e = Math.exp(-age * 78) * (1 - Math.exp(-age * 1600)); if (e > hat) hat = e; }
+    }
+    for (let n = 0; n < S.b.length; n++) {
+      const age = tt - (base + S.b[n] * SIXT);
+      if (age >= 0 && age < 0.80) {
+        const e = (1 - Math.exp(-age * 110)) * (age > 0.44 ? Math.exp(-(age - 0.44) * 16) : 1) * 0.92;
+        if (e > bass) bass = e;
+      }
+    }
+    for (let n = 0; n < S.a.length; n++) {
+      const age = tt - (base + S.a[n] * SIXT);
+      if (age >= 0 && age < 0.34) {
+        const e = Math.exp(-age * 25) * (1 - Math.exp(-age * 1800)) * 0.78;
+        if (e > arp) { arp = e; arpSlot = S.a[n]; }
+      }
+    }
+  }
+  const padPh = (tt / (BAR * 2)) % 1;
+  const pad   = BARS[bar].pad ? (0.42 + 0.30 * Math.sin(padPh * Math.PI)) * 0.75 : 0;
+  const ris   = BARS[bar].ris ? Math.pow(frac, 2.1) : 0;
+  /* deliberately low broadband floor: the spectrum must be sparse peaks on a dark
+     bed, otherwise the terrain reads as a flat plateau with no ridge silhouette */
+  const air   = 0.085 + 0.045 * (0.5 + 0.5 * Math.sin(tt * 5.3 + 1.7));
+
+  const kE = kick * (0.55 + 0.65 * inten), cE = clap * inten, hE = hat * (0.40 + 0.65 * inten);
+  const bE = bass * (0.35 + 0.80 * inten), aE = arp * (0.30 + 0.85 * inten), pE = pad * (0.45 + 0.55 * inten);
+  const ab = ARP_BUMP[bar][arpSlot].bump, atl = ARP_BUMP[bar][arpSlot].tail;
+  const g = 0.72 + 0.42 * inten;
+  /* hats shimmer: a short broadband tail keeps the top octaves alive between hits
+     instead of dropping the whole treble end to zero on every offbeat */
+  const shimmer = 0.16 * inten * (0.5 + 0.5 * Math.sin(tt * 23.0));
+
+  for (let i = 0; i < NBINS; i++) {
+    const tex = 1 + 0.075 * Math.sin(tt * 3.1 + i * 0.37) + 0.045 * Math.sin(tt * 7.7 + i * 1.13);
+    out[i] = (
+      FOOT.kick[i] * kE * 1.35 +
+      bfoot[i]     * bE * 1.15 +
+      FOOT.pad[i]  * pE * 0.30 +
+      FOOT.clap[i] * cE * 0.72 +
+      FOOT.hat[i]  * (hE * 0.45 + shimmer) +
+      (ab[i] * 1.25 + atl[i] * 0.30) * aE +
+      (FOOT.hat[i] * 0.30 + FOOT.air[i] * 0.55) * ris * 1.5 +
+      FOOT.air[i] * (air + shimmer * 0.7) * tex
+    ) * tex * g;
+  }
+  _ev.kick = kick; _ev.clap = clap; _ev.hat = hat; _ev.bass = bass;
+  _ev.arp = arp; _ev.arpSlot = arpSlot; _ev.inten = inten; _ev.bar = bar; _ev.frac = frac;
+  return out;
+}
+
+/* ---------------------------------------------------------------- 4. the audio --- */
+/* Nothing is constructed until the user asks: an AudioContext built without a gesture
+   stays suspended forever, and headless Chrome has no output device at all. */
+const Audio_ = {
+  ctx:null, master:null, analyser:null, freq:null, wave:null, noise:null,
+  running:false, step:0, nextTime:0, timer:0, fftSize:2048, bandRanges:null,
+  liveMix:0, liveOk:false, silentFrames:0
+};
+
+function buildNoiseBuffer(ctx, seconds) {
+  const n = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const rnd = mulberry32(0xC0FFEE11);
+  let last = 0;
+  for (let i = 0; i < n; i++) { const w = rnd() * 2 - 1; last = last * 0.32 + w * 0.68; d[i] = last; }
+  return buf;
+}
+function startAudio() {
+  if (Audio_.ctx) { Audio_.ctx.resume().catch(() => {}); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  let ctx;
+  try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { return; }
+  const master = ctx.createGain(); master.gain.value = 0.0001;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.knee.value = 22; comp.ratio.value = 5;
+  comp.attack.value = 0.004; comp.release.value = 0.20;
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = Audio_.fftSize; analyser.smoothingTimeConstant = 0.55;
+  analyser.minDecibels = -95; analyser.maxDecibels = -12;
+  master.connect(comp); comp.connect(analyser); analyser.connect(ctx.destination);
+  master.gain.setTargetAtTime(0.5, ctx.currentTime, 0.35);
+
+  Audio_.ctx = ctx; Audio_.master = master; Audio_.analyser = analyser;
+  Audio_.noise = buildNoiseBuffer(ctx, 2.5);
+  Audio_.freq = new Uint8Array(analyser.frequencyBinCount);
+  Audio_.wave = new Uint8Array(analyser.fftSize);
+  const binHzReal = ctx.sampleRate / analyser.fftSize;
+  Audio_.bandRanges = [];
+  for (let i = 0; i < NBINS; i++) {
+    const f0 = binHz(i) * 0.86, f1 = Math.min(binHz(i) * 1.20, ctx.sampleRate * 0.5);
+    let a = clamp(Math.floor(f0 / binHzReal), 0, analyser.frequencyBinCount - 1);
+    let z = clamp(Math.ceil(f1 / binHzReal), a + 1, analyser.frequencyBinCount);
+    Audio_.bandRanges.push(a, z);
+  }
+  Audio_.nextTime = ctx.currentTime + 0.10;
+  Audio_.step = Math.ceil(Transport.t / SIXT);
+  Audio_.running = true;
+  ctx.resume().catch(() => {});
+  Audio_.timer = setInterval(scheduler, 25);
+}
+
+const bus = () => Audio_.master;
+/* Accepts either a GainNode or an AudioParam. Every voice passes its own gain
+   node, so the node's .gain is the param that must be automated — calling
+   setValueAtTime on the node itself throws. */
+function adsr(g, t, a, d, peak) {
+  const p = (g && typeof g.setValueAtTime === 'function') ? g : g.gain;
+  p.setValueAtTime(0.0001, t);
+  p.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + a);
+  p.exponentialRampToValueAtTime(0.0001, t + a + d);
+}
+function noiseSrc(ctx, t, dur) {
+  const s = ctx.createBufferSource();
+  s.buffer = Audio_.noise; s.loop = true;
+  s.start(t, (t * 0.37) % 2.0); s.stop(t + dur + 0.05);
+  return s;
+}
+function vKick(ctx, t) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(148, t);
+  o.frequency.exponentialRampToValueAtTime(41, t + 0.085);
+  adsr(g, t, 0.004, 0.30, 1.05);
+  o.connect(g); g.connect(bus()); o.start(t); o.stop(t + 0.40);
+  const n = noiseSrc(ctx, t, 0.03), hp = ctx.createBiquadFilter(), ng = ctx.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 1400; adsr(ng, t, 0.001, 0.022, 0.30);
+  n.connect(hp); hp.connect(ng); ng.connect(bus());
+}
+function vClap(ctx, t) {
+  for (let k = 0; k < 3; k++) {
+    const tt = t + k * 0.011, n = noiseSrc(ctx, tt, 0.05);
+    const bp = ctx.createBiquadFilter(), g = ctx.createGain();
+    bp.type = 'bandpass'; bp.frequency.value = 1650; bp.Q.value = 1.3;
+    adsr(g, tt, 0.002, k === 2 ? 0.15 : 0.035, k === 2 ? 0.42 : 0.26);
+    n.connect(bp); bp.connect(g); g.connect(bus());
+  }
+}
+function vHat(ctx, t, open) {
+  const n = noiseSrc(ctx, t, 0.20), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+  hp.type = 'highpass'; hp.frequency.value = open ? 6200 : 7800;
+  adsr(g, t, 0.001, open ? 0.17 : 0.042, open ? 0.16 : 0.13);
+  n.connect(hp); hp.connect(g); g.connect(bus());
+}
+function vBass(ctx, t, midi, dur) {
+  const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+  const fq = mtof(midi);
+  o.type = 'sawtooth'; o.frequency.value = fq;
+  o2.type = 'square'; o2.frequency.value = fq * 0.5; o2.detune.value = 5;
+  f.type = 'lowpass'; f.Q.value = 7;
+  f.frequency.setValueAtTime(240, t);
+  f.frequency.exponentialRampToValueAtTime(1500, t + 0.05);
+  f.frequency.exponentialRampToValueAtTime(320, t + dur * 0.9);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.34, t + 0.008);
+  g.gain.setValueAtTime(0.34, t + dur * 0.72);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(bus());
+  o.start(t); o.stop(t + dur + 0.05); o2.start(t); o2.stop(t + dur + 0.05);
+}
+function vArp(ctx, t, midi) {
+  const o = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.value = mtof(midi); o.detune.value = (midi % 3) * 4 - 4;
+  f.type = 'lowpass'; f.frequency.value = 2900; f.Q.value = 2;
+  adsr(g, t, 0.003, 0.135, 0.115);
+  o.connect(f); f.connect(g); g.connect(bus()); o.start(t); o.stop(t + 0.22);
+}
+function vLead(ctx, t, midi, dur) {
+  const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
+  o.type = 'sawtooth'; o.frequency.value = mtof(midi);
+  o2.type = 'triangle'; o2.frequency.value = mtof(midi - 12); o2.detune.value = -7;
+  f.type = 'lowpass'; f.Q.value = 4; f.frequency.setValueAtTime(3400, t);
+  f.frequency.exponentialRampToValueAtTime(700, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(bus());
+  o.start(t); o.stop(t + dur + 0.05); o2.start(t); o2.stop(t + dur + 0.05);
+}
+function vPad(ctx, t, name, dur) {
+  const ch = R[name], g = ctx.createGain(), f = ctx.createBiquadFilter();
+  f.type = 'lowpass'; f.Q.value = 1.2; f.frequency.value = 1250;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.085, t + dur * 0.35);
+  g.gain.setValueAtTime(0.085, t + dur * 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  for (let k = 0; k < 3; k++) {
+    const o = ctx.createOscillator();
+    o.type = k === 2 ? 'triangle' : 'sawtooth';
+    o.frequency.value = mtof(ch.root + 12 + ch.tones[(k * 2) % ch.tones.length]);
+    o.detune.value = (k - 1) * 7;
+    const og = ctx.createGain(); og.gain.value = 1 / (k + 1);
+    o.connect(og); og.connect(f); o.start(t); o.stop(t + dur + 0.1);
+  }
+  f.connect(g); g.connect(bus());
+}
+function vRiser(ctx, t, dur) {
+  const n = noiseSrc(ctx, t, dur), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+  bp.type = 'bandpass'; bp.Q.value = 2.2;
+  bp.frequency.setValueAtTime(300, t);
+  bp.frequency.exponentialRampToValueAtTime(7200, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22, t + dur * 0.92);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.06);
+  n.connect(bp); bp.connect(g); g.connect(bus());
+}
+function scheduler() {
+  const ctx = Audio_.ctx;
+  if (!ctx || !Playing) return;
+  const ahead = ctx.currentTime + 0.20;
+  let guard = 0;
+  while (Audio_.nextTime < ahead && guard++ < 64) {
+    const t = Audio_.nextTime;
+    const slot = Audio_.step % 16, bar = ((Audio_.step / 16) | 0) % NBARS;
+    const S = BARS[bar], chord = CHORD_SEQ[bar], posBar = Audio_.step % (NBARS * 16);
+    if (t - ctx.currentTime > -0.02) {
+      if (S.k.indexOf(slot) >= 0) vKick(ctx, t);
+      if (S.c.indexOf(slot) >= 0) vClap(ctx, t);
+      if (S.h.indexOf(slot) >= 0) vHat(ctx, t, slot % 8 === 6);
+      if (S.b.indexOf(slot) >= 0) vBass(ctx, t, R[chord].root + (slot % 8 === 5 ? 12 : 0), SIXT * 3.1);
+      if (S.a.indexOf(slot) >= 0) {
+        const ch = R[chord];
+        vArp(ctx, t, ch.root + 24 + ch.tones[(slot * 5) % ch.tones.length] + (slot >= 8 ? 12 : 0));
+      }
+      if (S.lead && (slot === 0 || slot === 6 || slot === 11)) {
+        const ch = R[chord];
+        vLead(ctx, t, ch.root + 24 + ch.tones[slot === 0 ? 3 : 4] + (slot === 11 ? 12 : 0), SIXT * 5);
+      }
+      if (S.pad && slot === 0 && posBar % 16 === 0) vPad(ctx, t, chord, BAR * 2 * 0.98);
+      if (S.pad && slot === 0 && posBar % 32 === 16) vPad(ctx, t, CHORD_SEQ[Math.min(bar + 2, NBARS - 1)], BAR * 2 * 0.98);
+      if (S.ris && slot === 0) vRiser(ctx, t, BAR);
+    }
+    Audio_.nextTime += SIXT; Audio_.step++;
+  }
+}
+function pullLive() {
+  if (!Audio_.ctx || Audio_.ctx.state !== 'running' || !Audio_.analyser) return null;
+  Audio_.analyser.getByteFrequencyData(Audio_.freq);
+  Audio_.analyser.getByteTimeDomainData(Audio_.wave);
+  let sum = 0;
+  for (let i = 0; i < Audio_.wave.length; i += 4) { const d = (Audio_.wave[i] - 128) / 128; sum += d * d; }
+  const rms = Math.sqrt(sum / (Audio_.wave.length / 4));
+  const out = new Float32Array(NBINS);
+  for (let i = 0; i < NBINS; i++) {
+    const a = Audio_.bandRanges[i * 2], z = Audio_.bandRanges[i * 2 + 1];
+    let m = 0; for (let k = a; k < z; k++) m += Audio_.freq[k];
+    out[i] = m / (z - a) / 255;
+  }
+  out.rms = rms;
+  return out;
+}
+
+/* ---------------------------------------------------------------- 5. transport --- */
+const Transport = { t: BAR * 5.25 };   // open mid-DROP A: frame one is already loud
+let Playing = true;
+let PrevWall = performance.now() / 1000;
+function advanceTransport() {
+  const now = performance.now() / 1000;
+  let dt = now - PrevWall; PrevWall = now;
+  if (dt > 0.25) dt = 0.25;
+  if (dt < 0) dt = 0;
+  if (Playing) Transport.t += dt;
+  return dt;
+}
+
+/* ------------------------------------------------------- 6. renderer scaffold --- */
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias:false, alpha:false, depth:false, stencil:false, powerPreference:'high-performance' });
+const fatalEl = document.getElementById('fatal');
+function fatal(msg) { fatalEl.style.display = 'flex'; fatalEl.textContent = msg; }
+if (!gl) { fatal('WebGL2 is required for SONIC TERRAIN and is not available in this browser.'); throw new Error('no webgl2'); }
+
+/* Extensions MUST be requested before any float texture / FBO is created. */
+const extCBF  = gl.getExtension('EXT_color_buffer_float');
+const extCBHF = extCBF ? null : gl.getExtension('EXT_color_buffer_half_float');
+const HDR   = !!(extCBF || extCBHF);
+const SCENE_FMT  = HDR ? gl.RGBA16F : gl.RGBA8;
+const SCENE_TYPE = HDR ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+const ENC  = HDR ? 1.0 : 2.0;   // scene stores pow(linear, 1/ENC)
+const dbgInfo = gl.getExtension('WEBGL_debug_renderer_info');
+const GL_NAME = dbgInfo ? (gl.getParameter(dbgInfo.UNMASKED_RENDERER_WEBGL) || 'webgl2') : 'webgl2';
+
+function sh(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s) || '';
+    throw new Error('shader compile failed: ' + log + '\n' + src);
+  }
+  return s;
+}
+function prog(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link failed: ' + gl.getProgramInfoLog(p));
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
+  return { p, u };
+}
+
+/* -------------------------------------------------------------- 7. the geometry --- */
+const NU = 190, NV = 54, DEPTH = 44, WIDTH = 11.4, HIST_SEC = 4.0;
+const DT_COL = HIST_SEC / (NU - 1);
+const NCOL = NU * NV;
+const EM = 340, EM_LIFE = 2.3;
+const vBin = new Int32Array(NV), vProf = new Float32Array(NV), rowX = new Float32Array(NV);
+for (let j = 0; j < NV; j++) {
+  const v = j / (NV - 1);
+  vBin[j]  = clamp(Math.round(Math.pow(v, 1.14) * (NBINS - 1)), 0, NBINS - 1);
+  vProf[j] = Math.pow(Math.sin(Math.PI * v), 0.58);
+  rowX[j]  = (v - 0.5) * WIDTH;
+}
+const EYE = [0, 2.45, -8.0], TGT = [0, 1.15, 12.0], FOVY = 50 * Math.PI / 180;
+function m4persp(o, fovy, asp, n, f) {
+  const t = 1 / Math.tan(fovy / 2);
+  o[0]=t/asp; o[1]=0; o[2]=0; o[3]=0;
+  o[4]=0; o[5]=t; o[6]=0; o[7]=0;
+  o[8]=0; o[9]=0; o[10]=(f+n)/(n-f); o[11]=-1;
+  o[12]=0; o[13]=0; o[14]=(2*f*n)/(n-f); o[15]=0;
+}
+function m4look(o, e, c, up) {
+  let zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2];
+  let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+  let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx;
+  l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+  const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+  o[0]=xx; o[1]=yx; o[2]=zx; o[3]=0;
+  o[4]=xy; o[5]=yy; o[6]=zy; o[7]=0;
+  o[8]=xz; o[9]=yz; o[10]=zz; o[11]=0;
+  o[12]=-(xx*e[0]+xy*e[1]+xz*e[2]);
+  o[13]=-(yx*e[0]+yy*e[1]+yz*e[2]);
+  o[14]=-(zx*e[0]+zy*e[1]+zz*e[2]);
+  o[15]=1;
+}
+function m4mul(o, a, b) {
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 4; k++) {
+    let s = 0; for (let j = 0; j < 4; j++) s += a[j*4+k] * b[i*4+j];
+    o[i*4+k] = s;
+  }
+}
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const norm  = a => { const l = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+const mView = new Float32Array(16), mProj = new Float32Array(16), mVP = new Float32Array(16);
+m4look(mView, EYE, TGT, [0,1,0]);
+const CAM_F = norm([TGT[0]-EYE[0], TGT[1]-EYE[1], TGT[2]-EYE[2]]);
+const CAM_R = norm(cross([0,1,0], CAM_F));      // right = up x forward
+const CAM_U = cross(CAM_F, CAM_R);             // up    = forward x right
+const VPOS = new Float32Array(NCOL*3), VNRM = new Float32Array(NCOL*3), VARC = new Float32Array(NCOL*3);
+const terraH = new Float32Array(NCOL), terraE = new Float32Array(NCOL);
+
+/* ---------------------------------------------------------------- 8. the shaders --- */
+const GLSL_HEAD = '#version 300 es\nprecision highp float;\nprecision highp int;\n';
+const COMMON = `
+  const float TAU = 6.28318530718;
+  float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+  vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+    return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+  vec3 toSRGB(vec3 c){ c = clamp(c,0.0,1.0);
+    return mix(c*12.92, 1.055*pow(c, vec3(1.0/2.4))-0.055, step(0.0031308, c)); }
+  /* hue sweep for the ring: violet -> magenta -> amber -> mint -> ice.
+     Gives the spectrum genuine chromatic separation from the warm terrain. */
+  vec3 hueRamp(float t){
+    t = clamp(t, 0.0, 1.0);
+    vec3 c0 = vec3(0.42,0.16,0.95), c1 = vec3(0.95,0.20,0.62),
+         c2 = vec3(1.00,0.66,0.20), c3 = vec3(0.35,0.95,0.62),
+         c4 = vec3(0.40,0.88,1.00);
+    vec3 c = mix(c0, c1, smoothstep(0.00,0.26,t));
+    c = mix(c, c2, smoothstep(0.24,0.52,t));
+    c = mix(c, c3, smoothstep(0.50,0.76,t));
+    c = mix(c, c4, smoothstep(0.74,1.00,t));
+    return c;
+  }
+  /* Terrain palette ramp. It deliberately stops short of c2: c2 is a near-white
+     cream, and letting the ramp reach it turns every high-energy face into a
+     flat achromatic slab once bloom and the tonemap stack up. The hottest terrain
+     should read as saturated hot amber, not white. */
+  vec3 ramp(float e, float v, vec3 c0, vec3 c1, vec3 c2){
+    float t = clamp(e*1.12, 0.0, 1.0);
+    vec3 top = mix(c1, c2, 0.45);            // the hottest value the ramp may take
+    vec3 c = mix(c0, c1, smoothstep(0.0,0.48,t));
+    c = mix(c, top, smoothstep(0.46,1.0,t));
+    return mix(c, top, smoothstep(0.60,1.0,v)*0.32);
+  }
+`;
+const VS_FULL = GLSL_HEAD + `out vec2 vUv;
+void main(){ vec2 p = vec2(float((gl_VertexID<<1)&2), float(gl_VertexID&2));
+  vUv = p; gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+
+/* background: sky, vanishing-point glow, ray-marched floor grid, horizon rule, dust */
+const FS_BG = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec2 vUv;
+uniform vec2  uRes;
+uniform vec3  uEye, uR, uU, uF;
+uniform float uFocal, uTime, uKick, uLevel, uBeat, uEnc;
+uniform vec3  uC0, uC1, uC2;
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;
+  vec3 rd = normalize(uF + uR*(uv.x*uFocal) + uU*(uv.y*uFocal));
+
+  float h = rd.y;
+  vec3 col = mix(vec3(0.044,0.021,0.072), vec3(0.0030,0.0042,0.0135), smoothstep(-0.42,0.42,h));
+  col += vec3(0.018,0.006,0.036) * pow(clamp(1.0-abs(h*1.7),0.0,1.0), 3.0);
+
+  vec2 cell = floor(gl_FragCoord.xy/2.0);
+  float st = h21(cell);
+  float tw = 0.55 + 0.45*sin(uTime*1.6 + st*63.0);
+  col += vec3(0.55,0.72,1.0) * step(0.9975, st) * tw * 0.7 * smoothstep(0.03,0.32,h);
+
+  /* the optical axis lands on uv=(0,0): the glow and the radial ring share it */
+  vec2 d = vec2(uv.x, uv.y - 0.045);
+  float r = length(d*vec2(1.0,1.28));
+  /* dark well first, glow second: the ring needs a dark bed to read against, and a
+     broad glow underneath the terrain is what washes the mid-frame out */
+  col *= 1.0 - 0.45*exp(-r*r*26.0);
+  col += uC2 * exp(-r*3.30) * (0.070 + 0.34*uKick);
+  col += uC1 * exp(-r*9.50) * (0.032 + 0.18*uBeat) * 0.85;
+  col += uC2 * exp(-r*22.0)  * (0.055 + 0.26*uLevel);
+
+  if (rd.y < -0.0015) {
+    float tt = -uEye.y/rd.y;
+    vec3 p = uEye + rd*tt;
+    float fog = exp(-tt*0.052);
+    vec2 q = p.xz;
+    vec2 f1 = abs(fract(q/3.0 - 0.5) - 0.5) / max(fwidth(q/3.0), 1e-4);
+    vec2 f2 = abs(fract(q/15.0 - 0.5) - 0.5) / max(fwidth(q/15.0), 1e-4);
+    float l1 = 1.0 - min(min(f1.x,f1.y), 1.0);
+    float l2 = 1.0 - min(min(f2.x,f2.y), 1.0);
+    col = mix(col, col*0.55 + vec3(0.006,0.008,0.020), clamp(fog*1.15,0.0,1.0));
+    col += mix(uC0,uC1,0.45) * (l1*0.10 + l2*0.32) * fog;
+    float sl = 0.5 + 0.5*sin(p.z*0.42 - uTime*3.0);
+    col += uC1 * pow(sl, 8.0) * 0.05 * fog;
+  } else {
+    col += mix(uC0,uC1,0.6) * exp(-abs(rd.y)*420.0) * (0.22 + 0.52*uKick);
+  }
+  fragColor = vec4(pow(max(col,0.0), vec3(1.0/uEnc)), 1.0);
+}`;
+
+/* terrain: CPU-displaced grid, real vertex normals, topographic contour shading */
+const VS_TER = GLSL_HEAD + `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec3 aArc;
+uniform mat4 uVP; out vec3 vN; out vec3 vW; out vec3 vArc;
+void main(){ vN=aNrm; vW=aPos; vArc=aArc; gl_Position = uVP*vec4(aPos,1.0); }`;
+const FS_TER = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec3 vN; in vec3 vW; in vec3 vArc;
+uniform vec3 uEye, uC0, uC1, uC2, uFog, uLight;
+uniform float uEnc;
+void main(){
+  vec3 N = normalize(vN);
+  vec3 V = normalize(uEye - vW);
+  float e = clamp(vArc.x, 0.0, 1.0);
+  float v = vArc.y;
+  /* steep energy curve: the bulk of the range stays near-black and only genuine
+     peaks glow, which is what makes the ridge silhouette read */
+  float e2 = e*e, e3 = e2*e;
+
+  /* The surface itself stays near-black; the emission lives in the contour lines and
+     the crest highlight. That is what makes a topographic range read as neon linework
+     instead of a glowing slab. */
+  vec3 emis = ramp(e, v, uC0, uC1, uC2) * (0.005 + 0.022*e3);
+
+  /* topographic contours every 0.16 world units of height. The ramp is capped below
+     uC2 so the lines stay hot amber instead of clipping to white. */
+  float cs = vW.y * 6.25;
+  float cw = fwidth(cs)*2.0 + 0.035;
+  float cl = 1.0 - smoothstep(0.0, cw, abs(fract(cs)-0.5)*2.0);
+  /* Nyquist fade: on steep faces many contour levels land inside one pixel and the
+     linework merges into a solid white slab. Fade the lines out as that happens
+     instead of letting them alias — this is what the "blown white ridge" was. */
+  cl *= 1.0 - smoothstep(0.55, 1.6, cw);
+  emis += ramp(min(e+0.20, 0.80), v, uC0, uC1, uC2) * cl * (0.024 + 0.22*sqrt(e));
+
+  /* crest highlight — the ridgelines are the bright part of the range, warm not white.
+     Suppressed on steep faces for the same aliasing reason. */
+  float steep = 1.0 - smoothstep(0.30, 0.85, abs(N.x) + abs(N.z));
+  /* Crest highlight. It must use uC1 (the saturated hue), not uC2: uC2 is a
+     near-white cream, so mixing it in here is what turns the peaks into flat
+     achromatic slabs once the bloom and the tonemap stack up. */
+  emis += uC1 * clamp(vArc.z, 0.0, 1.0) * (0.025 + 0.22*e2) * (0.25 + 0.75*steep);
+
+  float dif = max(dot(N, normalize(uLight)), 0.0);
+  float fres = pow(1.0 - clamp(abs(dot(N,V)),0.0,1.0), 2.6);
+  vec3 col = vec3(0.0030,0.0040,0.0105) + emis + dif*0.016*uC1 + fres*(0.010+0.045*e2)*uC1;
+
+  /* depth fog melts the far history into the horizon glow */
+  float fz = clamp(1.0 - exp(-pow(max(vW.z,0.0)*0.060, 1.45)), 0.0, 1.0);
+  fz = fz*fz*0.80;
+  col = mix(col, uFog, fz);
+  /* FOCAL GUARD: the spectrum disc owns the centre of the frame, so the terrain dims
+     as it approaches that axis. Without this the bright ridge wins the luminance
+     hierarchy and the ring stops reading as the subject. The disc sits at world
+     (0, 2.2); the falloff is broad enough to be a gradient, not a visible blob. */
+  float cd = length(vW.xy - vec2(0.0, 2.2)) / 5.2;
+  col *= 1.0 - 0.72*exp(-cd*cd*1.6);
+  /* A second, tighter well matching the disc's own radius. The broad falloff above
+     grades the approach, but it is too gentle to stop a near ridge from crossing the
+     ring at full brightness; this one only bites inside the disc footprint. */
+  float cd2 = length(vW.xy - vec2(0.0, 2.2)) / 2.6;
+  col *= 1.0 - 0.45*exp(-cd2*cd2*1.8);
+  /* near-field falloff: the closest history sinks to a dark foreground silhouette
+     instead of a bright slab cutting across the ring. Kept shallow — it must only
+     touch the first few metres, or the whole frame goes muddy. */
+  float nf = smoothstep(0.0, 5.0, vW.z);
+  col *= 0.42 + 0.58*nf;
+  /* lift the deepest terrain shadows slightly: fully crushed blacks lose the
+     silhouette, and the range needs a readable dark mass behind the linework */
+  col = max(col, vec3(0.0035,0.0042,0.0090) * (0.35 + 0.65*nf));
+  fragColor = vec4(pow(max(col,0.0), vec3(1.0/uEnc)), 1.0);
+}`;
+
+/* the front ridge ribbon: soft glow shell, then the hot core */
+const VS_RIB = GLSL_HEAD + `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aSide;
+uniform mat4 uVP; out float vS; out float vE;
+void main(){ vS=aSide.x; vE=aSide.y; gl_Position = uVP*vec4(aPos,1.0); }`;
+const FS_RIB = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in float vS; in float vE;
+uniform vec3 uC1, uC2; uniform float uGain;
+void main(){
+  /* Narrow, soft-cored profile. The wide pow(...,2.2) falloff put a >235-luma core
+     across ~15% of the frame once drawn twice into an additive HDR buffer. */
+  float a = pow(max(1.0 - abs(vS), 0.0), 3.4);
+  /* Keep this strictly chromatic. The ribbon crosses the ring, so any pull toward
+     white compounds into an achromatic slab that steals the focal point. */
+  vec3 c = mix(uC1, uC2, clamp(vE, 0.0, 1.0)*0.22);
+  fragColor = vec4(c * a * uGain, 1.0);
+}`;
+
+/* circular radial spectrum, additively composited */
+const FS_POLAR = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec2 vUv;
+uniform vec2 uRes, uCenter;
+uniform sampler2D uSpec;     // 128x1 RGBA8 : r value, g smoothed, b peak-hold
+uniform vec3 uC0, uC1, uC2;
+uniform float uTime, uLevel, uKick, uBeat, uInner, uLen, uAmp, uSpin, uRMax;
+vec3 specAt(float bi){
+  return texture(uSpec, vec2((clamp(floor(bi),0.0,95.0)+0.5)/128.0, 0.5)).rgb;
+}
+void main(){
+  vec2 px = gl_FragCoord.xy - uCenter;
+  float nr = length(px)/uRes.y;
+  if (nr > uRMax) discard;
+
+  float ang  = atan(px.x, -px.y);                 // 0 at 12 o'clock, + clockwise
+  float f01  = ang < 0.0 ? 1.0 + ang/TAU : ang/TAU;
+  float bi   = f01 * 96.0;
+  float fr   = fract(bi);
+  vec3  s    = specAt(bi);
+  float sm   = s.g, pk = s.b;
+  float mask = 1.0 - smoothstep(0.68, 0.99, abs(fr-0.5)*2.0);
+
+  vec3 acc = vec3(0.0);
+  float r0 = uInner, len = uLen*sm*uAmp;
+  /* the ring uses its own hue ramp, not the terrain palette, so the spectrum never
+     blends into the warm contours behind it. uC2 is near-white, so it is used only
+     as a faint tint on the hottest spokes — never as the base colour. */
+  vec3  bc = mix(hueRamp(f01), uC2, smoothstep(0.90, 1.0, f01)*0.22);
+  /* widen the spoke gaps: at 96 bins a hard 0.68 mask aliases into moire at 1 px */
+  float mask2 = 1.0 - smoothstep(0.44, 0.99, abs(fr-0.5)*2.0);
+
+  /* outer bars + a hot tip that travels with each band */
+  float rr = nr - r0;
+  float inside = step(0.0, rr) * (1.0 - smoothstep(len-0.0035, len+0.0012, rr));
+  float tip = exp(-abs(rr-len)*46.0) * 0.85;
+  /* a constant floor on the bar body keeps a faint coloured spoke visible even in
+     the quiet bands, so the ring reads as 96 distinct marks */
+  acc += bc * (inside*(0.30 + 0.34*sm) + tip*0.70) * mask2 * (0.52+0.58*uLevel);
+
+  /* mirrored inner bars */
+  float f01m = 1.0 - f01;
+  float sm2  = specAt(f01m*96.0).g;
+  float rr2  = r0*0.90 - nr, l2 = uLen*sm2*0.42*uAmp;
+  acc += bc * step(0.0, rr2) * (1.0 - smoothstep(l2-0.004, l2+0.001, rr2)) * (0.13 + 0.17*sm2);
+
+  /* peak-hold drift marks — white, so keep them thin: a wide white ring segment here
+     clips to a flat achromatic slab across the spectrum */
+  acc += vec3(1.0) * exp(-abs(nr-(r0+uLen*pk*uAmp))*260.0) * exp(-abs(fr-0.5)*26.0) * 0.28;
+
+  /* base ring + outer guide — kept low so the centre stays a dark well and the
+     spokes read as bright marks against it rather than a solid lit disc */
+  acc += mix(uC0,uC1,0.5) * exp(-abs(nr-r0)*190.0) * 0.24;
+  acc += mix(hueRamp(fr), uC2, 0.30) * exp(-abs(nr-(r0+uLen*uAmp))*260.0) * 0.10;
+
+  /* core disc: spectrum petals, pulsing with the kick */
+  float core = 1.0 - smoothstep(0.0, r0*0.93, nr);
+  float pet  = 0.5 + 0.5*cos(f01*TAU*16.0 - uTime*1.15 + uSpin*TAU);
+  acc += mix(uC1,uC2,pet) * core * (0.008 + 0.028*uLevel) * (0.35+0.65*pet);
+  acc += mix(uC1,uC2,0.5) * exp(-nr*r0*30.0) * (0.030 + 0.085*uBeat);
+
+  /* rotating sweep */
+  float sweep = atan(sin(ang - uSpin*TAU), cos(ang - uSpin*TAU));
+  acc += uC2 * exp(-sweep*sweep*22.0) * exp(-nr*3.2) * 0.13;
+
+  /* tone-limit the whole additive layer. Must asymptote below 1.0 — a limiter that
+     settles at 1/0.42 = 2.4 caps nothing, and the overlapping terms near the core
+     then sum into a colourless white hole. */
+  acc = acc / (1.0 + acc*1.15);
+
+  fragColor = vec4(acc, 1.0);
+}`;
+
+/* embers */
+const VS_EMB = GLSL_HEAD + `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec4 aCol;
+uniform mat4 uVP; out vec4 vC;
+void main(){ vC=aCol; gl_Position = uVP*vec4(aPos,1.0); gl_PointSize = aCol.w; }`;
+const FS_EMB = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec4 vC; uniform float uEnc;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  fragColor = vec4(pow(vC.rgb * exp(-dot(d,d)*11.0) * 1.3, vec3(1.0/uEnc)), 1.0);
+}`;
+
+/* post: threshold+downsample, separable blur, tonemapped composite */
+const FS_BRIGHT = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec2 vUv;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uThresh, uEnc;
+void main(){
+  vec2 t = uTexel;
+  vec3 c  = texture(uSrc, vUv + t*vec2(-1.0,-1.0)).rgb;
+  c += texture(uSrc, vUv + t*vec2( 1.0,-1.0)).rgb;
+  c += texture(uSrc, vUv + t*vec2(-1.0, 1.0)).rgb;
+  c += texture(uSrc, vUv + t*vec2( 1.0, 1.0)).rgb;
+  c = pow(max(c*0.25, 0.0), vec3(uEnc));           // back to linear before thresholding
+  float l = max(max(c.r,c.g),c.b);
+  float w = smoothstep(uThresh, uThresh*2.4, l);
+  fragColor = vec4(min(c*w, vec3(uEnc>1.5?1.0:12.0)), 1.0);
+}`;
+const FS_BLUR = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec2 vUv;
+uniform sampler2D uSrc; uniform vec2 uTexel, uDir;
+void main(){
+  vec2 o1 = uDir*uTexel*1.3846, o2 = uDir*uTexel*3.2308;
+  vec3 c = texture(uSrc, vUv).rgb*0.2270270;
+  c += (texture(uSrc, vUv+o1).rgb + texture(uSrc, vUv-o1).rgb)*0.3162162;
+  c += (texture(uSrc, vUv+o2).rgb + texture(uSrc, vUv-o2).rgb)*0.0702703;
+  fragColor = vec4(c, 1.0);
+}`;
+const FS_COMP = GLSL_HEAD + COMMON + `out vec4 fragColor;
+in vec2 vUv;
+uniform sampler2D uScene, uB0, uB1, uB2;
+uniform float uW0,uW1,uW2,uBloom,uExp,uTime,uCA,uEnc,uBeat;
+void main(){
+  vec2 uv = vUv, d = uv - 0.5;
+  float ca = uCA*(0.35+0.65*length(d));
+  vec3 s = pow(max(texture(uScene, uv).rgb,0.0), vec3(uEnc));
+  vec3 b0; b0.r = texture(uB0, uv + d*ca).r;       b0.g = texture(uB0, uv).g;       b0.b = texture(uB0, uv - d*ca).b;
+  vec3 b1; b1.r = texture(uB1, uv + d*ca*1.7).r;   b1.g = texture(uB1, uv).g;       b1.b = texture(uB1, uv - d*ca*1.7).b;
+  vec3 b2 = texture(uB2, uv).rgb;
+  vec3 col = s + (b0*uW0 + b1*uW1 + b2*uW2) * uBloom;
+  col *= uExp * (1.0 + 0.10*uBeat);
+  /* per-channel shoulder BEFORE the tonemap: compressing a near-white pixel as one
+     scalar is what desaturates it into a grey-white slab */
+  col = col / (1.0 + col*0.55);
+  col = aces(col*1.95);
+  col *= 1.0 - 0.60*pow(clamp(length(d)*1.30,0.0,1.0), 2.2);       // vignette
+  float gr = h21(uv*vec2(1920.0,1080.0) + floor(uTime*24.0)*vec2(7.1,3.7));
+  col += (gr-0.5)*0.010;                                           // dither
+  /* gentle shoulder keeps the neon saturated instead of clipping to white */
+  col = mix(col, col*col*(3.0-2.0*col), 0.22);
+  fragColor = vec4(toSRGB(col), 1.0);
+}`;
+
+/* ------------------------------------------------------------- 9. build the GL --- */
+let P = {};
+try {
+  P.bg     = prog(VS_FULL, FS_BG);
+  P.ter    = prog(VS_TER, FS_TER);
+  P.rib    = prog(VS_RIB, FS_RIB);
+  P.polar  = prog(VS_FULL, FS_POLAR);
+  P.emb    = prog(VS_EMB, FS_EMB);
+  P.bright = prog(VS_FULL, FS_BRIGHT);
+  P.blur   = prog(VS_FULL, FS_BLUR);
+  P.comp   = prog(VS_FULL, FS_COMP);
+} catch (e) { fatal(String(e.message).slice(0, 600)); throw e; }
+const emptyVAO = gl.createVertexArray();
+
+/* terrain */
+let terIdxCount = 0;
+{
+  const terVAO = gl.createVertexArray(); gl.bindVertexArray(terVAO);
+  const mk = (bytes) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.DYNAMIC_DRAW); return b; };
+  const terPos = mk(VPOS.byteLength), terNrm = mk(VNRM.byteLength), terArc = mk(VARC.byteLength);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 0);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 32, 0);
+  const idx = new Uint16Array((NU-1)*(NV-1)*6);
+  let k = 0;
+  for (let i = 0; i < NU-1; i++) for (let j = 0; j < NV-1; j++) {
+    const a = i*NV + j, b = a+1, c = a+NV, d = c+1;
+    idx[k++]=a; idx[k++]=c; idx[k++]=b;
+    idx[k++]=b; idx[k++]=c; idx[k++]=d;
+  }
+  const terIdx = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  terIdxCount = idx.length;
+  gl.bindVertexArray(null);
+  window.__ter = { terVAO, terPos, terNrm, terArc };
+}
+
+/* ridge ribbon (4 rows across the front edge) */
+const RIB_ROWS = [-1.0, -0.32, 0.32, 1.0];
+const ribVAO = gl.createVertexArray(); gl.bindVertexArray(ribVAO);
+const ribPos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ribPos);
+gl.bufferData(gl.ARRAY_BUFFER, NV*4*3*4, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
+const ribSide = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ribSide);
+gl.bufferData(gl.ARRAY_BUFFER, NV*4*2*4, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 8, 0);
+gl.bindVertexArray(null);
+
+/* embers */
+const embVAO = gl.createVertexArray(); gl.bindVertexArray(embVAO);
+const embPos = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, embPos);
+gl.bufferData(gl.ARRAY_BUFFER, EM*3*4, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);
+const embCol = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, embCol);
+gl.bufferData(gl.ARRAY_BUFFER, EM*4*4, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+gl.bindVertexArray(null);
+const embP = new Float32Array(EM*3), embC = new Float32Array(EM*4);
+const EM_SEED = new Float32Array(EM*4);
+for (let i = 0; i < EM; i++) { const r = mulberry32(0x1234 + i*7919); for (let k = 0; k < 4; k++) EM_SEED[i*4+k] = r(); }
+
+/* spectrum texture — RGBA8 so LINEAR filtering is always guaranteed */
+const SPEC_W = 128;
+const specData = new Uint8Array(SPEC_W*4);
+const specTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, specTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, SPEC_W, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, specData);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+/* framebuffers: one scene target + 3 downsampled ping-pong bloom levels */
+let FB = { w:0, h:0, levels:[] };
+function makeTex(w, h) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, SCENE_FMT, w, h, 0, gl.RGBA, SCENE_TYPE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function resizeTargets(w, h) {
+  if (FB.w === w && FB.h === h) return;
+  for (const l of FB.levels) { gl.deleteTexture(l.a); gl.deleteTexture(l.b); gl.deleteFramebuffer(l.fa); gl.deleteFramebuffer(l.fb); }
+  if (FB.depth) gl.deleteRenderbuffer(FB.depth);
+  if (FB.fb) gl.deleteFramebuffer(FB.fb);
+  if (FB.scene) gl.deleteTexture(FB.scene);
+  FB = { w, h, levels: [] };
+  FB.scene = makeTex(w, h);
+  FB.depth = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, FB.depth);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+  FB.fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, FB.fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, FB.scene, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, FB.depth);
+  for (let i = 0; i < 3; i++) {
+    const lw = Math.max(2, w >> (i+1)), lh = Math.max(2, h >> (i+1));
+    const a = makeTex(lw, lh), b = makeTex(lw, lh);
+    const fa = gl.createFramebuffer(), fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fa);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, b, 0);
+    FB.levels.push({ a, b, fa, fb, w:lw, h:lh });
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+let VW = 1280, VH = 800, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 1.25);
+  VW = Math.max(320, Math.round(window.innerWidth * DPR));
+  VH = Math.max(240, Math.round(window.innerHeight * DPR));
+  canvas.width = VW; canvas.height = VH;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  m4persp(mProj, FOVY, VW/VH, 0.4, 160);
+  m4mul(mVP, mProj, mView);
+  resizeTargets(VW, VH);
+}
+
+/* ------------------------------------------------------------- 10. palettes --- */
+const PALETTES = [
+  { name:'ember', a:[0.055,0.185,0.330], b:[1.00,0.60,0.34], c:[1.00,0.94,0.86],
+    ui:['#ff2f8e','#ffc46b','#63e6ff'], fog:[0.075,0.030,0.105] },
+  { name:'vapor', a:[0.145,0.075,0.320], b:[0.16,0.92,1.00], c:[0.86,0.30,1.00],
+    ui:['#7a3cff','#29e6ff','#ff3ce0'], fog:[0.055,0.040,0.135] },
+  { name:'toxic', a:[0.030,0.200,0.185], b:[0.20,1.00,0.62], c:[0.86,1.00,0.45],
+    ui:['#22ff9e','#c8ff3d','#3dffd0'], fog:[0.020,0.075,0.070] }
+];
+
+let palIdx = 0, PAL = PALETTES[0];
+function applyPalette(i) {
+  palIdx = ((i % PALETTES.length) + PALETTES.length) % PALETTES.length;
+  PAL = PALETTES[palIdx];
+  const r = document.documentElement.style;
+  r.setProperty('--a', PAL.ui[0]); r.setProperty('--b', PAL.ui[1]); r.setProperty('--c', PAL.ui[2]);
+  document.getElementById('bPal').textContent = 'palette: ' + PAL.name;
+}
+
+/* ------------------------------------------------------------- 11. UI state --- */
+const St = { gain:1.45, relief:1.0, bloom:1.55, uiVisible:true, spin:0 };
+const $ = id => document.getElementById(id);
+function bindSlider(id, key, numId) {
+  const el = $(id), num = $(numId);
+  const show = () => { num.textContent = St[key].toFixed(2); };
+  el.addEventListener('input', () => { St[key] = +el.value; show(); });
+  show();
+}
+bindSlider('rGain','gain','nGain');
+bindSlider('rRelief','relief','nRelief');
+bindSlider('rBloom','bloom','nBloom');
+$('bPal').addEventListener('click', () => applyPalette(palIdx + 1));
+$('bAudio').addEventListener('click', () => { startAudio(); $('bAudio').classList.add('on'); });
+$('bPlay').addEventListener('click', togglePlay);
+function togglePlay() {
+  Playing = !Playing;
+  const b = $('bPlay');
+  b.classList.toggle('on', Playing);
+  /* Label the transport explicitly. "PLAYING" next to "audio not started" reads as a
+     contradiction unless the transport is named for what it actually drives. */
+  b.innerHTML = Playing ? '&#9646;&#9646; transport running' : '&#9654; transport paused';
+  if (Audio_.ctx) { (Playing ? Audio_.ctx.resume() : Audio_.ctx.suspend()).catch(() => {}); }
+}
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ') { e.preventDefault(); togglePlay(); }
+  else if (k === 'a') { startAudio(); $('bAudio').classList.add('on'); }
+  else if (k === 's') applyPalette(palIdx + 1);
+  else if (k === '1' || k === '2' || k === '3') {
+    St.gain = [0.9, 1.45, 2.4][+k - 1]; $('rGain').value = St.gain; $('nGain').textContent = St.gain.toFixed(2);
+  }
+  else if (k === 'h') {
+    St.uiVisible = !St.uiVisible;
+    for (const el of document.querySelectorAll('.hud')) el.style.display = St.uiVisible ? '' : 'none';
+  }
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    St.gain = clamp(St.gain + (e.key === 'ArrowUp' ? 0.2 : -0.2), 0.35, 6.0);
+    $('rGain').value = St.gain; $('nGain').textContent = St.gain.toFixed(2);
+  }
+});
+addEventListener('resize', resize);
+
+/* --------------------------------------------------- 12. the audio-reactivity --- */
+const curSpec = new Float32Array(NBINS);
+const smooth   = new Float32Array(NBINS);
+const peakHold = new Float32Array(NBINS);
+const peakVel  = new Float32Array(NBINS);
+const bandVal = { sub:0, bass:0, mid:0, air:0, level:0, peak:0, kick:0, section:'INTRO' };
+
+function updateSpectrum(dt) {
+  const tt = ((Transport.t % LOOP) + LOOP) % LOOP;
+  evalSpec(tt, _spec);
+
+  /* real FFT when it is genuinely there, otherwise the model; crossfade between them */
+  const live = pullLive();
+  let mix = Audio_.liveMix;
+  if (live) {
+    if (live.rms > 0.0015) { Audio_.silentFrames = 0; Audio_.liveOk = true; }
+    else Audio_.silentFrames++;
+    if (Audio_.liveOk) mix = Math.min(1, mix + dt * 2.2);
+    else if (Audio_.silentFrames > 20) mix = Math.max(0, mix - dt * 3.0);
+  } else mix = Math.max(0, mix - dt * 3.0);
+  Audio_.liveMix = mix;
+
+  const k = 1 - Math.exp(-dt * 26);
+  for (let i = 0; i < NBINS; i++) {
+    let v = _spec[i] * St.gain;
+    if (mix > 0 && live) v = lerp(v, Math.pow(live[i], 1.35) * 1.9 * St.gain, mix);
+    v = v / (1 + v * 0.55);                          // soft knee keeps peaks readable
+    /* display gamma: crushes the mid bands so the spectrum reads as sparse
+       peaks on a dark bed rather than a continuous plateau */
+    v = Math.pow(clamp(v, 0, 1), 1.60) * 1.15;
+    smooth[i] += (v - smooth[i]) * k;
+    const pv = smooth[i];
+    if (pv > peakHold[i]) { peakHold[i] = pv; peakVel[i] = 0; }
+    else { peakVel[i] += dt * 0.30; peakHold[i] = Math.max(pv, peakHold[i] - peakVel[i]); }
+    curSpec[i] = clamp(pv * 1.06, 0, 1);
+  }
+  let sub=0, bass=0, mid=0, air=0, peak=0, sum=0;
+  for (let i = 0; i < NBINS; i++) {
+    const v = curSpec[i];
+    sum += v; if (v > peak) peak = v;
+    if (i < 6) sub += v; else if (i < 18) bass += v; else if (i < 56) mid += v; else air += v;
+  }
+  bandVal.sub = sub/6; bandVal.bass = bass/12; bandVal.mid = mid/38; bandVal.air = air/(NBINS-56);
+  bandVal.level = sum/NBINS; bandVal.peak = peak;
+  bandVal.kick = Math.exp(-kickAge(tt) * 8.2);
+  bandVal.section = BARS[_ev.bar].n;
+
+  for (let i = 0; i < SPEC_W; i++) {
+    const v = i < NBINS ? curSpec[i] : 0;
+    specData[i*4]   = (v * 255) | 0;
+    specData[i*4+1] = (smooth[i] * 255) | 0;
+    specData[i*4+2] = (peakHold[i] * 255) | 0;
+    specData[i*4+3] = 255;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, specTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SPEC_W, 1, gl.RGBA, gl.UNSIGNED_BYTE, specData);
+}
+/* seconds since the most recent kick (current bar and the one before it) */
+function kickAge(tt) {
+  let age = 99;
+  const bi = Math.floor(tt / BAR);
+  for (let b = 0; b < 2; b++) {
+    const idx = ((bi - b) % NBARS + NBARS) % NBARS, S = BARS[idx], base = (bi - b) * BAR;
+    for (let n = 0; n < S.k.length; n++) { const a = tt - (base + S.k[n]*SIXT); if (a >= 0 && a < age) age = a; }
+  }
+  return age;
+}
+
+/* ------------------------------------------------------------- 13. geometry --- */
+const T = window.__ter;
+function buildTerrain() {
+  const t = Transport.t, relief = St.relief;
+  for (let i = 0; i < NU; i++) {
+    const tt = (((t - (NU-1-i)*DT_COL) % LOOP) + LOOP) % LOOP;
+    evalSpec(tt, _spec);
+    const z = (1 - i/(NU-1)) * DEPTH;
+    for (let j = 0; j < NV; j++) {
+      const k = i*NV + j;
+      const e = clamp(smooth[vBin[j]] * 1.04, 0, 1);
+      terraE[k] = e;
+      terraH[k] = vProf[j] * (e * 2.15 * relief + 0.012);
+      VPOS[k*3] = rowX[j]; VPOS[k*3+1] = terraH[k]; VPOS[k*3+2] = z;
+    }
+  }
+  for (let i = 0; i < NU; i++) {
+    const im = i > 0 ? i-1 : i, ip = i < NU-1 ? i+1 : i;
+    for (let j = 0; j < NV; j++) {
+      const k = i*NV + j;
+      const jm = j > 0 ? j-1 : j, jp = j < NV-1 ? j+1 : j;
+      const nx = -(terraH[i*NV+jp] - terraH[i*NV+jm]);
+      const nz = -(terraH[ip*NV+j] - terraH[im*NV+j]);
+      const l = Math.hypot(nx, 1, nz) || 1;
+      VNRM[k*3] = nx/l; VNRM[k*3+1] = 1/l; VNRM[k*3+2] = nz/l;
+      const lap = Math.abs(terraE[i*NV+jm] + terraE[i*NV+jp] - 2*terraE[k]);
+      VARC[k*3] = terraE[k];
+      VARC[k*3+1] = j/(NV-1);
+      VARC[k*3+2] = clamp(lap * 3.4, 0, 1);
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, T.terPos); gl.bufferSubData(gl.ARRAY_BUFFER, 0, VPOS);
+  gl.bindBuffer(gl.ARRAY_BUFFER, T.terNrm); gl.bufferSubData(gl.ARRAY_BUFFER, 0, VNRM);
+  gl.bindBuffer(gl.ARRAY_BUFFER, T.terArc); gl.bufferSubData(gl.ARRAY_BUFFER, 0, VARC);
+}
+
+const ribP = new Float32Array(NV*4*3), ribS = new Float32Array(NV*4*2);
+function buildRibbon() {
+  const k0 = (NU-1)*NV;
+  for (let j = 0; j < NV; j++) {
+    const h = terraH[k0+j], e = terraE[k0+j];
+    for (let r = 0; r < 4; r++) {
+      const o = (j*4+r)*3, s = (j*4+r)*2;
+      ribP[o] = rowX[j]; ribP[o+1] = h + RIB_ROWS[r]*0.105; ribP[o+2] = 0.02;
+      ribS[s] = RIB_ROWS[r]; ribS[s+1] = e;
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, ribPos); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ribP);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ribSide); gl.bufferSubData(gl.ARRAY_BUFFER, 0, ribS);
+}
+
+let embAlive = 0;
+function buildEmbers() {
+  const t = Transport.t;
+  let alive = 0;
+  for (let i = 0; i < EM; i++) {
+    const s0 = EM_SEED[i*4], s1 = EM_SEED[i*4+1], s2 = EM_SEED[i*4+2], s3 = EM_SEED[i*4+3];
+    const cyc  = EM_LIFE * (0.78 + 0.55*s0);
+    const age  = (((t/cyc) + s1) % 1) * cyc;
+    const life = age/cyc;
+    const col  = clamp(Math.round((NU-1) - age/DT_COL), 0, NU-1);
+    const j    = Math.min(NV-1, Math.floor(s2 * NV));
+    const h    = terraH[col*NV+j], e = terraE[col*NV+j];
+    const px = rowX[j] + (s3-0.5)*0.7 + Math.sin(s0*TAU + age*1.7)*age*0.42;
+    const py = h + 0.05 + s3*0.10 + age*(0.95+0.85*s1)*0.62;
+    const pz = (1 - col/(NU-1))*DEPTH - age*(1.4+1.1*s2);
+    let a = Math.pow(1-life, 1.55) * Math.min(1, life*8) * (0.55 + 0.9*e);
+    if (pz < -6.5) a = 0;
+    if (a < 0.02) a = 0; else alive++;
+    const o3 = i*3, o4 = i*4;
+    embP[o3] = px; embP[o3+1] = py; embP[o3+2] = pz;
+    const heat = clamp(1 - life*0.85, 0, 1);
+    embC[o4]   = lerp(PAL.b[0], PAL.c[0], heat) * a * 0.55;
+    embC[o4+1] = lerp(PAL.b[1], PAL.c[1], heat) * a * 0.55;
+    embC[o4+2] = lerp(PAL.b[2], PAL.c[2], heat) * a * 0.55;
+    embC[o4+3] = (1.0 + 2.2*a*(0.4+0.6*s3)) * DPR;
+  }
+  embAlive = alive;
+  gl.bindBuffer(gl.ARRAY_BUFFER, embPos); gl.bufferSubData(gl.ARRAY_BUFFER, 0, embP);
+  gl.bindBuffer(gl.ARRAY_BUFFER, embCol); gl.bufferSubData(gl.ARRAY_BUFFER, 0, embC);
+}
+
+/* ------------------------------------------------------------- 14. HUD paint --- */
+const specCv = $('specCv'), sctx = specCv.getContext('2d');
+const SPEC_HW = 280, SPEC_HH = 48;
+const hbar = { sub:$('bSub'), bass:$('bBass'), mid:$('bMid'), air:$('bAir') };
+const hnum = { sub:$('nSub'), bass:$('nBass'), mid:$('nMid'), air:$('nAir') };
+let hudAcc = 99;
+function paintHud(dt) {
+  hudAcc += dt; if (hudAcc < 1/24) return; hudAcc = 0;
+  const W = SPEC_HW, H = SPEC_HH, bw = W/NBINS;
+  sctx.clearRect(0, 0, W, H);
+  for (let i = 0; i < NBINS; i++) {
+    const t = curSpec[i], h = Math.max(1, t*(H-2));
+    sctx.fillStyle = 'rgb(' + ((t*255)|0) + ',' + ((46 + t*90)|0) + ',' + ((120 + t*135)|0) + ')';
+    sctx.fillRect(i*bw, H-h, Math.max(1, bw-0.6), h);
+  }
+  sctx.fillStyle = 'rgba(255,255,255,0.9)';
+  for (let i = 0; i < NBINS; i++) {
+    const h = clamp(peakHold[i], 0, 1)*(H-2);
+    if (h > 2) sctx.fillRect(i*bw, H-h-1, Math.max(1, bw-0.6), 1.2);
+  }
+  sctx.strokeStyle = 'rgba(140,180,255,0.16)'; sctx.lineWidth = 1;
+  sctx.strokeRect(0.5, 0.5, W-1, H-1);
+  for (const k in hbar) {
+    hbar[k].style.width = (clamp(bandVal[k],0,1)*100).toFixed(1) + '%';
+    hnum[k].textContent = bandVal[k].toFixed(2);
+  }
+}
+
+/* ------------------------------------------------------------- 15. the frame --- */
+let drawCalls = 0, frames = 0, fps = 0, fpsAcc = 0, fpsN = 0, probeAcc = 0;
+const POL_CX = 0.50, POL_CY = 0.455;   // screen fraction, bottom-up — matches the bg glow
+const POL_INNER = 0.082, POL_LEN = 0.185;
+
+function render() {
+  drawCalls = 0;
+  const t = Transport.t;
+  const beatPos = t/SPB, beatPh = beatPos - Math.floor(beatPos);
+  const bgp = Math.pow(1 - beatPh, 2.2);
+  const kickE = bandVal.kick;
+  const fogC = [
+    PAL.fog[0] + PAL.c[0]*(0.015 + 0.10*kickE),
+    PAL.fog[1] + PAL.c[1]*(0.015 + 0.10*kickE),
+    PAL.fog[2] + PAL.c[2]*(0.015 + 0.10*kickE)
+  ];
+  const light = [0.15, 0.55, 1.0];
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, FB.fb);
+  gl.viewport(0, 0, VW, VH);
+  gl.disable(gl.BLEND);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.depthFunc(gl.LEQUAL);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);   // depth mask must be on to clear depth
+
+  /* background */
+  gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+  gl.bindVertexArray(emptyVAO);
+  gl.useProgram(P.bg.p);
+  gl.uniform2f(P.bg.u.uRes, VW, VH);
+  gl.uniform3fv(P.bg.u.uEye, EYE); gl.uniform3fv(P.bg.u.uR, CAM_R); gl.uniform3fv(P.bg.u.uU, CAM_U); gl.uniform3fv(P.bg.u.uF, CAM_F);
+  gl.uniform1f(P.bg.u.uFocal, 1.0);
+  gl.uniform1f(P.bg.u.uTime, t); gl.uniform1f(P.bg.u.uKick, kickE);
+  gl.uniform1f(P.bg.u.uLevel, bandVal.level); gl.uniform1f(P.bg.u.uBeat, bgp);
+  gl.uniform1f(P.bg.u.uEnc, ENC);
+  gl.uniform3fv(P.bg.u.uC0, PAL.a); gl.uniform3fv(P.bg.u.uC1, PAL.b); gl.uniform3fv(P.bg.u.uC2, PAL.c);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+
+  /* terrain */
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
+  gl.useProgram(P.ter.p);
+  gl.uniformMatrix4fv(P.ter.u.uVP, false, mVP);
+  gl.uniform3fv(P.ter.u.uEye, EYE);
+  gl.uniform3fv(P.ter.u.uC0, PAL.a); gl.uniform3fv(P.ter.u.uC1, PAL.b); gl.uniform3fv(P.ter.u.uC2, PAL.c);
+  gl.uniform3fv(P.ter.u.uFog, fogC); gl.uniform3fv(P.ter.u.uLight, light);
+  gl.uniform1f(P.ter.u.uEnc, ENC);
+  gl.bindVertexArray(T.terVAO);
+  gl.drawElements(gl.TRIANGLES, terIdxCount, gl.UNSIGNED_SHORT, 0); drawCalls++;
+
+  /* embers */
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); gl.depthMask(false);
+  gl.useProgram(P.emb.p);
+  gl.uniformMatrix4fv(P.emb.u.uVP, false, mVP);
+  gl.uniform1f(P.emb.u.uEnc, ENC);
+  gl.bindVertexArray(embVAO);
+  gl.drawArrays(gl.POINTS, 0, EM); drawCalls++;
+
+  /* ridge ribbon: wide glow shell, then the hot core. Deliberately restrained —
+     the ring is the focal point and the crest must not out-shout it. */
+  gl.useProgram(P.rib.p);
+  gl.uniformMatrix4fv(P.rib.u.uVP, false, mVP);
+  gl.uniform3fv(P.rib.u.uC1, PAL.b); gl.uniform3fv(P.rib.u.uC2, PAL.c);
+  gl.bindVertexArray(ribVAO);
+  gl.uniform1f(P.rib.u.uGain, 0.10 + 0.14*kickE);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, NV*4); drawCalls++;
+  gl.uniform1f(P.rib.u.uGain, 0.22 + 0.18*bandVal.peak);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, NV*4); drawCalls++;
+
+  /* radial spectrum */
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(P.polar.p);
+  gl.uniform2f(P.polar.u.uRes, VW, VH);
+  gl.uniform2f(P.polar.u.uCenter, VW*POL_CX, VH*POL_CY);
+  const amp = 0.55 + 0.55*bandVal.level + 0.25*kickE;
+  gl.uniform1f(P.polar.u.uRMax, POL_INNER + POL_LEN*amp*1.10 + 0.02);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, specTex);
+  gl.uniform1i(P.polar.u.uSpec, 0);
+  gl.uniform3fv(P.polar.u.uC0, PAL.a); gl.uniform3fv(P.polar.u.uC1, PAL.b); gl.uniform3fv(P.polar.u.uC2, PAL.c);
+  gl.uniform1f(P.polar.u.uTime, t); gl.uniform1f(P.polar.u.uLevel, bandVal.level);
+  gl.uniform1f(P.polar.u.uKick, kickE); gl.uniform1f(P.polar.u.uBeat, bgp);
+  gl.uniform1f(P.polar.u.uInner, POL_INNER); gl.uniform1f(P.polar.u.uLen, POL_LEN);
+  gl.uniform1f(P.polar.u.uAmp, amp); gl.uniform1f(P.polar.u.uSpin, St.spin);
+  gl.bindVertexArray(emptyVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+
+  /* bloom: threshold + downsample, then 3 separable blur levels */
+  gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
+  gl.bindVertexArray(emptyVAO);
+  gl.useProgram(P.bright.p);
+  gl.uniform2f(P.bright.u.uTexel, 1/VW, 1/VH);
+  gl.uniform1f(P.bright.u.uThresh, 0.62);
+  gl.uniform1f(P.bright.u.uEnc, ENC);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, FB.scene);
+  gl.uniform1i(P.bright.u.uSrc, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, FB.levels[0].fa);
+  gl.viewport(0, 0, FB.levels[0].w, FB.levels[0].h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+
+  gl.useProgram(P.blur.p);
+  gl.uniform1i(P.blur.u.uSrc, 0);
+  for (let i = 0; i < 3; i++) {
+    const L = FB.levels[i];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, L.fb);
+    gl.viewport(0, 0, L.w, L.h);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, L.a);
+    gl.uniform2f(P.blur.u.uTexel, 1/L.w, 1/L.h);
+    gl.uniform2f(P.blur.u.uDir, 0, 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+    if (i < 2) {
+      const N = FB.levels[i+1];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, N.fa);
+      gl.viewport(0, 0, N.w, N.h);
+      gl.bindTexture(gl.TEXTURE_2D, L.b);
+      gl.uniform2f(P.blur.u.uTexel, 1/N.w, 1/N.h);
+      gl.uniform2f(P.blur.u.uDir, 1, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+    }
+  }
+
+  /* composite to the default framebuffer */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, VW, VH);
+  gl.useProgram(P.comp.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, FB.scene); gl.uniform1i(P.comp.u.uScene, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, FB.levels[0].b); gl.uniform1i(P.comp.u.uB0, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, FB.levels[1].b); gl.uniform1i(P.comp.u.uB1, 2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, FB.levels[2].b); gl.uniform1i(P.comp.u.uB2, 3);
+  gl.uniform1f(P.comp.u.uW0, 0.44); gl.uniform1f(P.comp.u.uW1, 0.31); gl.uniform1f(P.comp.u.uW2, 0.21);
+  gl.uniform1f(P.comp.u.uBloom, St.bloom);
+  gl.uniform1f(P.comp.u.uExp, 0.92);
+  gl.uniform1f(P.comp.u.uTime, t);
+  gl.uniform1f(P.comp.u.uCA, 0.0055);
+  gl.uniform1f(P.comp.u.uEnc, ENC);
+  gl.uniform1f(P.comp.u.uBeat, bgp);
+  gl.bindVertexArray(emptyVAO);
+  gl.drawArrays(gl.TRIANGLES, 0, 3); drawCalls++;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindVertexArray(null);
+}
+
+/* ---------------------------------------------------------------- 16. the loop --- */
+function buildProbe() {
+  const tt = ((Transport.t % LOOP) + LOOP) % LOOP;
+  return {
+    fps: +fps.toFixed(2),
+    frames,
+    drawCalls,
+    source: Audio_.liveMix > 0.5 ? 'live-fft' : 'simulated-spectrum',
+    liveMix: +Audio_.liveMix.toFixed(3),
+    audioState: Audio_.ctx ? Audio_.ctx.state : 'not-created',
+    audioRunning: !!(Audio_.ctx && Audio_.ctx.state === 'running'),
+    sampleRate: Audio_.ctx ? Audio_.ctx.sampleRate : 0,
+    fftSize: Audio_.fftSize,
+    fftBins: Audio_.ctx ? Audio_.analyser.frequencyBinCount : 0,
+    playing: Playing,
+    bpm: BPM,
+    bar: Math.floor(tt/BAR) % NBARS + 1,
+    beat: Math.floor(tt/SPB) % 4 + 1,
+    section: bandVal.section,
+    transport: +tt.toFixed(3),
+    bands: NBINS, bandRangeHz: [F_LO, F_HI],
+    sub: +bandVal.sub.toFixed(4), bass: +bandVal.bass.toFixed(4),
+    mid: +bandVal.mid.toFixed(4), air: +bandVal.air.toFixed(4),
+    level: +bandVal.level.toFixed(4), peak: +bandVal.peak.toFixed(4),
+    kick: +bandVal.kick.toFixed(4),
+    terrainColumns: NU, terrainRows: NV, terrainVerts: NCOL,
+    terrainTris: terIdxCount/3,
+    embers: EM, embersAlive: embAlive,
+    bloomLevels: FB.levels.length,
+    hdrTargets: HDR, targetFormat: HDR ? 'RGBA16F' : 'RGBA8',
+    canvas: [VW, VH], dpr: DPR,
+    glRenderer: String(GL_NAME)
+  };
+}
+
+let readySent = false;
+const warmupStart = performance.now();
+function frame() {
+  requestAnimationFrame(frame);
+  const now = performance.now();
+  const dt = advanceTransport() || (1/60);
+  St.spin = (St.spin + dt*0.045) % 1;
+
+  updateSpectrum(dt);
+  buildTerrain();
+  buildRibbon();
+  buildEmbers();
+  render();
+  paintHud(dt);
+
+  frames++;
+  /* Skip the warmup from the fps average: the first frames include shader compile and
+     the first FBO allocations, so averaging them reports a real but unrepresentative
+     startup number. Keyed off wall time, not a frame count, because on a software
+     rasteriser the first few frames can each take longer than the warmup window. */
+  if (now - warmupStart > 700) { fpsAcc += dt; fpsN++; }
+  if (fpsAcc > 0.35) { fps = fpsN/fpsAcc; fpsAcc = 0; fpsN = 0; }
+  probeAcc += dt;
+  if (probeAcc > 0.25) {
+    probeAcc = 0;
+    const p = buildProbe();
+    window.__probe = p;
+    $('sFps').textContent = p.fps.toFixed(1);
+    $('sFrames').textContent = p.frames;
+    $('sDraw').textContent = p.drawCalls;
+    $('sTris').textContent = p.terrainTris.toLocaleString();
+    $('sPts').textContent = p.embersAlive + '/' + EM;
+    $('sAudio').textContent = p.audioState === 'not-created' ? 'not started' : p.audioState;
+    $('sFmt').textContent = p.targetFormat;
+    /* Driver strings are single unbroken tokens ("Vulkan 1.3.0 (SwiftShader Device
+       (Subzero) (0x...)"), so word-wrap alone will not break them. Cut at the first
+       " (" segment boundary and keep the rest on its own wrapped line. */
+    /* Flag a software rasteriser: on SwiftShader a low fps is the renderer, not the
+       scene, and the readout is far less misleading when it says so. */
+    const soft = /swiftshader|llvmpipe|software|basic render/i.test(String(GL_NAME));
+    $('sBackend').textContent = soft ? 'software (gl)' : 'hardware (gl)';
+    $('sGl').textContent = String(GL_NAME)
+      .replace(/^ANGLE \(/, '').replace(/\)$/, '')
+      .replace(/,\s*SwiftShader driver\)?$/i, '')
+      .split(',')[0].trim().slice(0, 52);
+    const live = p.source === 'live-fft';
+    $('chipDot').className = 'dot' + (live ? ' live' : '');
+    $('chipTxt').textContent = live ? 'source: live webaudio fft' : 'source: simulated spectrum';
+    $('chipBar').textContent = p.section.toLowerCase() + ' \u00b7 ' + p.bar + '\u00b7' + p.beat;
+  }
+  if (!readySent && frames >= 3) {
+    readySent = true;
+    window.__probe = buildProbe();
+    window.__ready = true;
+  }
+}
+
+/* ------------------------------------------------------- 17. public test surface --- */
+window.APP = {
+  seek(t) { Transport.t = t; },
+  setPalette(i) { applyPalette(i); },
+  setPlaying(v) { if (v !== Playing) togglePlay(); },
+  setParam(k, v) { if (k in St) { St[k] = v; } },
+  startAudio,
+  probe: buildProbe,
+  params: St,
+  /* current 96-band spectrum, so band dynamics can be inspected directly */
+  spectrum() { return Array.from(curSpec, v => +v.toFixed(3)); },
+  spectrumStats() {
+    const s = Array.from(curSpec).sort((a, b) => a - b);
+    return {
+      min: +s[0].toFixed(3), p25: +s[24].toFixed(3), median: +s[48].toFixed(3),
+      p75: +s[72].toFixed(3), p90: +s[86].toFixed(3), max: +s[95].toFixed(3),
+      fracAbove0_5: +(s.filter(v => v > 0.5).length / 96).toFixed(3),
+      fracAbove0_8: +(s.filter(v => v > 0.8).length / 96).toFixed(3)
+    };
+  },
+  constants: { NBINS, NU, NV, LOOP, BAR, BPM, HIST_SEC, DEPTH, F_LO, F_HI },
+  /* read back the scene FBO (pre-bloom) and the post chain, for tuning */
+  measure(target) {
+    const tex = target === 'final' ? null : FB.scene;
+    const w = target === 'final' ? VW : VW, h = target === 'final' ? VH : VH;
+    if (tex) {
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      const px = new Float32Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(fb);
+      const hist = { '<0.02': 0, '0.02-0.1': 0, '0.1-0.3': 0, '0.3-0.7': 0, '>0.7': 0 };
+      let mx = 0, sum = 0, cov = 0;
+      const n = w * h;
+      for (let i = 0; i < n; i++) {
+        const l = 0.2126 * px[i*4] + 0.7152 * px[i*4+1] + 0.0722 * px[i*4+2];
+        if (l > 0.02) cov++;
+        if (l > mx) mx = l;
+        sum += l;
+        hist[l < 0.02 ? '<0.02' : l < 0.1 ? '0.02-0.1' : l < 0.3 ? '0.1-0.3' : l < 0.7 ? '0.3-0.7' : '>0.7']++;
+      }
+      for (const k in hist) hist[k] = +(hist[k] * 100 / n).toFixed(1);
+      return { maxLuma: +mx.toFixed(3), meanLuma: +(sum / n).toFixed(4), coveragePct: +(cov * 100 / n).toFixed(1), histPct: hist };
+    }
+    const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+    const g2 = c2.getContext('2d');
+    g2.drawImage(canvas, 0, 0);
+    const d = g2.getImageData(0, 0, w, h).data;
+    const hist = { '<0.02': 0, '0.02-0.1': 0, '0.1-0.3': 0, '0.3-0.7': 0, '>0.7': 0 };
+    let sum = 0, mx = 0;
+    const n = w * h;
+    for (let i = 0; i < n; i++) {
+      const l = (0.2126 * d[i*4] + 0.7152 * d[i*4+1] + 0.0722 * d[i*4+2]) / 255;
+      sum += l; if (l > mx) mx = l;
+      hist[l < 0.02 ? '<0.02' : l < 0.1 ? '0.02-0.1' : l < 0.3 ? '0.1-0.3' : l < 0.7 ? '0.3-0.7' : '>0.7']++;
+    }
+    for (const k in hist) hist[k] = +(hist[k] * 100 / n).toFixed(1);
+    return { maxLuma: +mx.toFixed(3), meanLuma: +(sum / n).toFixed(4), histPct: hist };
+  }
+};
+
+/* --------------------------------------------------------------------- boot --- */
+applyPalette(0);
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
