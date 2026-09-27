@@ -97,6 +97,7 @@
 
   .row{margin-bottom:11px}
   .row:last-child{margin-bottom:0}
+  .hint{margin:6px 0 0;font-size:10.5px;line-height:1.45;color:var(--dim);letter-spacing:.01em}
   .row .top{display:flex;justify-content:space-between;align-items:baseline;
     font-family:var(--mono);font-size:10.5px;letter-spacing:.10em;
     text-transform:uppercase;color:var(--dim);margin-bottom:5px}
@@ -239,13 +240,15 @@
       </div>
 
       <div class="row">
-        <div class="top"><label for="iFocal">Focal point</label><b id="vFocal">Rule of thirds</b></div>
+        <div class="top"><label for="iFocal">Hero axis</label><b id="vFocal">Rule of thirds</b></div>
         <select id="iFocal">
-          <option value="0">Upper third</option>
-          <option value="1">Golden section</option>
+          <option value="0">Thirds, mirrored</option>
+          <option value="1">Golden, mirrored</option>
           <option value="2">Centre / axis</option>
-          <option value="3">Lower third, right</option>
+          <option value="3">Fixed lower right</option>
         </select>
+        <p class="hint">The hero always lands opposite the type block, so a top-left title
+          pushes the mass to the lower right. "Centre / axis" ignores the mirror.</p>
       </div>
 
       <div class="row">
@@ -1293,7 +1296,7 @@ function draw(){
   $("vRot").textContent = P.rot === 0 ? "0° orthogonal" : P.rot + "°";
   $("vRhythm").textContent = "ratio " + P.ratio.toFixed(2);
   $("vDens").textContent = P.dens + "%";
-  $("vFocal").textContent = ["Upper third","Golden section","Centre / axis","Lower third, right"][P.focal];
+  $("vFocal").textContent = ["Thirds, mirrored","Golden, mirrored","Centre / axis","Fixed lower right"][P.focal];
   $("vType").textContent = ["Top left","Top right","Bottom left","Bottom right","Bottom band","Vertical rail"][P.type];
   $("sw").innerHTML = [c.pal.ground, c.pal.ink, c.pal.a, c.pal.b]
     .map(col => `<i style="background:${col}"></i>`).join("");
