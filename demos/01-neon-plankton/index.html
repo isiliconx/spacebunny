@@ -1,0 +1,1423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bioluminescent Plankton Bloom — GPU curl-noise particle system</title>
+<style>
+  :root{
+    --ink:#dff4ff; --dim:#7fa8bd; --line:rgba(120,220,255,.22);
+    --panel:rgba(4,18,32,.62); --accent:#38e8ff; --accent2:#ff4fa8;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:#01060d;overflow:hidden}
+  body{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);
+       -webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:#01060d;cursor:grab}
+  #gl.drag{cursor:grabbing}
+
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);
+         border-radius:9px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+         padding:11px 13px;pointer-events:auto}
+
+  /* ---- title, top-left ---- */
+  #hud{top:16px;left:16px;max-width:min(430px,46vw)}
+  #hud h1{margin:0;font-size:13.5px;letter-spacing:.16em;font-weight:600;color:#eafcff;
+         text-transform:uppercase}
+  #hud h1 b{color:var(--accent);font-weight:600}
+  #hud .sub{margin:5px 0 0;color:var(--dim);font-size:10.5px;letter-spacing:.045em}
+  #hud .rule{height:1px;background:linear-gradient(90deg,var(--line),transparent);margin:9px 0 8px}
+  #hud dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:10.5px}
+  #hud dt{color:var(--dim);white-space:nowrap}
+  #hud dd{margin:0;color:#bff0ff;white-space:nowrap}
+  #hud dd i{font-style:normal;color:var(--accent)}
+  #hud dd u{text-decoration:none;color:var(--accent2)}
+  .swatch{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;
+          vertical-align:baseline;box-shadow:0 0 6px currentColor}
+
+  /* ---- controls, bottom-right ---- */
+  #ctl{right:16px;bottom:16px;width:270px}
+  #ctl h2{margin:0 0 9px;font-size:10px;letter-spacing:.16em;color:var(--dim);
+          text-transform:uppercase;font-weight:600}
+  .row{margin:0 0 8px}
+  .row label{display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);
+             margin-bottom:3px}
+  .row label span{color:#bff0ff}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+                    background:linear-gradient(90deg,var(--accent) var(--p,50%),rgba(120,200,255,.16) var(--p,50%));
+                    outline:none;margin:0;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+      background:#eafcff;border:1px solid rgba(0,0,0,.5);box-shadow:0 0 8px var(--accent);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:#eafcff;
+      border:1px solid rgba(0,0,0,.5);box-shadow:0 0 8px var(--accent);cursor:pointer;border-width:1px}
+  .toggles{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+  button{flex:1 1 auto;font:inherit;font-size:10px;letter-spacing:.06em;color:var(--dim);
+         background:rgba(30,90,130,.20);border:1px solid var(--line);border-radius:5px;
+         padding:5px 7px;cursor:pointer;transition:.14s;min-width:0}
+  button:hover{color:#eafcff;background:rgba(50,150,200,.30)}
+  button[aria-pressed=true]{color:#02121c;background:var(--accent);border-color:var(--accent);
+         font-weight:600;box-shadow:0 0 12px rgba(56,232,255,.45)}
+  .hint{margin:9px 0 0;font-size:9.5px;color:#5d8399;letter-spacing:.03em}
+  kbd{background:rgba(120,200,255,.13);border:1px solid var(--line);border-radius:3px;
+      padding:0 3px;font:inherit;font-size:9.5px}
+
+  /* ---- perf readout, bottom-left ---- */
+  #perf{left:16px;bottom:16px;font-size:10px;color:var(--dim);letter-spacing:.05em;
+        padding:7px 11px;line-height:1.6}
+  #perf b{color:var(--accent);font-weight:600}
+  #perf .q{color:var(--accent2)}
+
+  /* ---- fatal ---- */
+  #fatal{position:fixed;inset:0;display:none;place-items:center;padding:30px;text-align:center;
+         background:#01060d;color:#ff9ac2;font-size:13px;line-height:1.7}
+  @media (max-width:820px){ #hud{max-width:70vw} #ctl{width:min(270px,64vw)} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="hud">
+  <h1>Bioluminescent <b>Plankton Bloom</b></h1>
+  <p class="sub">GPU ping-pong FBO particle system &middot; divergence-free curl-noise advection</p>
+  <div class="rule"></div>
+  <dl>
+    <dt>advection</dt><dd>curl noise, <i id="rCurlTxt">2.5&times;2.5&times;4</i> slice atlas</dd>
+    <dt>state</dt><dd><i id="rStateTxt">RGBA32F</i> ping-pong &times;2 (pos+vel MRT)</dd>
+    <dt>blending</dt><dd>additive HDR &rarr; ACES tonemap</dd>
+    <dt><span class="swatch" style="color:#2fd8ff;background:#2fd8ff"></span>cool drift</dd>
+    <dd><span class="swatch" style="color:#12ffc0;background:#12ffc0"></span>low shear</dd>
+    <dd><span class="swatch" style="color:#ff4fa8;background:#ff4fa8"></span>high shear</dd>
+    <dd><span class="swatch" style="color:#eafcff;background:#eafcff"></span>flash (flash rate <span id="rFlashTxt">1.0</span>)</dd>
+    <dt>depth</dt><dd>Beer&ndash;Lambert fog <i id="rFogTxt">0.55</i> &middot; bokeh sprite</dd>
+  </dl>
+</div>
+
+<div class="panel" id="perf">
+  <b id="pFps">--</b> fps &middot; <b id="pMs">--</b> ms/frame &middot; <b id="pCount">--</b> particles<br>
+  <span class="q" id="pTier">quality --</span> &middot; <span id="pFmt">state --</span> &middot;
+  <span id="pWarm">warmup --</span>
+</div>
+
+<div class="panel" id="ctl">
+  <h2>Live controls</h2>
+  <div class="row"><label>curl scale <span id="vCurl">1.00</span></label>
+    <input type="range" id="sCurl" min="0.25" max="3.2" step="0.01" value="1"></div>
+  <div class="row"><label>drag <span id="vDrag">1.30</span></label>
+    <input type="range" id="sDrag" min="0.15" max="4" step="0.01" value="1.3"></div>
+  <div class="row"><label>bloom intensity <span id="vBloom">1.00</span></label>
+    <input type="range" id="sBloom" min="0" max="2.5" step="0.01" value="1"></div>
+  <div class="row"><label>particle count <span id="vCount">--</span></label>
+    <input type="range" id="sCount" min="0.008" max="0.5" step="0.001" value="0.035"></div>
+  <div class="row"><label>curl strength <span id="vStr">0.85</span></label>
+    <input type="range" id="sStr" min="0" max="2.2" step="0.01" value="0.85"></div>
+  <div class="row"><label>flash rate <span id="vFlash">1.00</span></label>
+    <input type="range" id="sFlash" min="0" max="3" step="0.01" value="1"></div>
+  <div class="toggles">
+    <button id="bTrails" aria-pressed="true">trails</button>
+    <button id="bBurst" aria-pressed="false">burst</button>
+    <button id="bAuto" aria-pressed="true">auto-q</button>
+    <button id="bReset">reseed</button>
+  </div>
+  <p class="hint"><kbd>drag</kbd> orbit &middot; <kbd>click</kbd> bioluminescent burst &middot;
+     <kbd>space</kbd> burst &middot; <kbd>h</kbd> hide UI &middot; <kbd>r</kbd> reseed</p>
+</div>
+
+<div id="fatal"></div>
+
+<script>
+"use strict";
+(function(){
+
+/* ==========================================================================
+   0. deterministic RNG (mulberry32). Every stochastic value in this demo --
+   particle positions, anchors, flash phases, turbulence seeds, the bloom
+   seeding below -- is drawn from these seeded generators, so a given SEED
+   always produces an identical frame. No unseeded RNG appears anywhere,
+   including the render path.
+   ========================================================================== */
+function mulberry32(a){
+  return function(){
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function fbm2(x, y, oct, seedA, seedB){          // cheap value-noise fbm for anchor shapes
+  let s = 0, amp = 0.5, f = 1;
+  for (let i = 0; i < oct; i++){
+    s += amp * (Math.sin(x * f + seedA) * Math.cos(y * f * 1.31 + seedB));
+    f *= 2.03; amp *= 0.5;
+  }
+  return s;
+}
+
+const CAP_W = 2048, CAP_H = 1024, CAPACITY = CAP_W * CAP_H;   // 2,097,152
+const FIELD_SIDE = 128, FIELD_TEX = FIELD_SIDE * 2;           // 2x2 tiles of 128 => 256x256
+const FIELD_SLICES = 4;
+const GLSL_CURL = `
+// --- Ashima / Stefan Gustavson simplex noise (3D), public domain ---
+vec3 mod289(vec3 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 mod289(vec4 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 permute(vec4 x){ return mod289(((x*34.0)+1.0)*x); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+float snoise(vec3 v){
+  const vec2  C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3  ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}`;
+
+/* ==========================================================================
+   1. GL bootstrap
+   ========================================================================== */
+const canvas = document.getElementById('gl');
+const fatal = document.getElementById('fatal');
+function die(msg){
+  fatal.style.display = 'grid';
+  fatal.textContent = msg;
+  window.__probe = { ok:false, error:msg };
+  window.__ready = true;
+  throw new Error(msg);
+}
+const gl = canvas.getContext('webgl2', {
+  antialias:false, alpha:false, depth:false, stencil:false,
+  premultipliedAlpha:false, preserveDrawingBuffer:true, powerPreference:'high-performance'
+});
+if (!gl) die('WebGL2 is unavailable in this browser — cannot run the GPU particle system.');
+
+// float render targets MUST be enabled before any float texture/FBO is created
+const EXT_CBF  = gl.getExtension('EXT_color_buffer_float');
+const EXT_CBHF = gl.getExtension('EXT_color_buffer_half_float');
+gl.getExtension('OES_texture_float_linear');
+gl.getExtension('EXT_float_blend');
+
+function compile(type, src, tag){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    die('Shader compile failed (' + tag + '):\n' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs, tag){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs, tag + '.vs'));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs, tag + '.fs'));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    die('Link failed (' + tag + '):\n' + gl.getProgramInfoLog(p));
+  const u = {}, a = {};
+  const nu = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < nu; i++){ const n = gl.getActiveUniform(p, i).name.replace(/\[0\]$/,''); u[n] = gl.getUniformLocation(p, n); }
+  const na = gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES);
+  for (let i = 0; i < na; i++){ const n = gl.getActiveAttrib(p, i).name; a[n] = gl.getAttribLocation(p, n); }
+  return { p, u, a };
+}
+function makeTex(w, h, internal, fmt, type, filter){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, fmt, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+// FBO factory that reports incompleteness instead of throwing, so we can probe formats
+function tryFbo(w, h, internal, fmt, type, filter){
+  const tex = makeTex(w, h, internal, fmt, type, filter || gl.NEAREST);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (!ok){ gl.deleteTexture(tex); gl.deleteFramebuffer(fb); return null; }
+  return { fb, tex, w, h };
+}
+const F32 = { internal:null, fmt:gl.RGBA, type:null, name:'', bits:32, enc:0 };
+(function pickFormat(){
+  if (EXT_CBF){
+    const f = tryFbo(8, 8, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
+    if (f){ F32.internal = gl.RGBA32F; F32.type = gl.FLOAT; F32.name = 'RGBA32F'; F32.bits = 32; F32.enc = 0;
+            gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex); return; }
+  }
+  if (EXT_CBF || EXT_CBHF){
+    const f = tryFbo(8, 8, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.NEAREST);
+    if (f){ F32.internal = gl.RGBA16F; F32.type = gl.HALF_FLOAT; F32.name = 'RGBA16F'; F32.bits = 16; F32.enc = 1;
+            gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex); return; }
+  }
+  const f = tryFbo(8, 8, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+  if (f){ F32.internal = gl.RGBA8; F32.type = gl.UNSIGNED_BYTE; F32.name = 'RGBA8'; F32.bits = 8; F32.enc = 2;
+          gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex); return; }
+  die('No renderable float or 8-bit colour format is available.');
+})();
+// HDR scene target (16F if possible, else 8-bit)
+const HDR = (function(){
+  if (EXT_CBF || EXT_CBHF){
+    const f = tryFbo(8, 8, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR);
+    if (f){ gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex);
+             return { internal: gl.RGBA16F, type: gl.HALF_FLOAT, name: 'RGBA16F', linear: gl.LINEAR }; }
+  }
+  return { internal: gl.RGBA8, type: gl.UNSIGNED_BYTE, name: 'RGBA8', linear: gl.LINEAR };
+})();
+
+/* ==========================================================================
+   2. geometry buffers
+   ========================================================================== */
+// particle index buffer: the sim/render passes address state texels by index.
+// (aIdx is used rather than gl_VertexID for maximum portability)
+const indexData = new Float32Array(CAPACITY);
+for (let i = 0; i < CAPACITY; i++) indexData[i] = i;
+const partVAO = gl.createVertexArray();
+gl.bindVertexArray(partVAO);
+const indexBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, indexBO);
+gl.bufferData(gl.ARRAY_BUFFER, indexData, gl.STATIC_DRAW);
+function bindIndex(pr){                       // enable aIdx for a given program
+  const l = pr.a.aIdx;
+  if (l === undefined || l < 0) return;
+  gl.bindVertexArray(partVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, indexBO);
+  gl.enableVertexAttribArray(l);
+  gl.vertexAttribPointer(l, 1, gl.FLOAT, false, 0, 0);
+}
+const quadBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBO);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const quadVAO = (function(){
+  const v = gl.createVertexArray(); gl.bindVertexArray(v);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBO);
+  return v;
+})();
+function bindQuad(pr){
+  gl.bindVertexArray(quadVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBO);
+  const l = pr.a.p;
+  if (l >= 0){ gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0); }
+}
+
+/* ==========================================================================
+   3. programs
+   ========================================================================== */
+const QUAD_VS = `#version 300 es
+in vec2 p; out vec2 uv;
+void main(){ uv = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
+
+// ---- 3a. curl-noise flow field, 4 z-slices packed as 2x2 tiles -----------
+const fieldPr = program(QUAD_VS, `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform float uTime, uTile, uSlices, uScale, uFlow;
+${GLSL_CURL}
+void main(){
+  float px = gl_FragCoord.x, py = gl_FragCoord.y;
+  float col = floor(px / uTile), row = floor(py / uTile);
+  int   sl  = int(row * 2.0 + col);
+  vec2  lo  = (vec2(px, py) - vec2(col, row) * uTile) / uTile;
+  float zs  = ((float(sl) + 0.5) / uSlices) * 2.0 - 1.0;
+
+  // 2.5D divergence-free flow: exact in-plane curl of a scalar potential A
+  // (dAz/dx, 0, -dAx/dz) plus a vertical shear term from a second potential B.
+  vec3 p = vec3(lo * 2.0 - 1.0, zs) * uScale;
+  p.z += uTime * 0.055;                      // slow drift through the slices
+  const float e = 0.38;
+  float aL = snoise(vec3(p.x - e, p.y, p.z));
+  float aR = snoise(vec3(p.x + e, p.y, p.z));
+  float aD = snoise(vec3(p.x, p.y, p.z - e));
+  float aU = snoise(vec3(p.x, p.y, p.z + e));
+  float bL = snoise(vec3(p.x - e, p.y * 0.55, p.z * 0.55 + uTime * 0.09));
+  float bR = snoise(vec3(p.x + e, p.y * 0.55, p.z * 0.55 + uTime * 0.09));
+  float dAx = (aR - aL) * 0.5, dAz = (aU - aD) * 0.5;
+  float dBx = (bR - bL) * 0.5;
+
+  vec3 v = vec3(dAz, dBx * 0.85, -dAx);
+  o = vec4(normalize(v + 1e-6) * 0.5 + 0.5, 1.0);
+}`, 'field');
+
+// ---- 3b. simulation: MRT ping-pong (pos+life, vel+flash) ------------------
+const ENC = F32.enc === 2;      // 8-bit fallback needs fixed-point encoding
+const DEC = `
+// state decode: enc 0 = raw, 1 = half-float (scaled for small-increment precision), 2 = 8-bit fixed
+vec4 decState(vec4 raw){ ${ENC ? 'return raw * 8.0 - 4.0;' : 'return raw;'} }
+vec4 decLife(vec4 raw){ ${ENC ? 'return raw;' : 'return raw;'} }
+`;
+const ENC_DEF = ENC ? '#define ENCODE_STATE 1' : '';
+const simPr = program(`#version 300 es
+${ENC_DEF}
+in float aIdx; out float vIdx;
+void main(){
+  float fi = aIdx;
+  vIdx = fi;
+  float tx = mod(fi, ${CAP_W}.0), ty = floor(fi / ${CAP_W}.0);
+  gl_Position = vec4((vec2(tx, ty) + 0.5) / vec2(${CAP_W}.0, ${CAP_H}.0) * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}`, `#version 300 es
+precision highp float; precision highp sampler2D;
+${ENC_DEF}
+layout(location = 0) out vec4 oPos;
+layout(location = 1) out vec4 oVel;
+uniform sampler2D uPos, uVel, uField, uAnchor;
+uniform float uDt, uDrag, uCurl, uCohesion, uRise, uLifeRate;
+uniform float uFieldSize, uTile, uSlices;
+uniform float uBurst;
+uniform vec3  uBurstPos;
+in float vIdx;
+${DEC}
+vec3 sampleField(vec3 p){
+  vec3 uvw = p * 0.5 + 0.5;
+  uvw = clamp(uvw, 0.004, 0.996);
+  float sz = uvw.z * ${FIELD_SLICES}.0 - 0.5;
+  int s0 = clamp(int(floor(sz)), 0, ${FIELD_SLICES - 1});
+  int s1 = clamp(s0 + 1, 0, ${FIELD_SLICES - 1});
+  float f = clamp(sz - float(s0), 0.0, 1.0);
+  vec2 ins = vec2(0.5) / uFieldSize;
+  vec2 a = vec2(uvw.x + float(s0 - 2 * (s0 / 2)) * 0.5, uvw.y + float(s0 / 2) * 0.5);
+  vec2 b = vec2(uvw.x + float(s1 - 2 * (s1 / 2)) * 0.5, uvw.y + float(s1 / 2) * 0.5);
+  a = mix(ins, 0.5 - ins, a);
+  b = mix(ins, 0.5 - ins, b);
+  return mix(texture(uField, a).rgb, texture(uField, b).rgb, f) * 2.0 - 1.0;
+}
+void main(){
+  ivec2 tc = ivec2(int(mod(vIdx, ${CAP_W}.0)), int(floor(vIdx / ${CAP_W}.0)));
+  vec4 P = texelFetch(uPos,  tc, 0);
+  vec4 V = texelFetch(uVel,  tc, 0);
+  vec4 A = texelFetch(uAnchor, tc, 0);
+
+  vec3  pos  = P.xyz;
+  float life = P.w;
+  vec3  vel  = V.xyz;
+  float seed = V.w;
+
+  // (1) curl-noise advection: exponential relaxation toward the local flow
+  vec3 f = sampleField(pos);
+  vel = mix(vel, f * uCurl, 1.0 - exp(-uDt * uDrag));
+
+  // (2) cohesion toward the particle's home anchor. Kept deliberately weak:
+  // strong cohesion pins every particle onto its anchor, collapsing the volume
+  // into a bright shell. A soft spring lets the curl field carve filaments.
+  vec3 toHome = A.xyz - pos;
+  vel += toHome * (uCohesion * uDt) - vel * (uCohesion * 0.35 * uDt);
+
+  // (3) slow buoyant rise + per-particle turbulence jitter
+  vel.y += uRise * uDt;
+  vel += (A.w - 0.5) * 0.35 * uDt;
+
+  // (4) viscous damping
+  vel *= exp(-uDt * 0.35);
+
+  pos += vel * uDt;
+  life -= uDt * uLifeRate;
+
+  // (5) bioluminescent burst shockwave (mouse click / space)
+  if (uBurst > 0.0){
+    vec3 d = pos - uBurstPos;
+    float r = length(d);
+    float w = exp(-r * r * 5.0) * uBurst;
+    vel += normalize(d + 1e-5) * w * 2.4;
+    life = min(1.0, life + w * 0.5);
+  }
+
+  // (6) recycle dead / escaped particles back to their anchor
+  if (life <= 0.0 || dot(pos, pos) > 9.0){
+    pos = A.xyz + normalize(vec3(A.w, A.x * 0.7 + 0.3, A.y) + 1e-4) * 0.06;
+    vel = A.xyz * 0.2;
+    life = 1.0;
+  }
+  #ifdef ENCODE_STATE
+    oPos = vec4(pos / 8.0 + 0.5, life);
+    oVel = vec4(vel / 8.0 + 0.5, seed);
+  #else
+    oPos = vec4(pos, life);
+    oVel = vec4(vel, seed);
+  #endif
+}`, 'sim');
+// burst uniforms must exist even though the string above references them lazily
+simPr.u.uBurst = simPr.u.uBurst || gl.getUniformLocation(simPr.p, 'uBurst');
+simPr.u.uBurstPos = simPr.u.uBurstPos || gl.getUniformLocation(simPr.p, 'uBurstPos');
+
+// ---- 3c. additive point-sprite draw --------------------------------------
+const drawPr = program(`#version 300 es
+precision highp float; precision highp sampler2D;
+in float aIdx;
+uniform sampler2D uPos, uVel;
+uniform mat4  uViewProj;
+uniform vec3  uCam;
+uniform float uProjScale, uSize, uFog, uFlash, uTime, uGain;
+out vec3  vCol;
+out float vCore;
+${DEC}
+float hash11(float p){ p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+void main(){
+  float fi = aIdx;
+  ivec2 tc = ivec2(int(mod(fi, ${CAP_W}.0)), int(floor(fi / ${CAP_W}.0)));
+  vec4 P = texelFetch(uPos, tc, 0);
+  vec4 V = texelFetch(uVel, tc, 0);
+  vec3 pos = P.xyz; float life = P.w;
+  if (life <= 0.0){ gl_Position = vec4(0.0, 0.0, -2.0, 1.0); gl_PointSize = 0.0; return; }
+
+  vec4 clip = uViewProj * vec4(pos, 1.0);
+  float dist = max(-clip.z, 0.05);
+  gl_Position = vec4(clip.xy, 0.0, clip.w);
+
+  float r1 = hash11(fi * 0.0173 + 1.3);
+  float r2 = hash11(fi * 0.0411 + 7.7);
+  float r3 = hash11(fi * 0.0917 + 3.1);
+
+  // speed -> colour ramp: cool blue drift -> teal shear -> magenta shear
+  float sp = length(V.xyz);
+  vec3 cCool = vec3(0.10, 0.58, 1.00);
+  vec3 cTeal = vec3(0.07, 1.00, 0.78);
+  vec3 cMag  = vec3(1.00, 0.24, 0.62);
+  vec3 col = mix(cCool, cTeal, smoothstep(0.05, 0.55, sp));
+  col = mix(col, cMag, smoothstep(0.60, 1.45, sp) * 0.85);
+
+  // bioluminescent flash: sharp periodic spike, phase from the particle seed
+  float ph = fract(r2 + uTime * uFlash * (0.25 + r3 * 0.75));
+  float flash = pow(max(0.0, sin(ph * 6.2831853)), 22.0);
+  // only a slight desaturation toward white: flashing to pure white would turn
+  // the whole cloud into a colourless disc once enough particles flash at once
+  col = mix(col, vec3(0.75, 0.95, 1.00), flash * 0.35);
+
+  // life envelope: fade in, hold, fade out
+  float env = smoothstep(0.0, 0.14, life) * smoothstep(1.0, 0.80, life);
+  // Beer-Lambert extinction through the water column
+  float fog = exp(-uFog * dist);
+  float atten = fog * env * (0.35 + 0.65 * r1);
+
+  // uProjScale already carries the internal-resolution factor, so sprites stay
+  // a constant *fraction of the frame* regardless of the internal buffer size.
+  float size = uSize * (0.55 + r1 * 1.25) * (uProjScale / dist);
+  size = clamp(size, 1.15, 9.0);
+  gl_PointSize = size;
+
+  // flash adds emission rather than hue, so the highlight reads as a brighter
+  // speck of the same species colour
+  vCol  = col * uGain * atten * (1.0 + flash * 2.2);
+  vCore = (0.35 + 0.65 * r1) * (0.5 + 0.5 * flash) * fog;
+}`, `#version 300 es
+precision highp float;
+in vec3 vCol; in float vCore; out vec4 o;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float r2 = dot(d, d);
+  if (r2 > 0.25) discard;
+  // soft bokeh disc (cheap polynomial falloff: (1-r^2)^2) + tight hot core
+  float halo = 1.0 - r2 * 4.0;
+  float disc = halo * halo;
+  float core = disc * disc;
+  o = vec4(vCol * (disc * 0.85 + core * 1.35) * (0.75 + 0.9 * vCore), 1.0);
+}`, 'draw');
+
+// ---- 3d. utility passes: trail decay / bright / blur / copy ---------------
+const utilPr = program(QUAD_VS, `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D uA, uB;
+uniform float uDecay, uThreshold, uKnee, uScale;
+uniform int   uMode;      // 0 trail, 1 bright, 2 blurX, 3 blurY
+void main(){
+  if (uMode == 0){                      // feedback: history*decay + new
+    o = vec4(texture(uA, uv).rgb * uDecay + texture(uB, uv).rgb, 1.0);
+  } else if (uMode == 1){               // bright pass with soft knee
+    vec3 c = max(texture(uA, uv).rgb, vec3(0.0));
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float k = max(l - uThreshold, 0.0);
+    k = k * k / (k + uKnee);
+    o = vec4(c * (k / max(l, 1e-4)), 1.0);
+  } else {                              // separable 5-tap gaussian
+    vec2 d = (uMode == 2) ? vec2(uScale, 0.0) : vec2(0.0, uScale);
+    vec3 s  = texture(uA, uv).rgb * 0.227027;
+    s += (texture(uA, uv + d * 1.3846).rgb + texture(uA, uv - d * 1.3846).rgb) * 0.316216;
+    s += (texture(uA, uv + d * 3.2307).rgb + texture(uA, uv - d * 3.2307).rgb) * 0.070270;
+    o = vec4(s, 1.0);
+  }
+}`, 'util');
+
+// ---- 3e. combine: water background + HDR scene + bloom -> LDR -------------
+const combinePr = program(QUAD_VS, `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D uScene, uBloom;
+uniform float uBloomI, uExposure, uTime, uVignette;
+uniform vec2  uAspect;
+// ACES filmic approximation (Narkowicz) — highlights desaturate toward white
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+void main(){
+  // ---- deep-ocean water column (cheap: no pow/exp, keeps the pass fill-bound)
+  vec2 p = uv;
+  vec3 col = mix(vec3(0.0055, 0.0270, 0.0520), vec3(0.0016, 0.0070, 0.0195), sqrt(p.y));
+  // surface light shaft descending from above
+  float d = clamp(1.0 - abs(p.x - 0.5) * 2.30, 0.0, 1.0);
+  col += vec3(0.018, 0.070, 0.082) * (d * d) * smoothstep(-0.15, 1.05, p.y);
+  // slow turbidity so the water is never a dead flat fill
+  col += vec3(0.0030, 0.0105, 0.0150)
+       * (0.5 + 0.5 * sin(p.x * 2.1 - uTime * 0.07) * cos(p.y * 2.7 + uTime * 0.05));
+
+  vec3 scene = max(texture(uScene, uv).rgb, vec3(0.0));
+  vec3 bloom = max(texture(uBloom, uv).rgb, vec3(0.0));
+
+  // The bloom pass accumulates the SAME particle density as the scene pass, so
+  // adding it at full strength double-counts the core and saturates a dense
+  // cloud into a flat white disc. Scale the bloom down hard and keep it as a
+  // halo around genuinely bright areas, not a second copy of the body.
+  col += scene + bloom * uBloomI * 0.22;
+  col *= uExposure;
+
+  // Reinhard-with-white-point, then ACES only on what is left. Pure ACES
+  // flattens a dense additive cloud into one white disc; this keeps the
+  // midtones that carry the individual filaments.
+  col = col / (1.0 + col);
+  col = aces(col * 1.06);
+
+  // vignette
+  vec2 v = (uv - 0.5) * uAspect;
+  col *= mix(1.0, smoothstep(1.05, 0.24, length(v) * 1.18), uVignette);
+
+  // linear -> sRGB
+  col = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2));
+  o = vec4(col, 1.0);
+}`, 'combine');
+
+// ---- 3f. present: single cheap RGBA8 fetch to the default framebuffer ------
+const presentPr = program(QUAD_VS, `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D uA;
+void main(){ o = vec4(texture(uA, uv).rgb, 1.0); }`, 'present');
+
+/* ==========================================================================
+   4. size-dependent resources
+   ========================================================================== */
+let RW = 0, RH = 0, RS = 1;          // internal render size
+let sceneFB, trailFB = [null, null], trailCur = 0;
+let bloomFB = [null, null, null, null];
+let ldrFB;
+const BLOOM_DIV = 4;
+
+function allocTargets(w, h){
+  if (w === RW && h === RH) return;
+  RW = w; RH = h;
+  const del = o => { if (o){ gl.deleteFramebuffer(o.fb); gl.deleteTexture(o.tex); } };
+  del(sceneFB); del(ldrFB);
+  trailFB.forEach(del); trailFB = [null, null];
+  bloomFB.forEach(del); bloomFB = [null, null, null, null];
+
+  sceneFB = tryFbo(w, h, HDR.internal, gl.RGBA, HDR.type, gl.NEAREST) ||
+            tryFbo(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+  if (!sceneFB) die('Cannot allocate a scene render target at ' + w + 'x' + h);
+  ldrFB = tryFbo(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+  for (let i = 0; i < 2; i++)
+    trailFB[i] = tryFbo(w, h, HDR.internal, gl.RGBA, HDR.type, gl.NEAREST) ||
+                 tryFbo(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+  const bw = Math.max(2, Math.floor(w / BLOOM_DIV)), bh = Math.max(2, Math.floor(h / BLOOM_DIV));
+  for (let i = 0; i < 4; i++)
+    bloomFB[i] = tryFbo(bw, bh, HDR.internal, gl.RGBA, HDR.type, gl.LINEAR) ||
+                 tryFbo(bw, bh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+  if (!ldrFB || !trailFB[0] || !bloomFB[0]) die('Cannot allocate post-processing targets.');
+
+  for (const f of [sceneFB, ldrFB, ...trailFB, ...bloomFB]){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb);
+    gl.viewport(0, 0, f.w, f.h);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ---- persistent simulation state ---------------------------------------- */
+const state = [0, 1].map(() => ({
+  pos: tryFbo(CAP_W, CAP_H, F32.internal, gl.RGBA, F32.type, gl.NEAREST),
+  vel: tryFbo(CAP_W, CAP_H, F32.internal, gl.RGBA, F32.type, gl.NEAREST)
+}));
+const simFB = [0, 1].map(() => gl.createFramebuffer());
+let stateCur = 0;
+(function(){
+  if (!state[0].pos || !state[1].pos)
+    die('Cannot allocate ' + CAP_W + 'x' + CAP_H + ' particle state textures in ' + F32.name + '.');
+  state.forEach((s, i) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, simFB[i]);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, s.pos.tex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, s.vel.tex, 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+      die('Particle state framebuffer (MRT) is incomplete in ' + F32.name + '.');
+  });
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+})();
+const fieldFB = tryFbo(FIELD_TEX, FIELD_TEX, HDR.internal, gl.RGBA, HDR.type, gl.LINEAR) ||
+                tryFbo(FIELD_TEX, FIELD_TEX, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+if (!fieldFB) die('Cannot allocate the curl-noise field atlas.');
+const anchorFB = tryFbo(CAP_W, CAP_H, HDR.internal, gl.RGBA, HDR.type, gl.NEAREST) ||
+                 tryFbo(CAP_W, CAP_H, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+if (!anchorFB) die('Cannot allocate the particle anchor texture.');
+
+/* ==========================================================================
+   5. seeding — fully deterministic per seed
+   ========================================================================== */
+let SEED = 20260926;
+const SEEDS = [20260926, 7, 13371337, 4242424, 99999999, 31337, 8675309, 555000111];
+
+function buildAnchors(seed){
+  const rnd = mulberry32(seed);
+  const data = new Float32Array(CAP_W * CAP_H * 4);
+  const sa = rnd() * 6.2831, sb = rnd() * 6.2831;
+  for (let i = 0; i < CAPACITY; i++){
+    // shaped bloom: flattened ellipsoid with fbm-warped radius -> filaments
+    const th = rnd() * 6.2831853;
+    const ph = Math.acos(2 * rnd() - 1);
+    // Volume-uniform radius (exponent ~1/2.6 for a squashed ellipsoid) with a
+    // mild edge bias. NOT rnd()**0.42: that collapses to a hollow shell.
+    let r = Math.pow(rnd(), 0.38);
+    const wob = fbm2(Math.cos(th) * 1.6, Math.sin(th) * 1.6 + ph * 0.8, 4, sa, sb);
+    r *= 0.78 + 0.34 * (wob * 0.5 + 0.5);
+    // logarithmic spiral arm: gives the mass visible rotational structure
+    const arm = Math.sin(th * 2.0 + Math.log(r + 0.16) * 5.2) * 0.5 + 0.5;
+    r *= 0.62 + 0.55 * arm;
+    const shear = th * 0.45 + r * 1.7;
+    const x = Math.cos(th) * r * 1.22 * Math.cos(shear * 0.5 + r * 1.2);
+    const z = Math.sin(th) * r * 1.22 * Math.sin(shear * 0.5 + r * 1.2);
+    const y = Math.cos(ph) * r * 0.50 + wob * 0.12;
+    data[i * 4]     = x;
+    data[i * 4 + 1] = y;
+    data[i * 4 + 2] = z;
+    data[i * 4 + 3] = rnd();                       // per-particle turbulence seed
+  }
+  gl.bindTexture(gl.TEXTURE_2D, anchorFB.tex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, CAP_W, CAP_H, gl.RGBA, gl.FLOAT, data);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+}
+function seedState(){
+  const rnd = mulberry32(SEED ^ 0x9E3779B9);
+  const pos = new Float32Array(CAP_W * CAP_H * 4);
+  const vel = new Float32Array(CAP_W * CAP_H * 4);
+  const enc = F32.enc === 2 ? (v => v / 8 + 0.5) : (v => v);
+  for (let i = 0; i < CAPACITY; i++){
+    // start scattered around the anchors with a life phase spread out,
+    // so the first frame is already a developed cloud, never an empty shell
+    const th = rnd() * 6.2831853, u = rnd() * 2 - 1, s = Math.sqrt(1 - u * u);
+    const r = 1.15 + rnd() * 0.55;
+    pos[i * 4]     = enc(Math.cos(th) * s * r);
+    pos[i * 4 + 1] = enc(u * r * 0.55);
+    pos[i * 4 + 2] = enc(Math.sin(th) * s * r);
+    pos[i * 4 + 3] = rnd();                       // life, spread over the full range
+    vel[i * 4]     = enc((rnd() - 0.5) * 0.12);
+    vel[i * 4 + 1] = enc((rnd() - 0.5) * 0.12);
+    vel[i * 4 + 2] = enc((rnd() - 0.5) * 0.12);
+    vel[i * 4 + 3] = rnd();                       // flash seed
+  }
+  for (let i = 0; i < 2; i++){
+    const pb = gl.createTexture();                // temp upload path via FBO
+    gl.bindTexture(gl.TEXTURE_2D, pb);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, CAP_W, CAP_H, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, pb, 0);
+    gl.viewport(0, 0, CAP_W, CAP_H);
+    gl.disable(gl.BLEND);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, CAP_W, CAP_H, gl.RGBA, gl.FLOAT, i === 0 ? pos : vel);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, new Float32Array(4));   // sync
+    // blit through to the real (possibly half/byte) state textures
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fb);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, simFB[i]);
+    gl.blitFramebuffer(0, 0, CAP_W, CAP_H, 0, 0, CAP_W, CAP_H, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb); gl.deleteTexture(pb);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  stateCur = 0;
+  trailCur = 0;
+  // clear feedback buffers so stale trails never leak into a fresh seed
+  if (trailFB[0] && sceneFB){
+    for (const f of [trailFB[0], trailFB[1], sceneFB]){
+      gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb);
+      gl.viewport(0, 0, f.w, f.h);
+      gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+}
+buildAnchors(SEED);
+const seedT0 = performance.now();
+seedState();
+const seedMs = performance.now() - seedT0;
+
+/* ==========================================================================
+   6. camera
+   ========================================================================== */
+const cam = {
+  yaw: 0.42, pitch: 0.13, dist: 3.35, tgtY: 0.0,
+  yawV: 0.0, pitchV: 0.0, auto: 1, dragging: false, lx: 0, ly: 0
+};
+const VP = new Float32Array(16);
+function buildVP(){
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const ex = cy * cp * cam.dist, ey = sp * cam.dist + cam.tgtY, ez = sy * cp * cam.dist;
+  // view = lookAt(eye, target, up) then perspective
+  const fx = -ex, fy = -ey, fz = -ez;
+  const fl = Math.hypot(fx, fy, fz) || 1;
+  const f = [fx / fl, fy / fl, fz / fl];
+  let s = [f[2], 0, -f[0]]; const sl = Math.hypot(s[0], s[2]) || 1;
+  s = [s[0] / sl, 0, s[2] / sl];
+  const u = [s[1] * f[2] - s[2] * f[1], s[2] * f[0] - s[0] * f[2], s[0] * f[1] - s[1] * f[0]];
+  const V = [s[0], u[0], -f[0], 0,  s[1], u[1], -f[1], 0,  s[2], u[2], -f[2], 0,
+             -(s[0] * ex + s[1] * ey + s[2] * ez),
+             -(u[0] * ex + u[1] * ey + u[2] * ez),
+              (f[0] * ex + f[1] * ey + f[2] * ez), 1];
+  const fov = 1.02, asp = RW / Math.max(1, RH), near = 0.1, far = 40;
+  const t = 1 / Math.tan(fov / 2);
+  const P = [t / asp, 0, 0, 0,  0, t, 0, 0,  0, 0, (far + near) / (near - far), -1,
+             0, 0, 2 * far * near / (near - far), 0];
+  for (let c = 0; c < 4; c++)
+    for (let r = 0; r < 4; r++){
+      let a = 0;
+      for (let k = 0; k < 4; k++) a += P[k * 4 + r] * V[c * 4 + k];
+      VP[c * 4 + r] = a;
+    }
+  cam.eye = [ex, ey, ez];
+  return t;
+}
+
+/* ==========================================================================
+   7. sizing
+   ========================================================================== */
+let cssW = 0, cssH = 0;
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(320, Math.round(canvas.clientWidth  * dpr));
+  const h = Math.max(240, Math.round(canvas.clientHeight * dpr));
+  if (w === cssW && h === cssH) return;
+  cssW = w; cssH = h;
+  canvas.width = w; canvas.height = h;
+  // Internal resolution scale. A dense additive particle cloud needs RESOLUTION
+  // to read as structure: at 640x400 the individual filaments are simply below
+  // one pixel and the core collapses into a smooth wash. Raising the cap costs
+  // fill rate (the combine pass is the expensive part), which is a good trade.
+  const MAXPX = 1280 * 800;
+  let s = Math.sqrt(MAXPX / (w * h));
+  s = Math.max(0.34, Math.min(1, s));
+  RS = s;
+  allocTargets(Math.max(320, Math.round(w * s)), Math.max(240, Math.round(h * s)));
+}
+window.addEventListener('resize', resize);
+
+/* ==========================================================================
+   8. simulation / render loop
+   ========================================================================== */
+// ---- exposure / post constants -------------------------------------------
+// Tuned against a real capture: total emitted energy is normalised by sprite
+// count (see radianceFor), so these are the only absolute exposure controls.
+// Trail feedback multiplies history by TRAIL_DECAY each frame, so the steady
+// state is 1/(1-TRAIL_DECAY) times the per-frame emission. At 0.86 that is a
+// 7.1x gain -- which alone saturates the frame. Radiance is therefore
+// pre-divided by that factor so the *accumulated* result peaks near 1.0.
+let TRAIL_DECAY  = 0.82;    // per-frame history multiplier
+let TRAIL_GAIN   = 1.0 / (1.0 - TRAIL_DECAY);   // steady-state amplification
+// Chosen by a measured headless sweep (_tools/sweep01.mjs) over
+// radiance x exposure, scoring on tonal spread rather than brightness:
+//   radiance 0.28 / exposure 0.80  -> occupiedBins 48, clipFrac 0
+// Higher radiance looks brighter but collapses the cloud into fewer tonal
+// bands (the "solid white disc"), and clipFrac > 0 destroys filament detail.
+let RADIANCE_SCALE = 0.28;                       // calibration multiplier
+let BLOOM_THRESH   = 0.72;    // luminance above which light blooms
+let BLOOM_KNEE     = 0.30;
+let BLOOM_GAIN     = 0.34;    // scene -> bloom mix weight
+const EXPOSURE_DEFAULT = 0.80;
+let EXPOSURE      = EXPOSURE_DEFAULT;
+let VIGNETTE     = 0.80;
+
+const P = {
+  // With the core now correctly exposed (see RADIANCE_SCALE), more particles
+  // read as resolved structure rather than a blown-out disc, so the default
+  // sits well above the old conservative value.
+  curl: 1.0, drag: 1.3, bloom: 1.0, count: 0.22, strength: 0.85, flash: 1.0,
+  fog: 0.62, cohesion: 0.30, rise: 0.10, lifeRate: 0.11, size: 2.55,
+  trails: true, burstArmed: false, autoQ: true
+};
+// Additive blending SUMS every sprite that covers a pixel, so the core of a
+// dense cloud integrates thousands of contributions. A fixed per-sprite gain
+// therefore saturates to white; dividing by 1/sqrt(N) is not enough. Energy
+// conservation requires radiance ~ 1/N: measured, the peak HDR luminance in
+// the cloud core scales with (gain * N), so we normalise by N and keep the
+// per-sprite value in a range where the tonemap still has detail to resolve.
+// Target overlap: sprites covering a single pixel inside the cloud. Above ~3
+// the additive sum stops resolving individuals; below ~0.6 the cloud is too
+// sparse to read as a mass. Sized with the sprite so the product stays sane.
+const TARGET_OVERLAP = 2.2;
+const SPRITE_AREA   = 7.0;        // ~ pointSize 2.7 bokeh disc
+const CORE_DENSITY  = 1.9;        // peak/average overlap inside the bloom core
+function radianceFor(count, area){
+  // Solve: (gain * overlap) * TRAIL_GAIN ~ 1.0, where overlap is the average
+  // number of sprites covering a pixel and the core is CORE_DENSITY times denser.
+  const g = area / Math.max(1, count * SPRITE_AREA * CORE_DENSITY * TRAIL_GAIN);
+  return Math.min(0.02, Math.max(0.0004, g)) * RADIANCE_SCALE;
+}
+let activeCount = Math.floor(CAPACITY * P.count);
+let simTime = 0, frame = 0, fieldAge = 999, burstAmt = 0, burstPos = [0, 0, 0];
+let warmupMs = 0, ready = false;
+let lumaLast = 0, lumaMax = 0, lumaNonZero = 0, lastStats = null;
+let fpsEMA = 0, frameEMA = 0, simSteps = 0, fieldUpdates = 0;
+let tier = 0;                                   // 0 = full, higher = cheaper
+// Measured on this software rasteriser: the simulation is linear in particle
+// count at roughly 2.2M particles/second, so these caps are the real budget.
+const SIM_RATE = 2200000;                       // particles/sec the solver sustains
+const MAX_ACTIVE = Math.min(CAPACITY, Math.round(SIM_RATE * 0.30));
+const TIERS = [
+  { count: 1.00, every: 1, trails: true,  bloomIters: 2, label: 'full' },
+  { count: 0.70, every: 2, trails: true,  bloomIters: 2, label: 'high' },
+  { count: 0.48, every: 3, trails: true,  bloomIters: 1, label: 'medium' },
+  { count: 0.32, every: 4, trails: true,  bloomIters: 1, label: 'low' },
+  { count: 0.20, every: 6, trails: false, bloomIters: 1, label: 'minimum' }
+];
+let qualityCooldown = 0;
+
+function passProgram(pr, fbo, w, h){
+  gl.useProgram(pr.p);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo ? fbo.fb : null);
+  gl.viewport(0, 0, w, h);
+}
+function drawQuad(){ gl.drawArrays(gl.TRIANGLES, 0, 3); }
+function tex(unit, t){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
+
+function stepField(dt){
+  passProgram(fieldPr, fieldFB, fieldFB.w, fieldFB.h);
+  bindQuad(fieldPr);
+  gl.uniform1f(fieldPr.u.uTime, simTime);
+  gl.uniform1f(fieldPr.u.uTile, FIELD_SIDE);
+  gl.uniform1f(fieldPr.u.uSlices, FIELD_SLICES);
+  gl.uniform1f(fieldPr.u.uScale, P.curl);
+  gl.uniform1f(fieldPr.u.uFlow, 1.0);
+  drawQuad();
+  fieldUpdates++;
+}
+function stepSim(dt){
+  const src = state[stateCur], dst = state[1 - stateCur];
+  passProgram(simPr, simFB[1 - stateCur], CAP_W, CAP_H);
+  bindIndex(simPr);
+  tex(0, src.pos.tex); tex(1, src.vel.tex); tex(2, fieldFB.tex); tex(3, anchorFB.tex);
+  gl.uniform1i(simPr.u.uPos, 0); gl.uniform1i(simPr.u.uVel, 1);
+  gl.uniform1i(simPr.u.uField, 2); gl.uniform1i(simPr.u.uAnchor, 3);
+  gl.uniform1f(simPr.u.uDt, dt);
+  gl.uniform1f(simPr.u.uDrag, P.drag);
+  gl.uniform1f(simPr.u.uCurl, P.strength);
+  gl.uniform1f(simPr.u.uCohesion, P.cohesion);
+  gl.uniform1f(simPr.u.uRise, P.rise);
+  gl.uniform1f(simPr.u.uLifeRate, P.lifeRate);
+  gl.uniform1f(simPr.u.uFieldSize, FIELD_TEX);
+  gl.uniform1f(simPr.u.uTile, FIELD_SIDE);
+  gl.uniform1f(simPr.u.uSlices, FIELD_SLICES);
+  gl.uniform1f(simPr.u.uBurst, burstAmt);
+  gl.uniform3f(simPr.u.uBurstPos, burstPos[0], burstPos[1], burstPos[2]);
+  gl.drawArrays(gl.POINTS, 0, activeCount);
+  stateCur = 1 - stateCur;
+  simSteps++;
+}
+function drawParticles(){
+  // pixels per world unit at unit depth, in *internal* pixels
+  const projScale = (sceneFB.h * 0.5) / Math.tan(1.02 * 0.5);
+  passProgram(drawPr, sceneFB, sceneFB.w, sceneFB.h);
+  bindIndex(drawPr);
+  tex(0, state[stateCur].pos.tex); tex(1, state[stateCur].vel.tex);
+  gl.uniform1i(drawPr.u.uPos, 0); gl.uniform1i(drawPr.u.uVel, 1);
+  gl.uniformMatrix4fv(drawPr.u.uViewProj, false, VP);
+  gl.uniform3f(drawPr.u.uCam, cam.eye[0], cam.eye[1], cam.eye[2]);
+  gl.uniform1f(drawPr.u.uProjScale, projScale);
+  gl.uniform1f(drawPr.u.uSize, P.size);
+  gl.uniform1f(drawPr.u.uFog, P.fog);
+  gl.uniform1f(drawPr.u.uFlash, P.flash);
+  gl.uniform1f(drawPr.u.uTime, simTime);
+  gl.uniform1f(drawPr.u.uGain, radianceFor(activeCount, sceneFB.w * sceneFB.h));
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.POINTS, 0, activeCount);
+  gl.disable(gl.BLEND);
+}
+function utilPass(mode, srcTex, dstFB, decay, thresh, knee, scale){
+  passProgram(utilPr, dstFB, dstFB.w, dstFB.h);
+  bindQuad(utilPr);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.uniform1i(utilPr.u.uA, 0); gl.uniform1i(utilPr.u.uB, 1);
+  gl.uniform1i(utilPr.u.uMode, mode);
+  gl.uniform1f(utilPr.u.uDecay, decay || 0);
+  gl.uniform1f(utilPr.u.uThreshold, thresh || 0);
+  gl.uniform1f(utilPr.u.uKnee, knee || 0.0001);
+  gl.uniform1f(utilPr.u.uScale, scale || 0);
+  drawQuad();
+}
+const FIXED_DT = 1 / 60;
+
+function trailPass(){
+  const T = TIERS[tier];
+  if (!(P.trails && T.trails)) return sceneFB.tex;
+  const dst = 1 - trailCur, src = trailCur;
+  passProgram(utilPr, trailFB[dst], trailFB[dst].w, trailFB[dst].h);
+  bindQuad(utilPr);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, trailFB[src].tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, sceneFB.tex);
+  gl.uniform1i(utilPr.u.uA, 0); gl.uniform1i(utilPr.u.uB, 1);
+  gl.uniform1i(utilPr.u.uMode, 0);
+  gl.uniform1f(utilPr.u.uDecay, TRAIL_DECAY);
+  drawQuad();
+  trailCur = dst;
+  return trailFB[dst].tex;
+}
+function bloomPass(){
+  const T = TIERS[tier];
+  const bw = bloomFB[0].w, bh = bloomFB[0].h;
+  utilPass(1, (P.trails && T.trails) ? trailFB[trailCur].tex : sceneFB.tex,
+           bloomFB[0], 0, BLOOM_THRESH, BLOOM_KNEE, 0);
+  for (let i = 0; i < T.bloomIters; i++){
+    utilPass(2, bloomFB[0].tex, bloomFB[1], 0, 0, 0, 1 / bw);
+    utilPass(3, bloomFB[1].tex, bloomFB[2], 0, 0, 0, 1 / bh);
+    if (i + 1 < T.bloomIters){                     // second octave: wide soft halo
+      utilPass(2, bloomFB[2].tex, bloomFB[3], 0, 0, 0, 2.6 / bw);
+      utilPass(3, bloomFB[3].tex, bloomFB[2], 0, 0, 0, 2.6 / bh);
+    }
+  }
+  return bloomFB[2].tex;
+}
+function combinePass(sceneTex, bloomTex){
+  passProgram(combinePr, ldrFB, ldrFB.w, ldrFB.h);
+  bindQuad(combinePr);
+  tex(0, sceneTex); tex(1, bloomTex);
+  gl.uniform1i(combinePr.u.uScene, 0); gl.uniform1i(combinePr.u.uBloom, 1);
+  gl.uniform1f(combinePr.u.uBloomI, P.bloom * BLOOM_GAIN);
+  gl.uniform1f(combinePr.u.uExposure, EXPOSURE);
+  gl.uniform1f(combinePr.u.uTime, simTime);
+  gl.uniform1f(combinePr.u.uVignette, VIGNETTE);
+  gl.uniform2f(combinePr.u.uAspect, 1.15, 1.0);
+  drawQuad();
+}
+function presentPass(){
+  passProgram(presentPr, null, cssW, cssH);
+  bindQuad(presentPr);
+  tex(0, ldrFB.tex);
+  gl.uniform1i(presentPr.u.uA, 0);
+  drawQuad();
+}
+
+function renderFrame(dt, substeps){
+  const T = TIERS[tier];
+  // Clamp the integration step: a 2s frame gap must not push the solver into
+  // a huge step that overshoots the anchors and destabilises the flow.
+  const sdt = Math.min(dt, 1 / 30);
+  for (let s = 0; s < substeps; s++){
+    if (fieldAge >= T.every) stepField(sdt);
+    fieldAge++;
+    stepSim(sdt);
+    simTime += sdt;
+  }
+  if (burstAmt > 0) burstAmt = Math.max(0, burstAmt - dt * 1.6);
+
+  buildVP();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFB.fb);
+  gl.viewport(0, 0, sceneFB.w, sceneFB.h);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  drawParticles();
+  const sceneTex = trailPass();
+  const bloomTex = bloomPass();
+  combinePass(sceneTex, bloomTex);
+  presentPass();
+  frame++;
+}
+
+/* ==========================================================================
+   9. readiness, probe, main loop
+   ========================================================================== */
+function probe(){
+  return {
+    fps: +fpsEMA.toFixed(2),
+    msPerFrame: +frameEMA.toFixed(2),
+    particles: activeCount,
+    particleCapacity: CAPACITY,
+    stateTexels: CAP_W * CAP_H,
+    framesRendered: frame,
+    simSteps: simSteps,
+    fieldUpdates: fieldUpdates,
+    renderScale: +RS.toFixed(3),
+    internalWidth: RW, internalHeight: RH,
+    stateFormat: F32.name, hdrFormat: HDR.name,
+    floatColorBuffer: !!EXT_CBF, halfFloatColorBuffer: !!EXT_CBF || !!EXT_CBHF,
+    qualityTier: tier, qualityLabel: TIERS[tier].label,
+    trails: !!P.trails && TIERS[tier].trails,
+    curlScale: +P.curl.toFixed(3), drag: +P.drag.toFixed(3),
+    bloomIntensity: +P.bloom.toFixed(3), curlStrength: +P.strength.toFixed(3),
+    fieldSlices: FIELD_SLICES, fieldSide: FIELD_SIDE,
+    warmupMs: +warmupMs.toFixed(1), seedMs: +seedMs.toFixed(1), seed: SEED, simTime: +simTime.toFixed(3),
+    stageMs: stageMs,
+    luma: +lumaLast.toFixed(2), lumaMax: +lumaMax.toFixed(1), lumaNonZeroSamples: lumaNonZero,
+    ldr: lastStats,
+    perSpriteRadiance: +radianceFor(activeCount, RW * RH).toFixed(5),
+    renderer: (function(){ const d = gl.getExtension('WEBGL_debug_renderer_info');
+      return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER)); })(),
+    glError: gl.getError()
+  };
+}
+
+// Full-image statistics from ONE bulk readPixels of the RGBA8 LDR target.
+// This is the objective exposure check: if the frame were a blown-out white
+// disc, clipFrac would be large and the background would not be dark.
+function ldrStats(){
+  const w = ldrFB.w, h = ldrFB.h;
+  const buf = new Uint8Array(w * h * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, ldrFB.fb);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let clip = 0, bright = 0, dark = 0, sum = 0;
+  const hist = new Uint32Array(64);
+  for (let i = 0; i < w * h; i++){
+    const l = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2];
+    sum += l;
+    hist[l >> 2]++;
+    if (l > 250) clip++;
+    if (l > 96) bright++;
+    if (l < 40) dark++;
+  }
+  const n = w * h;
+  return { mean: +(sum / n).toFixed(2),
+           clipFrac: +(100 * clip / n).toFixed(2),
+           brightFrac: +(100 * bright / n).toFixed(2),
+           darkFrac: +(100 * dark / n).toFixed(2),
+           occupiedBins: hist.filter(v => v > n * 0.00002).length };
+}
+
+// mean luminance of the composed frame, read from the LDR target (reading the
+// default framebuffer is unreliable after a swap under ANGLE) — this is the
+// evidence that real, non-trivial pixels exist before we claim readiness.
+function measureLuma(){
+  const w = 16, h = 16;
+  const buf = new Uint8Array(w * h * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, ldrFB.fb);
+  gl.readPixels((ldrFB.w - w) >> 1, (ldrFB.h - h) >> 1, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let s = 0, mx = 0, nz = 0;
+  for (let i = 0; i < w * h; i++){
+    const l = 0.2126 * buf[i * 4] + 0.7152 * buf[i * 4 + 1] + 0.0722 * buf[i * 4 + 2];
+    s += l; if (l > mx) mx = l; if (l > 2) nz++;
+  }
+  lumaLast = s / (w * h);
+  lumaMax = mx;
+  lumaNonZero = nz;
+  return lumaLast;
+}
+
+function warmup(frames, stepsPerFrame){
+  const t0 = performance.now();
+  const marks = { sim:0, draw:0, trail:0, bloom:0, combine:0, present:0, field:0 };
+  for (let i = 0; i < frames; i++){
+    let a = performance.now();
+    const T = TIERS[tier];
+    for (let s = 0; s < (stepsPerFrame || 3); s++){
+      if (fieldAge >= T.every){ stepField(dt0); fieldMarks += 1; }
+      fieldAge++;
+      stepSim(dt0);
+      simTime += dt0;
+    }
+    marks.sim += performance.now() - a;
+    a = performance.now();
+    buildVP();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFB.fb);
+    gl.viewport(0, 0, sceneFB.w, sceneFB.h);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    drawParticles();
+    marks.draw += performance.now() - a;
+    a = performance.now();
+    const sceneTex = trailPass();
+    marks.trail += performance.now() - a;
+    a = performance.now();
+    const bloomTex = bloomPass();
+    marks.bloom += performance.now() - a;
+    a = performance.now();
+    combinePass(sceneTex, bloomTex);
+    marks.combine += performance.now() - a;
+    a = performance.now();
+    presentPass();
+    marks.present += performance.now() - a;
+    frame++;
+  }
+  // hard sync: forces the whole pipeline to actually complete before timing
+  gl.bindFramebuffer(gl.FRAMEBUFFER, ldrFB.fb);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  warmupMs = performance.now() - t0;
+  lastStats = ldrStats();
+  const per = k => +(marks[k] / frames).toFixed(2);
+  stageMs = { sim:per('sim'), draw:per('draw'), trail:per('trail'),
+              bloom:per('bloom'), combine:per('combine'), present:per('present'),
+              totalPerFrame:+(warmupMs / frames).toFixed(2) };
+}
+const dt0 = 1 / 60;
+let stageMs = null, fieldMarks = 0;
+
+let last = 0, acc = 0, pendingSub = 0;
+function loop(now){
+  requestAnimationFrame(loop);
+  if (!last){ last = now; return; }
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.25) dt = 0.25;                       // avoid spiral of death
+  if (dt <= 0) return;
+
+  const t0 = performance.now();
+
+  // Fixed-step accumulator, but hard-capped at ONE substep: a long frame must
+  // never be "paid back" with more simulation work, or we death-spiral (the
+  // sim is linear in particle count, so payback is unbounded). Sim time is
+  // clamped instead, so the motion stays smooth without extra GPU cost.
+  acc += dt;
+  let steps = 1;
+  if (acc >= FIXED_DT){ acc = Math.min(acc - FIXED_DT, FIXED_DT); } else acc = 0;
+  pendingSub = steps;
+
+  // slow automatic camera orbit + eased user input
+  if (cam.auto && !cam.dragging) cam.yaw += dt * 0.055;
+  if (cam.dragging){ cam.yaw += cam.yawV; cam.pitch = Math.max(-1.2, Math.min(1.2, cam.pitch + cam.pitchV)); }
+  cam.yawV *= 0.86; cam.pitchV *= 0.86;
+
+  renderFrame(dt, Math.max(1, steps));
+
+  const ms = performance.now() - t0;
+  frameEMA = frameEMA ? frameEMA * 0.88 + ms * 0.12 : ms;
+  fpsEMA = frameEMA > 0.01 ? 1000 / frameEMA : 0;
+
+  // ---- adaptive quality: react to measured frame time only
+  if (P.autoQ){
+    qualityCooldown -= dt;
+    if (qualityCooldown <= 0 && frameEMA > 0){
+      if (frameEMA > 62 && tier < TIERS.length - 1){
+        tier++; applyTier(); qualityCooldown = 1.2;
+      } else if (frameEMA < 19 && tier > 0){
+        tier--; applyTier(); qualityCooldown = 2.5;
+      } else qualityCooldown = 0.5;
+    }
+  }
+
+  // ---- HUD
+  hudT += dt;
+  if (hudT > 0.25){
+    lastStats = ldrStats();
+    hudT = 0;
+    el.pFps.textContent = fpsEMA.toFixed(fpsEMA < 10 ? 1 : 0);
+    el.pMs.textContent = frameEMA.toFixed(1);
+    el.pCount.textContent = fmtCount(activeCount);
+    el.pTier.textContent = 'quality ' + TIERS[tier].label;
+    el.pFmt.textContent = 'state ' + F32.name;
+    el.pWarm.textContent = 'warmup ' + warmupMs.toFixed(0) + 'ms';
+  }
+  if (!ready){
+    if (frame > 2){
+      const l = measureLuma();
+      if (l > 0.25 && lumaNonZero > 8){
+        ready = true; window.__probe = probe(); window.__ready = true;
+      } else if (frame % 30 === 0){
+        window.__probe = probe();     // still not ready: expose what we know
+      }
+    }
+  } else {
+    window.__probe = probe();
+  }
+}
+let hudT = 0;
+function applyTier(){
+  const T = TIERS[tier];
+  activeCount = Math.max(1024, Math.min(MAX_ACTIVE, Math.floor(CAPACITY * P.count * T.count)));
+  if (!T.trails) P.trails = false;
+  el.bTrails.setAttribute('aria-pressed', String(!!P.trails && T.trails));
+  el.pTier.textContent = 'quality ' + T.label;
+}
+function fmtCount(n){
+  return n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : Math.round(n / 1000) + 'k';
+}
+
+/* ==========================================================================
+   10. controls
+   ========================================================================== */
+const el = {};
+['pFps','pMs','pCount','pTier','pFmt','pWarm','bTrails','bBurst','bAuto','bReset',
+ 'rCurlTxt','rStateTxt','rFlashTxt','rFogTxt','vCurl','vDrag','vBloom','vCount','vStr','vFlash',
+ 'sCurl','sDrag','sBloom','sCount','sStr','sFlash'].forEach(id => el[id] = document.getElementById(id));
+
+function slider(node, label, fmt, apply){
+  const upd = () => {
+    const v = parseFloat(node.value);
+    node.style.setProperty('--p', ((v - node.min) / (node.max - node.min) * 100).toFixed(1) + '%');
+    el[label].textContent = fmt(v);
+    apply(v);
+  };
+  node.addEventListener('input', upd);
+  upd();
+}
+slider(el.sCurl, 'vCurl', v => v.toFixed(2), v => { P.curl = v; el.rCurlTxt.textContent = (2.5 * v).toFixed(1) + '\u00d7' + (2.5 * v).toFixed(1) + '\u00d74'; });
+slider(el.sDrag, 'vDrag', v => v.toFixed(2), v => P.drag = v);
+slider(el.sBloom, 'vBloom', v => v.toFixed(2), v => P.bloom = v);
+slider(el.sCount, 'vCount', v => fmtCount(Math.floor(CAPACITY * v)), v => { P.count = v; applyTier(); });
+slider(el.sStr, 'vStr', v => v.toFixed(2), v => P.strength = v);
+slider(el.sFlash, 'vFlash', v => v.toFixed(2), v => { P.flash = v; el.rFlashTxt.textContent = v.toFixed(1); });
+
+el.bTrails.addEventListener('click', () => {
+  P.trails = !P.trails;
+  el.bTrails.setAttribute('aria-pressed', String(P.trails && TIERS[tier].trails));
+});
+el.bBurst.addEventListener('click', e => { e.stopPropagation(); fireBurst(); });
+el.bAuto.addEventListener('click', () => { P.autoQ = !P.autoQ; el.bAuto.setAttribute('aria-pressed', String(P.autoQ)); });
+el.bReset.addEventListener('click', e => { e.stopPropagation(); reseed(); });
+document.querySelectorAll('.panel').forEach(p => p.addEventListener('pointerdown', e => e.stopPropagation()));
+
+function fireBurst(){
+  burstPos = [0, 0, 0];
+  burstAmt = 1.0;
+  P.flash = Math.min(3, P.flash + 0.7);
+  el.sFlash.value = P.flash; el.sFlash.dispatchEvent(new Event('input'));
+}
+function reseed(){
+  SEED = SEEDS[(SEEDS.indexOf(SEED) + 1) % SEEDS.length];
+  buildAnchors(SEED); seedState();
+}
+function pickBurst(x, y){
+  // unproject the click onto the z=0 plane through the bloom centre
+  const ndc = [x / cssW * 2 - 1, 1 - y / cssH * 2];
+  const asp = RW / Math.max(1, RH), t = 1 / Math.tan(1.02 / 2);
+  const dx = ndc[0] * asp / t, dy = ndc[1] / t;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const rx = cy * cp, ry = sp, rz = sy * cp;
+  const ux = -sy, uy = 0, uz = cy;
+  const fx = -rx, fy = -ry, fz = -rz;
+  const denom = fx * dx + fy * dy + fz * 1.0;
+  let k = cam.dist / Math.max(1e-4, denom);
+  k = Math.max(0.4, Math.min(6, k));
+  burstPos = [rx * k, ry * k + cam.tgtY, rz * k];
+  burstAmt = 1.0;
+}
+let downX = 0, downY = 0, downT = 0;
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  cam.dragging = true; downX = e.clientX; downY = e.clientY; downT = performance.now();
+  canvas.classList.add('drag');
+});
+canvas.addEventListener('pointermove', e => {
+  if (!cam.dragging) return;
+  const dx = e.clientX - downX, dy = e.clientY - downY;
+  downX = e.clientX; downY = e.clientY;
+  cam.yawV += dx * 0.0022; cam.pitchV += dy * 0.0016;
+});
+canvas.addEventListener('pointerup', e => {
+  cam.dragging = false; canvas.classList.remove('drag');
+  if (performance.now() - downT < 260) pickBurst(e.clientX, e.clientY);
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.dist = Math.max(1.6, Math.min(7.5, cam.dist + e.deltaY * 0.0016));
+}, { passive: false });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); fireBurst(); }
+  else if (e.key === 'h' || e.key === 'H'){
+    ['hud','ctl','perf'].forEach(id => document.getElementById(id).style.display =
+      document.getElementById(id).style.display === 'none' ? '' : 'none');
+  }
+  else if (e.key === 'r' || e.key === 'R') reseed();
+});
+
+/* ==========================================================================
+   10b. calibration hook (headless tuning / automated exposure check)
+   ========================================================================== */
+window.__plankton = {
+  // Retune exposure without a reload and re-render one frame synchronously.
+  tune(o){
+    if (o.exposure !== undefined) EXPOSURE = o.exposure;
+    if (o.bloom !== undefined)      BLOOM_GAIN = o.bloom;
+    if (o.bloomThreshold !== undefined) BLOOM_THRESH = o.bloomThreshold;
+    if (o.trailDecay !== undefined) TRAIL_DECAY = o.trailDecay;
+    if (o.radiance !== undefined)   RADIANCE_SCALE = o.radiance;
+    if (o.count !== undefined){ P.count = o.count; applyTier(); }
+    if (o.trails !== undefined)    P.trails = !!o.trails;
+    renderFrame(1 / 60, 1);
+    lastStats = ldrStats();
+    return lastStats;
+  },
+  probe, stats: () => lastStats
+};
+
+/* ==========================================================================
+   11. go
+   ========================================================================== */
+el.rStateTxt.textContent = F32.name;
+el.rFogTxt.textContent = P.fog.toFixed(2);
+applyTier();
+resize();
+// Seed the feedback buffer + develop the bloom before announcing readiness.
+// Each warmup frame runs several fixed sim steps so the cloud is developed
+// without paying for dozens of full post-processing passes.
+warmup(10, 4);
+requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
+
+// ---- optional headless exposure calibration (?expsweep=1) ----------------
+if (/[?&]expsweep=1/.test(location.search)){
+  window.__expSweep = [];
+  const sweepWhenReady = setInterval(() => {
+    if (!ready) return;
+    clearInterval(sweepWhenReady);
+    const grid = [];
+    for (const radiance of [1, 3, 8])
+      for (const exposure of [0.8, 1.5, 2.4])
+        grid.push({ radiance, exposure, bloom: BLOOM_GAIN,
+                    bloomThreshold: BLOOM_THRESH, trailDecay: TRAIL_DECAY });
+    const results = [];
+    for (const g of grid){
+      RADIANCE_SCALE = g.radiance;
+      EXPOSURE = g.exposure;
+      for (let i = 0; i < 2; i++) renderFrame(1 / 60, 1);   // settle the feedback
+      results.push(Object.assign({}, g, ldrStats()));
+    }
+    window.__expSweep = results;
+    // leave the demo on the most promising setting
+    RADIANCE_SCALE = 1; EXPOSURE = EXPOSURE_DEFAULT;
+  }, 200);
+}
+
+})();
+</script>
+</body>
+</html>

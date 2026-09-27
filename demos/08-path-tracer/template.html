@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Material Lab — progressive GPU path tracer</title>
+<style>
+  :root{
+    --bg:#0a0b0e; --panel:rgba(18,20,26,.82); --line:rgba(255,255,255,.10);
+    --ink:#e8eaf0; --dim:#8b93a7; --accent:#7cd4ff; --accent2:#ffb37c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;-webkit-font-smoothing:antialiased}
+  #wrap{position:fixed;inset:0}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;background:#000}
+  /* vignette + subtle scanline to sell the "instrument" feel */
+  #vignette{position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 45%,transparent 45%,rgba(0,0,0,.55) 100%)}
+  .panel{position:absolute;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 8px 30px rgba(0,0,0,.45)}
+  #hud{left:14px;top:14px;padding:11px 14px;min-width:232px}
+  #hud h1{margin:0 0 2px;font-size:13px;letter-spacing:.02em;font-weight:650}
+  #hud .sub{color:var(--dim);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+  .row{display:flex;justify-content:space-between;gap:14px;margin-top:5px;font-size:11.5px}
+  .row span:first-child{color:var(--dim)}
+  .row span:last-child{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  #ctl{right:14px;top:14px;padding:12px 14px;width:250px}
+  #ctl h2{margin:0 0 9px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  .grp{margin-bottom:11px}
+  .grp>label{display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px;color:var(--dim)}
+  .grp>label b{color:var(--ink);font-weight:500;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  input[type=range]{width:100%;height:3px;-webkit-appearance:none;appearance:none;
+    background:linear-gradient(90deg,var(--accent) 0%,var(--accent) var(--p,50%),rgba(255,255,255,.14) var(--p,50%));
+    border-radius:2px;outline:none;margin:0 0 9px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+    background:#fff;cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.6)}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:#fff;cursor:pointer}
+  .btns{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+  button{flex:1 1 auto;min-width:60px;padding:5px 7px;font:inherit;font-size:11px;cursor:pointer;
+    color:var(--ink);background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:6px;
+    transition:background .13s,border-color .13s}
+  button:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.2)}
+  button.on{background:rgba(124,212,255,.17);border-color:rgba(124,212,255,.45);color:#d9f2ff}
+  .swatches{display:flex;gap:5px;flex-wrap:wrap}
+  .sw{width:23px;height:23px;border-radius:5px;border:1px solid var(--line);cursor:pointer;position:relative}
+  .sw:hover{border-color:#fff}
+  .sw.sel{outline:2px solid var(--accent);outline-offset:1px}
+  #legend{left:14px;bottom:14px;padding:10px 13px;max-width:340px}
+  #legend h2{margin:0 0 6px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);font-weight:600}
+  #legend p{margin:0 0 5px;font-size:11.5px;color:#c3c9d8}
+  kbd{display:inline-block;padding:1px 5px;border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:4px;background:rgba(255,255,255,.06);font:10.5px ui-monospace,Menlo,monospace;color:var(--ink)}
+  #probe{position:absolute;left:-9999px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="vignette"></div>
+
+  <div class="panel" id="hud">
+    <h1>Material Lab</h1>
+    <div class="sub">progressive gpu path tracer</div>
+    <div class="row"><span>samples / pixel</span><span id="h-spp">0</span></div>
+    <div class="row"><span>resolution</span><span id="h-res">—</span></div>
+    <div class="row"><span>last sample</span><span id="h-ms">—</span></div>
+    <div class="row"><span>light transport</span><span id="h-transport">—</span></div>
+  </div>
+
+  <div class="panel" id="ctl">
+    <h2>Environment</h2>
+    <div class="btns" id="env-btns"></div>
+
+    <h2>Camera &amp; sampling</h2>
+    <div class="grp"><label>exposure <b id="v-exp">1.00</b></label>
+      <input type="range" id="s-exp" min="-2.5" max="2.5" step="0.01" value="0"></div>
+    <div class="grp"><label>key light rotation <b id="v-rot">0°</b></label>
+      <input type="range" id="s-rot" min="0" max="360" step="1" value="0"></div>
+    <div class="grp"><label>max bounces <b id="v-bnc">5</b></label>
+      <input type="range" id="s-bnc" min="1" max="8" step="1" value="5"></div>
+    <div class="grp"><label>environment intensity <b id="v-int">1.00</b></label>
+      <input type="range" id="s-int" min="0" max="3" step="0.01" value="1"></div>
+    <div class="grp"><label>floor roughness <b id="v-fr">0.10</b></label>
+      <input type="range" id="s-fr" min="0" max="0.6" step="0.005" value="0.10"></div>
+
+    <h2>Selected object</h2>
+    <div class="row" style="margin-bottom:6px"><span>material</span><span id="h-mat">—</span></div>
+    <div class="swatches" id="mats"></div>
+    <div class="btns" style="margin-top:8px">
+      <button id="b-shuffle">shuffle</button>
+      <button id="b-spin">spin</button>
+      <button id="b-reset">reset</button>
+    </div>
+  </div>
+
+  <div class="panel" id="legend">
+    <h2>What you're looking at</h2>
+    <p>Unidirectional path tracing, one sample per pixel per frame, accumulated into a float
+       buffer. Direct lighting is <b>next-event estimated</b> against the HDR environment with
+       a luminance-CDF importance sampler, combined with BSDF sampling via MIS, so the image
+       converges in tens of samples rather than thousands.</p>
+    <p><kbd>drag</kbd> orbit &nbsp; <kbd>scroll</kbd> dolly &nbsp; <kbd>click</kbd> select
+       &nbsp; <kbd>[</kbd> <kbd>]</kbd> cycle material &nbsp; <kbd>space</kbd> pause &nbsp;
+       <kbd>r</kbd> reset accumulation</p>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================================
+   Material Lab — a progressive unidirectional path tracer in WebGL2.
+
+   Pipeline per sample:
+     1. path-trace 1 sample/pixel  -> accumulate into an RGBA32F ping-pong buffer
+     2. present pass: divide by sample count, ACES filmic tonemap, sRGB
+   Lighting uses next-event estimation against an importance-sampled HDR
+   environment (CDF built on the CPU from the decoded .hdr), MIS-combined with
+   BSDF sampling. That is why it converges fast on a software rasterizer.
+   ========================================================================== */
+
+// ---- decoded HDR environments + importance-sampling CDFs (injected) --------
+const ENV = __ENV_DATA__;   // {name, w, h, rgb:Float32Array, cdf:Float32Array, cw, ch}
+
+const MATS = [
+  { name: "chrome",     sw: "#c9d2dc" },
+  { name: "gold",       sw: "#e6b44a" },
+  { name: "copper",     sw: "#c87137" },
+  { name: "silver",     sw: "#eef1f5" },
+  { name: "blue steel", sw: "#5b8ad6" },
+  { name: "glass",      sw: "#7cd4ff" },
+  { name: "rubber",     sw: "#2a2d33" },
+  { name: "porcelain",  sw: "#f2ece2" },
+  { name: "jade",       sw: "#3fae7e" },
+  { name: "anodised",   sw: "#b06ad6" },
+];
+
+// ---- scene: a still life of spheres + a torus on a reflective floor --------
+const SPHERES = [
+  { p: [-2.00, 0.70,  0.00], r: 0.70, m: 0 },
+  { p: [-0.60, 0.55,  0.10], r: 0.55, m: 1 },
+  { p: [ 0.90, 0.62,  0.00], r: 0.62, m: 2 },
+  { p: [ 2.20, 0.45, -0.10], r: 0.45, m: 5 },
+  { p: [-1.20, 0.35, -1.35], r: 0.35, m: 3 },
+  { p: [ 0.35, 0.30, -1.50], r: 0.30, m: 7 },
+  { p: [ 1.75, 0.33, -1.25], r: 0.33, m: 6 },
+];
+const TORUS = { p: [0.0, 0.16, 1.60], R: 0.45, r: 0.16, m: 0 };
+
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl2", { antialias:false, preserveDrawingBuffer:true, alpha:false });
+if (!gl) { document.body.textContent = "WebGL2 unavailable"; throw new Error("no webgl2"); }
+gl.getExtension("EXT_color_buffer_float");
+gl.getExtension("OES_texture_float_linear");
+
+// ---- shaders ----------------------------------------------------------------
+const VS = `#version 300 es
+void main(){ vec2 q = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+             gl_Position = vec4(q * 2.0 - 1.0, 0.0, 1.0); }`;
+
+const TRACE_FS = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+
+out vec4 outColor;
+
+uniform sampler2D uEnv;      // equirectangular HDR, RGB float
+uniform sampler2D uCdf;      // 1D luminance-CDF for importance sampling
+uniform sampler2D uAccum;    // previous accumulation buffer (add to it)
+uniform vec2  uRes;
+uniform int   uSeed;
+uniform int   uBounces;
+uniform float uTanHalf;
+uniform mat3  uCam;          // columns: right, up, forward
+uniform vec3  uCamPos;
+uniform float uEnvRot;
+uniform float uEnvInt;
+uniform float uFloorRough;
+uniform int   uSpheres[SPH_COUNT];
+uniform vec4  uSphereData[SPH_COUNT];   // xyz = centre, w = radius
+uniform int   uSphereMat[SPH_COUNT];
+uniform vec4  uTorus;        // xyz = centre, w = major radius
+uniform float uTorusR;       // tube radius
+uniform int   uTorusMat;
+
+#define PI 3.14159265359
+
+// ---------------------------------------------------------------- rng
+uint rngState;
+uint hashU(uint x){ x^=x>>16; x*=0x7feb352du; x^=x>>15; x*=0x846ca68bu; x^=x>>16; return x; }
+float rnd(){
+  rngState = rngState * 747796405u + 2891336453u;
+  uint r = ((rngState >> ((rngState >> 28) + 4u)) ^ rngState) * 277803737u;
+  return float((r >> 22) ^ r) * 2.3283064365386963e-10;
+}
+vec2 rnd2(){ return vec2(rnd(), rnd()); }
+
+// ------------------------------------------------------- equirect mapping
+vec2 dirToEquirect(vec3 d){
+  float theta = acos(clamp(d.y, -1.0, 1.0));
+  float phi   = atan(d.x, d.z);
+  return vec2(phi / (2.0 * PI) + 0.5, theta / PI);
+}
+vec3 equirectToDir(vec2 uv){
+  float phi   = (uv.x - 0.5) * 2.0 * PI;
+  float theta = uv.y * PI;
+  float st = sin(theta);
+  return vec3(st * sin(phi), cos(theta), st * cos(phi));
+}
+vec3 envLookup(vec3 d){
+  d = normalize(d);
+  float c = cos(uEnvRot), s = sin(uEnvRot);
+  d = vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
+  vec2 uv = dirToEquirect(d);
+  // seam-safe: mirror u on the far side instead of clamping
+  float u = uv.x;
+  if (u < 0.0) u = -u;
+  if (u > 1.0) u = 2.0 - u;
+  return texture(uEnv, vec2(u, clamp(uv.y, 0.002, 0.998))).rgb * uEnvInt;
+}
+// pdf of sampling direction d from the CDF importance sampler
+// (note: never use a backtick inside these GLSL template literals)
+float envPdf(vec3 d){
+  d = normalize(d);
+  float c = cos(uEnvRot), s = sin(uEnvRot);
+  vec3 r = vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
+  vec2 uv = dirToEquirect(r);
+  if (uv.x < 0.0 || uv.x > 1.0) return 0.0;
+  int ix = clamp(int(uv.x * float(CDF_W)), 0, CDF_W - 1);
+  int iy = clamp(int(uv.y * float(CDF_H)), 0, CDF_H - 1);
+  int idx = iy * CDF_W + ix;
+  float p0 = texelFetch(uCdf, ivec2(idx, 0), 0).r;
+  float p1 = texelFetch(uCdf, ivec2(idx + 1, 0), 0).r;
+  float pCell = max(p1 - p0, 1e-9);
+  float sinT = max(sqrt(max(1.0 - r.y * r.y, 0.0)), 1e-4);
+  return pCell * (float(CDF_W) * float(CDF_H)) / (2.0 * PI * PI) / sinT;
+}
+// draw a direction from the importance distribution
+vec3 envSample(){
+  float xi = rnd();
+  int lo = 0, hi = CDF_N - 1;
+  for (int it = 0; it < 20; ++it){
+    if (lo >= hi) break;
+    int mid = (lo + hi) >> 1;
+    if (texelFetch(uCdf, ivec2(mid, 0), 0).r < xi) lo = mid + 1; else hi = mid;
+  }
+  int idx = min(lo, CDF_N - 1);
+  vec2 cell = vec2(float(idx % CDF_W), float(idx / CDF_W));
+  vec2 uv = (cell + rnd2()) / vec2(float(CDF_W), float(CDF_H));
+  return equirectToDir(uv);
+}
+
+// ---------------------------------------------------------------- surfaces
+struct Surf { vec3 albedo; vec3 f0; float rough; bool metal; bool glass; float ior; };
+
+Surf getSurf(int m, vec3 p){
+  Surf s;
+  s.metal = false; s.glass = false; s.rough = 0.08; s.ior = 1.5;
+  s.albedo = vec3(0.8); s.f0 = vec3(0.04);
+  if (m == 0){ s.metal = true; s.albedo = vec3(0.95,0.96,0.98); s.f0 = s.albedo; s.rough = 0.035; }  // chrome
+  else if (m == 1){ s.metal = true; s.albedo = vec3(1.00,0.74,0.34); s.f0 = s.albedo; s.rough = 0.10; }  // gold
+  else if (m == 2){ s.metal = true; s.albedo = vec3(0.96,0.56,0.36); s.f0 = s.albedo; s.rough = 0.13; }  // copper
+  else if (m == 3){ s.metal = true; s.albedo = vec3(0.94,0.95,0.97); s.f0 = s.albedo; s.rough = 0.22; }  // silver
+  else if (m == 4){ s.metal = true; s.albedo = vec3(0.42,0.58,0.86); s.f0 = s.albedo; s.rough = 0.14; }  // blue steel
+  else if (m == 5){ s.glass = true; s.ior = 1.52; s.rough = 0.0; s.albedo = vec3(1.0); }            // glass
+  else if (m == 6){ s.albedo = vec3(0.055); s.f0 = vec3(0.04); s.rough = 0.85; }                     // rubber
+  else if (m == 7){ s.albedo = vec3(0.90,0.88,0.83); s.f0 = vec3(0.05); s.rough = 0.55; }           // porcelain
+  else if (m == 8){ s.metal = true; s.albedo = vec3(0.18,0.62,0.44); s.f0 = s.albedo; s.rough = 0.20; }  // jade
+  else if (m == 9){ s.metal = true; s.albedo = vec3(0.62,0.36,0.80); s.f0 = s.albedo; s.rough = 0.28; }  // anodised
+  return s;
+}
+
+vec3 fresnelSchlick(vec3 f0, float c){
+  float m = clamp(1.0 - c, 0.0, 1.0);
+  float m2 = m * m;
+  return f0 + (1.0 - f0) * (m2 * m2 * m);
+}
+float ggxD(float NoH, float a){
+  float a2 = a * a;
+  float d = (NoH * a2 - NoH) * NoH + 1.0;
+  return a2 / max(PI * d * d, 1e-9);
+}
+float smithG1(float NoV, float a){
+  float a2 = a * a;
+  return 2.0 * NoV / max(NoV + sqrt(a2 + (1.0 - a2) * NoV * NoV), 1e-9);
+}
+// full GGX specular BRDF value
+vec3 specBRDF(Surf s, vec3 n, vec3 wo, vec3 wi){
+  vec3 h = normalize(wo + wi);
+  float NoH = max(dot(n, h), 0.0);
+  float NoL = max(dot(n, wi), 0.0);
+  float NoV = max(dot(n, wo), 1e-4);
+  float VoH = max(dot(wo, h), 0.0);
+  float a = max(s.rough * s.rough, 1e-4);
+  vec3 F = fresnelSchlick(s.f0, VoH);
+  float D = ggxD(NoH, a);
+  float G = smithG1(NoL, a) * smithG1(NoV, a);
+  return F * (D * G / max(4.0 * NoV * NoL, 1e-6)) * NoL;
+}
+float specPdf(Surf s, vec3 n, vec3 wo, vec3 wi){
+  vec3 h = normalize(wo + wi);
+  float NoH = max(dot(n, h), 0.0);
+  float NoV = max(dot(n, wo), 1e-4);
+  float VoH = max(dot(wo, h), 0.0);
+  float a = max(s.rough * s.rough, 1e-4);
+  float D = ggxD(NoH, a);
+  float G1 = smithG1(NoV, a);
+  return D * G1 / max(4.0 * NoV, 1e-6) / max(4.0 * VoH, 1e-6) * VoH;
+}
+vec3 sampleGGX(vec3 n, vec3 wo, float a, out vec3 wi, out float pdf){
+  vec3 t = abs(n.y) < 0.999 ? vec3(0,1,0) : vec3(1,0,0);
+  vec3 tx = normalize(cross(t, n)), ty = cross(n, tx);
+  float u1 = rnd(), u2 = rnd();
+  float phi = 2.0 * PI * u1;
+  float ct = sqrt((1.0 - u2) / (1.0 + (a * a - 1.0) * u2));
+  float st = sqrt(max(1.0 - ct * ct, 0.0));
+  vec3 hl = vec3(cos(phi) * st, sin(phi) * st, ct);
+  vec3 h = tx * hl.x + ty * hl.y + n * hl.z;
+  wi = reflect(-wo, h);
+  // pdf of sampling the half-vector, then the full-vector Jacobian
+  float NoH = max(dot(n, h), 0.0);
+  float NoV = max(dot(n, wo), 1e-4);
+  float VoH = max(dot(wo, h), 0.0);
+  float D = ggxD(NoH, a);
+  pdf = D * smithG1(NoV, a) / max(4.0 * NoV, 1e-6) * VoH;
+  return wi;
+}
+// onhemisphere cosine sample
+vec3 cosineSample(vec3 n, out float pdf){
+  vec3 t = abs(n.y) < 0.999 ? vec3(0,1,0) : vec3(1,0,0);
+  vec3 tx = normalize(cross(t, n)), ty = cross(n, tx);
+  float u1 = rnd(), u2 = rnd();
+  float r = sqrt(u1), phi = 2.0 * PI * u2;
+  vec3 d = vec3(r * cos(phi), r * sin(phi), sqrt(max(1.0 - u1, 0.0)));
+  pdf = max(d.z, 1e-4) / PI;
+  return tx * d.x + ty * d.y + n * d.z;
+}
+
+// ---------------------------------------------------------------- geometry
+float sdTorus(vec3 p, vec2 t){
+  vec2 q = vec2(length(p.xz) - t.x, p.y);
+  return length(q) - t.y;
+}
+bool hitSphere(vec3 ro, vec3 rd, vec3 c, float r, out float tOut, out vec3 nOut){
+  vec3 oc = ro - c;
+  float b = dot(oc, rd);
+  float cc = dot(oc, oc) - r * r;
+  float h = b * b - cc;
+  if (h < 0.0) return false;
+  h = sqrt(h);
+  float t = -b - h;
+  if (t < 1e-4) t = -b + h;
+  if (t < 1e-4) return false;
+  tOut = t;
+  nOut = (ro + rd * t - c) / r;
+  return true;
+}
+// returns true and fills t/n/mat if anything is hit before tMax
+bool traceScene(vec3 ro, vec3 rd, float tMax, out float t, out vec3 n, out int mat, out bool isFloor){
+  t = tMax; n = vec3(0,1,0); mat = -1; isFloor = false;
+  float best = tMax;
+  // floor
+  if (rd.y < -1e-6){
+    float tf = -ro.y / rd.y;
+    if (tf > 1e-4 && tf < best){ best = tf; t = tf; n = vec3(0,1,0); mat = 100; isFloor = true; }
+  }
+  for (int i = 0; i < SPH_COUNT; ++i){
+    float ts; vec3 ns;
+    if (hitSphere(ro, rd, uSphereData[i].xyz, uSphereData[i].w, ts, ns) && ts < best){
+      best = ts; t = ts; n = ns; mat = uSphereMat[i]; isFloor = false;
+    }
+  }
+  // torus via sphere tracing on its exact SDF
+  {
+    vec3 oc = ro - uTorus.xyz;
+    float tt = 0.02;
+    for (int i = 0; i < 96; ++i){
+      vec3 p = oc + rd * tt;
+      float d = sdTorus(p, vec2(uTorus.w, uTorusR));
+      if (d < 1e-4 * (1.0 + tt)) break;
+      tt += d * 0.9;
+      if (tt > best) break;
+    }
+    if (tt < best && sdTorus(oc + rd * tt, vec2(uTorus.w, uTorusR)) < 1e-3){
+      best = tt; t = tt; isFloor = false; mat = uTorusMat;
+      vec3 p = oc + rd * tt;
+      vec2 q = vec2(length(p.xz) - uTorus.w, p.y);
+      n = normalize(vec3(p.x / max(length(p.xz), 1e-6) * q.x, q.y, p.z / max(length(p.xz), 1e-6) * q.x));
+    }
+  }
+  return mat != -1;
+}
+
+// ---------------------------------------------------------------- tracing
+vec3 radiance(vec3 ro, vec3 rd){
+  vec3 L = vec3(0.0);
+  vec3 beta = vec3(1.0);
+  bool specular = true;     // first hit from camera counts as specular
+  bool lastSpec = true;
+  for (int bounce = 0; bounce < 16; ++bounce){
+    if (bounce >= uBounces) break;
+    float t; vec3 n; int mat; bool isFloor;
+    if (!traceScene(ro, rd, 1e30, t, n, mat, isFloor)){
+      L += beta * envLookup(rd);
+      break;
+    }
+    vec3 p = ro + rd * t;
+    Surf s;
+    if (isFloor){
+      s.albedo = vec3(0.05); s.f0 = vec3(0.04); s.rough = uFloorRough;
+      s.metal = false; s.glass = false; s.ior = 1.5;
+    } else {
+      s = getSurf(mat, p);
+    }
+
+    if (dot(n, rd) > 0.0) n = -n;
+    vec3 wo = -rd;
+    float NoV = max(dot(n, wo), 1e-4);
+
+    // ---------------- delta glass: split by Fresnel, no NEE
+    if (s.glass){
+      vec3 h = normalize(wo + rd);
+      float VoH = max(dot(wo, h), 0e-4);
+      float F = fresnelSchlick(vec3(0.04), VoH).x;
+      if (rnd() < F){
+        L += beta * envLookup(reflect(rd, n));
+        break;
+      } else {
+        vec3 wi = refract(rd, n, 1.0 / s.ior);
+        if (dot(wi, wi) < 1e-8){ L += beta * envLookup(reflect(rd, n)); break; }
+        beta *= (1.0 - F) / max(abs(dot(n, wi)), 1e-4);
+        ro = p + n * 1e-3;
+        rd = wi;
+        specular = true;
+        continue;
+      }
+    }
+
+    // ---------------- next-event estimation: sample the environment
+    {
+      vec3 wi = envSample();
+      float pl = envPdf(wi);
+      if (pl > 1e-8 && dot(n, wi) > 0.0){
+        float a = max(s.rough * s.rough, 1e-4);
+        vec3 f = specBRDF(s, n, wo, wi);
+        if (!s.metal) f += s.albedo / PI;
+        float pb = specPdf(s, n, wo, wi);
+        if (!s.metal) pb += max(dot(n, wi), 0.0) / PI;
+        float mis = (lastSpec || specular) ? 1.0 : (pl / (pl + pb));
+        L += beta * f * envLookup(wi) * mis / pl;
+      }
+    }
+
+    // ---------------- BSDF-sampled continuation
+    // Metals only have a specular lobe. Dielectrics pick a lobe by albedo
+    // luminance, and weither them mix a diffuse bounce.
+    float pb; vec3 wi;
+    if (s.metal || s.rough <= 0.6){
+      float a = max(s.rough * s.rough, 1e-4);
+      vec3 l;
+      wi = sampleGGX(n, wo, a, l, pb);
+      if (dot(n, wi) <= 0.0) break;
+      vec3 bs = specBRDF(s, n, wo, wi);
+      beta *= bs / max(specPdf(s, n, wo, wi), 1e-7);
+      specular = (s.rough < 0.02);
+    } else {
+      float lum = clamp(dot(s.albedo, vec3(0.2126, 0.7152, 0.0722)), 0.0, 0.99);
+      if (rnd() < lum){
+        wi = cosineSample(n, pb);
+        if (dot(n, wi) <= 0.0) break;
+        beta *= s.albedo;
+      } else {
+        float a = max(s.rough * s.rough, 1e-4);
+        vec3 l; wi = sampleGGX(n, wo, a, l, pb);
+        if (dot(n, wi) <= 0.0) break;
+        vec3 f = specBRDF(s, n, wo, wi);
+        beta *= f / max(specPdf(s, n, wo, wi), 1e-7) / max(1.0 - lum, 1e-3);
+      }
+      specular = false;
+    }
+    if (dot(n, wi) <= 0.0) break;
+    if (max(beta.r, max(beta.g, beta.b)) < 1e-5) break;
+    lastSpec = specular;
+    ro = p + n * (1e-3 + 1e-4 * t);
+    rd = wi;
+  }
+  return L;
+}
+
+void main(){
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  uint seed = hashU(uint(px.x) * 1973u + uint(px.y) * 9277u + uint(uSeed) * 26699u);
+  rngState = seed;
+  // decorrelate first few randoms
+  rnd(); rnd(); rnd();
+
+  vec2 j = rnd2();
+  vec2 ndc = ((gl_FragCoord.xy + j) / uRes) * 2.0 - 1.0;
+  float aspect = uRes.x / uRes.y;
+  vec3 dir = normalize(uCam * vec3(ndc.x * aspect * uTanHalf, ndc.y * uTanHalf, 1.0));
+  vec3 ro = uCamPos;
+
+  vec3 L = radiance(ro, dir);
+  vec4 prev = texelFetch(uAccum, px, 0);
+  outColor = vec4(prev.rgb + max(L, 0.0), 1.0);
+}
+`;
+
+// present: divide by sample count, tonemap, gamma
+const PRESENT_FS = `#version 300 es
+precision highp float;
+out vec4 outColor;
+uniform sampler2D uAccum;
+uniform float uInvSamples;
+uniform float uExposure;
+uniform int   uShowNoise;
+
+vec3 aces(vec3 x){
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+void main(){
+  vec4 s = texture(uAccum, gl_FragCoord.xy / vec2(textureSize(uAccum, 0)));
+  vec3 c = s.rgb * uInvSamples * uExposure;
+  c = aces(c);
+  // sRGB encode
+  c = mix(c * 12.92, 1.055 * pow(max(c, 1e-5), vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+  outColor = vec4(c, 1.0);
+}
+`;
+
+// ---- gl helpers -------------------------------------------------------------
+function sh(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + "\n" + src.split("\n").slice(0, 3).join("\n"));
+  return s;
+}
+function prog(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const MAX_SPHERES = SPHERES.length;
+const traceSrc = TRACE_FS
+  .replace(/SPH_COUNT/g, String(MAX_SPHERES))
+  .replace(/CDF_W/g, String(ENV[0].cw))
+  .replace(/CDF_H/g, String(ENV[0].ch))
+  .replace(/CDF_N/g, String(ENV[0].cw * ENV[0].ch));
+const pTrace = prog(traceSrc);
+const pPresent = prog(PRESENT_FS);
+
+// ---- render targets ---------------------------------------------------------
+const RES_PRESETS = [[320, 200], [400, 250], [480, 300], [560, 350], [640, 400]];
+let resIdx = 2;
+let W = 0, H = 0;
+let accum = [null, null], accumFbo = [null, null], cur = 0, samples = 0;
+
+function makeTarget(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  // CLAMP, not the default REPEAT: the present pass samples with normalized
+  // coords over a larger viewport, and REPEAT would tile the buffer visibly.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  return { tex, fbo };
+}
+// The accumulator tracks the canvas size so the present pass is a 1:1 blit.
+// Cap it so a huge window can't melt the software rasterizer.
+const MAX_W = 1280, MAX_H = 800;
+function fitToCanvas(cw, ch) {
+  const s = Math.min(1, MAX_W / Math.max(1, cw), MAX_H / Math.max(1, ch));
+  const w = Math.max(64, Math.round(cw * s / 2) * 2);
+  const h = Math.max(64, Math.round(ch * s / 2) * 2);
+  if (w !== W || h !== H) {
+    [W, H] = [w, h];
+    // the HUD must report the buffer that is ACTUALLY being rendered, not
+    // whatever setRes() last wrote
+    document.getElementById("h-res").textContent = `${W}×${H}`;
+    return true;
+  }
+  return false;
+}
+function setRes(i) {
+  resIdx = Math.max(0, Math.min(RES_PRESETS.length - 1, i));
+  [W, H] = RES_PRESETS[resIdx];
+  accum = [makeTarget(W, H), makeTarget(W, H)];
+  accumFbo = [accum[0].fbo, accum[1].fbo];
+  cur = 0; samples = 0;
+  document.getElementById("h-res").textContent = `${W}×${H}`;
+}
+gl.bindVertexArray(gl.createVertexArray());
+
+// ---- environment textures ---------------------------------------------------
+let envTex = [], cdfTex = [], envIdx = 0;
+for (const e of ENV) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  const rgba = new Float32Array(e.w * e.h * 4);
+  for (let i = 0; i < e.w * e.h; i++) {
+    rgba[i * 4] = e.rgb[i * 3]; rgba[i * 4 + 1] = e.rgb[i * 3 + 1];
+    rgba[i * 4 + 2] = e.rgb[i * 3 + 2]; rgba[i * 4 + 3] = 1;
+  }
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, e.w, e.h, 0, gl.RGBA, gl.FLOAT, rgba);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  envTex.push(t);
+
+  const n = e.cw * e.ch;
+  const c = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, c);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, n + 1, 1, 0, gl.RED, gl.FLOAT, e.cdf);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  cdfTex.push(c);
+}
+
+// ---- state ------------------------------------------------------------------
+const state = {
+  exposureEV: 0, rot: 0, bounces: 5, envInt: 1, floorRough: 0.10,
+  yaw: 0.30, pitch: 0.20, dist: 5.4,
+  target: [0, 0.60, 0], sel: 0, paused: false, autoOrbit: false,
+};
+const sphMat = SPHERES.map(s => s.m);
+let torusMat = TORUS.m;
+
+function camMatrix() {
+  const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+  const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw);
+  const pos = [
+    state.target[0] + state.dist * cp * sy,
+    state.target[1] + state.dist * sp,
+    state.target[2] + state.dist * cp * cy,
+  ];
+  const fwd = norm3([state.target[0] - pos[0], state.target[1] - pos[1], state.target[2] - pos[2]]);
+  const right = norm3(cross3(fwd, [0, 1, 0]));
+  const up = cross3(right, fwd);
+  return { pos, m: [right[0], right[1], right[2], up[0], up[1], up[2], fwd[0], fwd[1], fwd[2]] };
+}
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm3 = a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+const sphereData = new Float32Array(MAX_SPHERES * 4);
+const sphereMatU = new Int32Array(MAX_SPHERES);
+for (let i = 0; i < MAX_SPHERES; i++) {
+  sphereData.set(SPHERES[i].p, i * 4);
+  sphereData[i * 4 + 3] = SPHERES[i].r;
+  sphereMatU[i] = sphMat[i];
+}
+
+function reset() { samples = 0; }
+
+// ---- render loop ------------------------------------------------------------
+// A static camera makes the render deterministic, and at ~2ms/sample we can
+// afford a properly converged still rather than a noisy preview. The target is
+// generous because rendering keeps running after ready — the screenshot is a
+// freebie, not a step we wait for.
+let frameSeed = 1, lastSampleMs = 0, readyFired = false, readyTarget = 384, lastFrameStamp = 0;
+function draw() {
+  const now = performance.now();
+  const dpr = 1;
+  const cw = canvas.clientWidth | 0, ch = canvas.clientHeight | 0;
+  if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
+    canvas.width = Math.max(1, cw * dpr); canvas.height = Math.max(1, ch * dpr);
+    if (fitToCanvas(canvas.width, canvas.height)) {
+      accum = [makeTarget(W, H), makeTarget(W, H)];
+      accumFbo = [accum[0].fbo, accum[1].fbo];
+    }
+    reset();
+  }
+  const cam = camMatrix();
+  const t0 = performance.now();
+
+  if (!state.paused) {
+  // Any camera change invalidates the accumulator: a progressive renderer must
+  // never blend samples from different viewpoints. autoOrbit resets every
+  // frame, so it is off by default (which also makes the still deterministic)
+  // and is available as a "spin" preview.
+  if (state.autoOrbit && !dragging) {
+    state.yaw += 0.0016;
+    reset();
+  }
+
+    // --- accumulate one sample
+    const src = accum[cur], dst = accum[1 - cur];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+    gl.viewport(0, 0, W, H);
+    gl.useProgram(pTrace);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, envTex[envIdx]);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, cdfTex[envIdx]);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uEnv"), 0);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uCdf"), 1);
+    gl.uniform2f(gl.getUniformLocation(pTrace, "uRes"), W, H);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uSeed"), frameSeed++);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uBounces"), state.bounces);
+    gl.uniform1f(gl.getUniformLocation(pTrace, "uTanHalf"), Math.tan(0.5 * 26 * Math.PI / 180));
+    gl.uniformMatrix3fv(gl.getUniformLocation(pTrace, "uCam"), false, cam.m);
+    gl.uniform3f(gl.getUniformLocation(pTrace, "uCamPos"), cam.pos[0], cam.pos[1], cam.pos[2]);
+    gl.uniform1f(gl.getUniformLocation(pTrace, "uEnvRot"), state.rot * Math.PI / 180);
+    gl.uniform1f(gl.getUniformLocation(pTrace, "uEnvInt"), state.envInt);
+    gl.uniform1f(gl.getUniformLocation(pTrace, "uFloorRough"), state.floorRough);
+    gl.uniform4fv(gl.getUniformLocation(pTrace, "uSphereData[0]"), sphereData);
+    gl.uniform1iv(gl.getUniformLocation(pTrace, "uSphereMat[0]"), sphereMatU);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uTorusMat"), torusMat);
+    gl.uniform4f(gl.getUniformLocation(pTrace, "uTorus"), TORUS.p[0], TORUS.p[1], TORUS.p[2], TORUS.R);
+    gl.uniform1f(gl.getUniformLocation(pTrace, "uTorusR"), TORUS.r);
+
+    // One pass: the trace shader reads the previous accumulation and adds the
+    // new sample, so we ping-pong instead of needing a separate blend pass.
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(gl.getUniformLocation(pTrace, "uAccum"), 2);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    cur = 1 - cur;
+    samples++;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.finish();
+    lastSampleMs = performance.now() - t0;
+  }
+
+  // --- present
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(pPresent);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, accum[cur].tex);
+  gl.uniform1i(gl.getUniformLocation(pPresent, "uAccum"), 0);
+  gl.uniform1f(gl.getUniformLocation(pPresent, "uInvSamples"), 1 / Math.max(1, samples));
+  gl.uniform1f(gl.getUniformLocation(pPresent, "uExposure"), Math.pow(2, state.exposureEV));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  document.getElementById("h-spp").textContent = String(samples);
+  // gl.finish() is a no-op for real timing here, so report the measured
+  // end-to-end sample rate rather than a meaningless 0ms.
+  if (lastFrameStamp) {
+    const rate = 1000 / Math.max(0.01, now - lastFrameStamp);
+    document.getElementById("h-ms").textContent = rate.toFixed(1) + " fps";
+  }
+  lastFrameStamp = now;
+  document.getElementById("h-transport").textContent = "NEE + MIS";
+
+  if (!readyFired && samples >= readyTarget) {
+    readyFired = true;
+    window.__probe = {
+      spp: samples, internalRes: `${W}x${H}`, bounces: state.bounces,
+      env: ENV[envIdx].name, objects: MAX_SPHERES + 1,
+      msPerSample: +lastSampleMs.toFixed(1), transport: "next-event-estimation + MIS",
+      envMapSize: `${ENV[envIdx].w}x${ENV[envIdx].h}`,
+      importanceCells: ENV[envIdx].cw * ENV[envIdx].ch,
+    };
+    window.__ready = true;
+  }
+  requestAnimationFrame(draw);
+}
+
+// ---- UI ---------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+function bindSlider(id, valId, key, fmt, after) {
+  const el = $(id), lab = $(valId);
+  const paint = () => {
+    const pct = ((el.value - el.min) / (el.max - el.min)) * 100;
+    el.style.setProperty("--p", pct + "%");
+    lab.textContent = fmt(+el.value);
+  };
+  el.addEventListener("input", () => {
+    state[key] = +el.value; paint(); reset(); if (after) after(+el.value);
+  });
+  paint();
+}
+bindSlider("s-exp", "v-exp", "exposureEV", v => (v > 0 ? "+" : "") + v.toFixed(1) + " EV");
+bindSlider("s-rot", "v-rot", "rot", v => v.toFixed(0) + "°");
+bindSlider("s-bnc", "v-bnc", "bounces", v => String(v | 0));
+bindSlider("s-int", "v-int", "envInt", v => v.toFixed(2));
+bindSlider("s-fr", "v-fr", "floorRough", v => v.toFixed(3));
+
+// env buttons
+ENV.forEach((e, i) => {
+  const b = document.createElement("button");
+  b.textContent = e.name;
+  b.className = i === 0 ? "on" : "";
+  b.onclick = () => {
+    envIdx = i; reset();
+    [...$("env-btns").children].forEach((c, j) => c.classList.toggle("on", j === i));
+  };
+  $("env-btns").appendChild(b);
+});
+
+// material swatches
+MATS.forEach((m, i) => {
+  const d = document.createElement("div");
+  d.className = "sw"; d.style.background = m.sw; d.title = m.name;
+  d.onclick = () => setMat(i);
+  $("mats").appendChild(d);
+});
+function setMat(m) {
+  if (state.sel < MAX_SPHERES) { sphMat[state.sel] = m; sphereMatU[state.sel] = m; }
+  else torusMat = m;
+  $("h-mat").textContent = MATS[m].name;
+  [...$("mats").children].forEach((c, j) => c.classList.toggle("sel", j === m));
+  reset();
+}
+setMat(state.sel);
+
+$("b-shuffle").onclick = () => {
+  for (let i = 0; i < MAX_SPHERES; i++) {
+    sphMat[i] = (Math.random() * MATS.length) | 0; sphereMatU[i] = sphMat[i];
+  }
+  torusMat = (Math.random() * MATS.length) | 0;
+  setMat(state.sel);
+};
+$("b-spin").onclick = () => {
+  state.autoOrbit = !state.autoOrbit;
+  $("b-spin").classList.toggle("on", state.autoOrbit);
+};
+$("b-reset").onclick = () => { sphMat.forEach((_, i) => { sphMat[i] = SPHERES[i].m; sphereMatU[i] = SPHERES[i].m; }); torusMat = TORUS.m; setMat(state.sel); };
+
+// ---- interaction ------------------------------------------------------------
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener("pointerdown", e => {
+  dragging = true; state.autoOrbit = false; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  state.yaw -= (e.clientX - lastX) * 0.006;
+  state.pitch = Math.max(-0.15, Math.min(1.2, state.pitch + (e.clientY - lastY) * 0.005));
+  lastX = e.clientX; lastY = e.clientY; reset();
+});
+canvas.addEventListener("pointerup", () => { dragging = false; });
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  state.dist = Math.max(2.6, Math.min(14, state.dist * (1 + Math.sign(e.deltaY) * 0.08)));
+  reset();
+}, { passive: false });
+
+// click to select (only when the pointer didn't really move)
+let downAt = null;
+canvas.addEventListener("pointerdown", e => { downAt = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener("pointerup", e => {
+  if (!downAt) return;
+  if (Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > 4) return;
+  // ray from camera through the click
+  const r = canvas.getBoundingClientRect();
+  const ndcX = ((e.clientX - r.left) / r.width) * 2 - 1;
+  const ndcY = -(((e.clientY - r.top) / r.height) * 2 - 1);
+  const cam = camMatrix();
+  const aspect = r.width / r.height, th = Math.tan(0.5 * 26 * Math.PI / 180);
+  const dir = norm3([
+    cam.m[0] * ndcX * aspect * th + cam.m[3] * ndcY * th + cam.m[6],
+    cam.m[1] * ndcX * aspect * th + cam.m[4] * ndcY * th + cam.m[7],
+    cam.m[2] * ndcX * aspect * th + cam.m[5] * ndcY * th + cam.m[8],
+  ]);
+  let bestT = 1e30, which = -1;
+  for (let i = 0; i < MAX_SPHERES; i++) {
+    const c = SPHERES[i].p, oc = [cam.pos[0] - c[0], cam.pos[1] - c[1], cam.pos[2] - c[2]];
+    const b = oc[0] * dir[0] + oc[1] * dir[1] + oc[2] * dir[2];
+    const cc = oc[0] ** 2 + oc[1] ** 2 + oc[2] ** 2 - SPHERES[i].r ** 2;
+    const h = b * b - cc;
+    if (h < 0) continue;
+    const t = -b - Math.sqrt(h);
+    if (t > 1e-3 && t < bestT) { bestT = t; which = i; }
+  }
+  if (which >= 0) { state.sel = which; setMat(sphMat[which]); }
+});
+
+addEventListener("keydown", e => {
+  if (e.key === "r") reset();
+  else if (e.key === " ") { state.paused = !state.paused; e.preventDefault(); }
+  else if (e.key === "[") setMat((sphMat[state.sel] + MATS.length - 1) % MATS.length);
+  else if (e.key === "]") setMat((sphMat[state.sel] + 1) % MATS.length);
+});
+
+// resolution preset cycling with [ and ] is taken; use number keys
+addEventListener("keydown", e => {
+  const n = +e.key;
+  if (n >= 1 && n <= RES_PRESETS.length) { setRes(n - 1); }
+});
+
+setRes(resIdx);
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

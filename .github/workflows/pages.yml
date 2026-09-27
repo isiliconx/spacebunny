@@ -25,9 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # No build step: three.js r186 is vendored in the repo, so the site is
-      # plain static files. GitHub Pages publishes the repository root, which
-      # means index.html lands at the site root with no base-path rewriting.
+      # No build step: three.js r186 is vendored in the repo, and every demo is
+      # a single self-contained HTML file, so the site is plain static files.
+      # GitHub Pages publishes the repository root, which means index.html lands
+      # at the site root with no base-path rewriting. The demo under demos/08 is
+      # generated from template.html by demos/tools/build_pt.py, but the built
+      # index.html is committed so Pages has nothing to run.
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

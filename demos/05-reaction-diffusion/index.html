@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gray–Scott Reaction–Diffusion · GPU GPGPU</title>
+<style>
+  :root{
+    --ink:#e2edf4; --dim:#7e95a7; --acc:#7ff0c8; --acc2:#ffc27a;
+    --panel:rgba(7,12,19,.74); --edge:rgba(140,200,220,.20);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#03060a; overflow:hidden;
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace; color:var(--ink); }
+  #gl{ position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:crosshair; }
+  .hud{ position:fixed; pointer-events:none; z-index:5; }
+  .panel{ background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:11px 13px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 12px 40px rgba(0,0,0,.6); }
+  #title{ top:15px; left:15px; width:352px; }
+  #title h1{ margin:0 0 4px; font-size:13.5px; letter-spacing:.13em; text-transform:uppercase; color:#fff; font-weight:600; }
+  #title h1 b{ color:var(--acc); font-weight:600; }
+  #title .eq{ color:var(--acc2); font-size:11px; margin:6px 0 7px; }
+  #title p{ margin:0; color:var(--dim); font-size:10.5px; line-height:1.55; }
+  #title p b{ color:#a8c4d4; font-weight:600; }
+  #title .row{ display:flex; gap:14px; margin-top:8px; padding-top:8px; border-top:1px solid var(--edge); }
+  #title .k{ color:var(--dim); } #title .v{ color:var(--ink); }
+
+  #meter{ top:15px; right:15px; width:214px; }
+  #meter .big{ font-size:20px; color:#fff; letter-spacing:.02em; line-height:1.1; }
+  #meter .big small{ font-size:9.5px; color:var(--dim); letter-spacing:.12em; }
+  #meter table{ width:100%; border-collapse:collapse; margin-top:8px; }
+  #meter td{ padding:1.5px 0; font-size:10.5px; }
+  #meter td:first-child{ color:var(--dim); } #meter td:last-child{ text-align:right; }
+  #bar{ height:4px; border-radius:2px; background:rgba(255,255,255,.10); margin-top:9px; overflow:hidden; }
+  #bar i{ display:block; height:100%; width:0%; border-radius:2px;
+    background:linear-gradient(90deg,#0d6b7a,#2ec4a6,#d8e04a,#ffb347,#fff3d0); transition:width .2s linear; }
+  #barlab{ font-size:9.5px; color:var(--dim); margin-top:5px; letter-spacing:.09em; }
+
+  #ctl{ bottom:15px; left:15px; width:336px; pointer-events:auto; }
+  #ctl .sec{ margin-bottom:10px; } #ctl .sec:last-child{ margin-bottom:0; }
+  #ctl h2{ margin:0 0 6px; font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .chips{ display:flex; flex-wrap:wrap; gap:5px; }
+  .chip{ pointer-events:auto; cursor:pointer; font:inherit; font-size:10.5px; padding:4px 9px;
+    border-radius:20px; color:var(--dim); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .chip:hover{ color:#fff; background:rgba(255,255,255,.12); }
+  .chip.on{ color:#04121a; background:linear-gradient(180deg,#8ff5cf,#3fc9a4); border-color:transparent; font-weight:600; }
+  .sl{ display:grid; grid-template-columns:76px 1fr 44px; align-items:center; gap:7px; margin:4px 0; }
+  .sl label{ font-size:10.5px; color:var(--dim); }
+  .sl output{ font-size:10.5px; text-align:right; color:var(--acc); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:14px; background:transparent; cursor:ew-resize; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(127,240,200,.9) var(--p,50%),rgba(255,255,255,.13) var(--p,50%)); }
+  input[type=range]::-moz-range-track{ height:3px; border-radius:2px; background:rgba(255,255,255,.13); }
+  input[type=range]::-moz-range-progress{ height:3px; border-radius:2px; background:rgba(127,240,200,.9); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:11px; height:11px; border-radius:50%;
+    background:#eafff7; margin-top:-4px; box-shadow:0 0 0 3px rgba(127,240,200,.22),0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-moz-range-thumb{ width:11px; height:11px; border:0; border-radius:50%;
+    background:#eafff7; box-shadow:0 0 0 3px rgba(127,240,200,.22); }
+  .row2{ display:flex; gap:5px; margin-top:8px; }
+  .btn{ pointer-events:auto; cursor:pointer; flex:1; font:inherit; font-size:10.5px; padding:5px 0;
+    border-radius:6px; color:var(--ink); background:rgba(255,255,255,.05);
+    border:1px solid var(--edge); transition:.14s; }
+  .btn:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  .btn.on{ color:var(--acc2); border-color:rgba(255,194,122,.5); }
+
+  #hint{ bottom:15px; right:15px; text-align:right; color:var(--dim); font-size:10px; line-height:1.75;
+    background:var(--panel); border:1px solid var(--edge); border-radius:10px; padding:8px 11px; }
+  #hint b{ color:var(--acc); font-weight:600; }
+  @media (max-width:940px){ #ctl,#hint{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="hud panel" id="title">
+  <h1>Gray–Scott <b>Reaction–Diffusion</b></h1>
+  <div class="eq">∂u/∂t = D<sub>u</sub>∇²u − uv² + F(1−u) &nbsp;·&nbsp; ∂v/∂t = D<sub>v</sub>∇²v + uv² − (F+k)v</div>
+  <p>Two species diffuse against each other on an isotropic <b>9-point Laplacian</b> and react
+     autocatalytically. The whole reactor is one ping-ponged <b>float texture</b>: U, V and the
+     live ∇V ride in the four channels, so every texel is an independent organism.
+     Colour maps V-concentration; relief is real gradient lighting.</p>
+  <div class="row">
+    <div><span class="k">regime</span> <span class="v" id="t-preset">coral</span></div>
+    <div><span class="k">seed</span> <span class="v" id="t-seed">—</span></div>
+    <div><span class="k">texels</span> <span class="v" id="t-cells">—</span></div>
+  </div>
+</div>
+
+<div class="hud panel" id="meter">
+  <div class="big"><span id="m-iter">0</span><br><small>ITERATIONS</small></div>
+  <table>
+    <tr><td>grid</td><td id="m-grid">—</td></tr>
+    <tr><td>feed F</td><td id="m-f">—</td></tr>
+    <tr><td>kill k</td><td id="m-k">—</td></tr>
+    <tr><td>D<sub>u</sub>/D<sub>v</sub></td><td id="m-d">—</td></tr>
+    <tr><td>step rate</td><td id="m-rate">—</td></tr>
+    <tr><td>seed sites</td><td id="m-seeds">—</td></tr>
+    <tr><td>fps</td><td id="m-fps">—</td></tr>
+  </table>
+  <div id="bar"><i id="barf"></i></div>
+  <div id="barlab">SPINNING UP REACTOR</div>
+</div>
+
+<div class="hud panel" id="ctl">
+  <div class="sec">
+    <h2>Regime</h2>
+    <div class="chips" id="presets"></div>
+  </div>
+  <div class="sec">
+    <h2>Parameters</h2>
+    <div id="sliders"></div>
+  </div>
+  <div class="sec">
+    <div class="row2">
+      <button class="btn" id="b-pause">Pause</button>
+      <button class="btn" id="b-reseed">Re-seed</button>
+      <button class="btn" id="b-clear">Clear</button>
+    </div>
+  </div>
+</div>
+
+<div class="hud" id="hint">
+  <div><b>drag</b> inoculate &nbsp; <b>shift+drag</b> sterilise</div>
+  <div><b>space</b> pause &nbsp; <b>R</b> re-seed &nbsp; <b>1–6</b> regime &nbsp; <b>P</b> palette</div>
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════════
+   05 — GRAY–SCOTT REACTION–DIFFUSION, entirely in fragment shaders.
+   State = ping-ponged RGBA16F:  .r = U   .g = V   .ba = packed ∇V
+   The gradient is a by-product of the 9-point stencil the sim already reads,
+   so the display pass gets an analytic normal for free.
+   Fully deterministic: mulberry32 + hash21, no Math.random anywhere.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ─── regimes (F, kill) — classic Gray–Scott attractors ──────────────────── */
+const PRESETS = [
+  { name:'coral',      F:0.0545, K:0.0620 },
+  { name:'mitosis',    F:0.0367, K:0.0649 },
+  { name:'worms',      F:0.0580, K:0.0630 },
+  { name:'solitons',   F:0.0300, K:0.0620 },
+  { name:'fingerprint',F:0.0370, K:0.0600 },
+  { name:'pulp',       F:0.0820, K:0.0609 },
+];
+
+/* ─── GL context ─────────────────────────────────────────────────────────── */
+const cv = document.getElementById('gl');
+const gl = cv.getContext('webgl2', {
+  antialias:false, alpha:false, depth:false, stencil:false, preserveDrawingBuffer:false
+});
+if(!gl){
+  document.body.innerHTML =
+    '<div style="padding:40px;font:13px monospace;color:#ff8a6a">WebGL2 unavailable.</div>';
+  throw new Error('no webgl2');
+}
+/* MUST precede any float texture / FBO creation, or the formats report unsupported */
+const extCBF  = gl.getExtension('EXT_color_buffer_float');
+const extLinF = gl.getExtension('OES_texture_float_linear');
+
+/* Pick the best colour-renderable float format, verified with a real FBO test */
+let FLOAT_IFMT = 0, FLOAT_FMT = 'RGBA8', quant = false;
+(function pickFormat(){
+  const cands = extCBF ? [gl.RGBA16F, gl.RGBA32F] : [];
+  for(const ifmt of cands){
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, 4, 4, 0, gl.RGBA, gl.FLOAT, null);
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(f); gl.deleteTexture(t);
+    if(ok){ FLOAT_IFMT = ifmt; FLOAT_FMT = ifmt === gl.RGBA16F ? 'RGBA16F' : 'RGBA32F'; return; }
+  }
+  quant = true;   // last-ditch 8-bit path; V is small so it is pre-scaled
+})();
+
+/* ─── shaders ────────────────────────────────────────────────────────────── */
+const VS = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* Codec for the 8-bit fallback.  V lives in ~[0,0.4] so it needs pre-scaling;
+   ∇V is ~1e-2 so it needs a far larger one to survive 8 bits. */
+const QDEF = quant ? `
+const float QS = 2.6, GS = 26.0;
+vec4 enc(vec2 c, vec2 g){ return vec4(c.r, clamp(c.g*QS,0.0,1.0), clamp(g*GS+0.5,0.0,1.0)); }
+vec2 dec(vec4 s){ return vec2(s.r, s.g/QS); }
+vec2 decG(vec4 s){ return (s.ba - 0.5) * (1.0/GS); }` : `
+vec4 enc(vec2 c, vec2 g){ return vec4(c, g * 0.5); }
+vec2 dec(vec4 s){ return s.rg; }
+vec2 decG(vec4 s){ return s.ba * 2.0; }`;
+
+/* ── ONE exact Gray–Scott step: isotropic 9-point Laplacian, explicit Euler ── */
+const SIM_FS = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uState;   // .rg = (u,v)   .ba = packed ∇v
+uniform sampler2D uField;   // .rgb = (feed offset, kill offset, atmosphere)
+uniform vec2  uTexel;       // 1/simSize
+uniform float uF, uK, uDu, uDv, uDt, uFieldAmp;
+out vec4 frag;
+${QDEF}
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec3 f  = texture(uField, uv).rgb;
+  /* spatial heterogeneity: the fBm field nudges F and k about the preset so
+     different regions settle into genuinely different regimes */
+  float F = clamp(uF + (f.r * 2.0 - 1.0) * uFieldAmp,         0.004, 0.110);
+  float K = clamp(uK + (f.g * 2.0 - 1.0) * uFieldAmp * 0.60,  0.030, 0.075);
+
+  vec2 c  = dec(texture(uState, uv));
+  vec2 sw = dec(texture(uState, uv + vec2(-uTexel.x, -uTexel.y)));
+  vec2 s  = dec(texture(uState, uv + vec2( 0.0,      -uTexel.y)));
+  vec2 se = dec(texture(uState, uv + vec2( uTexel.x, -uTexel.y)));
+  vec2 w  = dec(texture(uState, uv + vec2(-uTexel.x,  0.0)));
+  vec2 e  = dec(texture(uState, uv + vec2( uTexel.x,  0.0)));
+  vec2 nw = dec(texture(uState, uv + vec2(-uTexel.x,  uTexel.y)));
+  vec2 n  = dec(texture(uState, uv + vec2( 0.0,       uTexel.y)));
+  vec2 ne = dec(texture(uState, uv + vec2( uTexel.x,   uTexel.y)));
+
+  /* the isotropic 9-point stencil: 0.05 corners + 0.20 edges − 1.0 centre */
+  vec2 lap = sw*0.05 + s*0.20 + se*0.05 + w*0.20 + c*(-1.0)
+           + e*0.20 + nw*0.05 + n*0.20 + ne*0.05;
+
+  float rxn = c.r * c.g * c.g;                        // autocatalytic uv²
+  c += uDt * vec2(uDu * lap.r - rxn + F * (1.0 - c.r),
+                  uDv * lap.g + rxn - (F + K) * c.g);
+  c = clamp(c, 0.0, 1.0);
+
+  /* free central-difference gradient, taken from taps we already hold */
+  vec2 grad = vec2(e.g - w.g, n.g - s.g) * 0.5;
+  frag = enc(c, grad);
+}`;
+
+/* ── paint: capsule SDF, so a fast drag still leaves a continuous stroke ──── */
+const PAINT_FS = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uState;
+uniform vec2  uTexel, uRA, uAB;   // uRA = uv−A, uAB = B−A
+uniform float uAspect, uRadius, uErase, uFeather;
+out vec4 frag;
+${QDEF}
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec2 p  = vec2((uv.x - uRA.x) * uAspect, uv.y - uRA.y);
+  vec2 ab = vec2(uAB.x * uAspect, uAB.y);
+  float h = clamp(dot(p, ab) / max(dot(ab, ab), 1e-9), 0.0, 1.0);
+  float d = length(p - ab * h) - uRadius;             // signed distance to capsule
+  float m = smoothstep(uFeather, -uFeather, d) * 0.95;
+  vec2 s = dec(texture(uState, uv));
+  vec2 to = (uErase > 0.5) ? vec2(1.0, 0.0) : vec2(0.34, 0.52);
+  frag = enc(mix(s, to, m), vec2(0.0));
+}`;
+
+/* ── seed: a focal colony plus a golden-angle spiral of satellites ───────── */
+const NCOL = 30;
+const SEED_FS = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uField;
+uniform vec2 uTexel; uniform float uSeed, uAspect;
+out vec4 frag;
+${QDEF}
+float hash21(vec2 p, float s){
+  p = fract(p * vec2(127.1, 311.7) + s * 0.0173);
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec3 f  = texture(uField, uv).rgb;
+  vec2 p  = (uv - 0.5) * vec2(uAspect, 1.0);
+  float m = 0.0;
+
+  /* focal colony — the structure the rest of the field grows out of */
+  m = max(m, smoothstep(0.004, -0.004, length(p) - 0.105));
+
+  /* golden-angle spiral of satellites: even coverage, no clumping, no grid */
+  for(int i = 0; i < ${NCOL}; i++){
+    float fi = float(i);
+    float h1 = hash21(vec2(fi,  3.17), uSeed);
+    float h2 = hash21(vec2(fi, 11.83), uSeed);
+    float h3 = hash21(vec2(fi, 27.41), uSeed);
+    float ang = (fi * 2.39996323) + (h1 - 0.5) * 0.55;   // golden angle + jitter
+    float rad = 0.135 + 0.50 * sqrt((fi + 0.5) / float(${NCOL})) * (0.55 + 0.45 * h2);
+    vec2  c   = vec2(cos(ang), sin(ang)) * rad;
+    float rr  = 0.020 + 0.052 * h3 * h3;
+    m = max(m, smoothstep(0.005, -0.005, length(p - c) - rr));
+  }
+
+  /* fine nucleation dust, thinned where the field is inhospitable */
+  float dens = smoothstep(0.05, 0.65, f.r) * 0.75 + 0.12;
+  float r = hash21(uv, uSeed);
+  float speck = step(1.0 - dens * 0.030, r) * (0.45 + 0.55 * f.b);
+
+  float mm = clamp(max(m, speck * 0.85), 0.0, 1.0);
+  frag = enc(vec2(1.0 - mm * 0.74, mm * (0.44 + 0.14 * r)), vec2(0.0));
+}`;
+
+/* ── display: one hardware-bilinear tap + relief lighting ────────────────
+   The display pass is texture-fetch-bound on this rasteriser (5 taps 57ms,
+   4 taps 40ms, 1 tap 34ms), so it takes a SINGLE sample and reads the
+   gradient the simulation already packed into .ba. Smoothness comes from a
+   sampler object that forces LINEAR on the display unit while the same
+   texture stays NEAREST for the simulation, which needs exact texel
+   centres — measured 58ms vs 84ms for an equivalent 4-tap manual fetch. */
+const DISP_FS = `#version 300 es
+precision highp float; precision highp sampler2D;
+uniform sampler2D uState, uField;
+uniform vec2  uRes;
+uniform float uRelief, uDrift, uTime, uAspect, uVig, uGrain, uRim, uPal;
+out vec4 frag;
+${QDEF}
+
+/* Four ramps.  The selector blends the two neighbouring ramps; a plain
+   branch made the driver evaluate every path, and the result is a smooth
+   sweep across the whole palette for free. */
+vec3 rampReef(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = vec3(0.010, 0.026, 0.050);
+  c = mix(c, vec3(0.016, 0.098, 0.142), smoothstep(0.00, 0.20, t));
+  c = mix(c, vec3(0.040, 0.300, 0.281), smoothstep(0.20, 0.44, t));
+  c = mix(c, vec3(0.168, 0.560, 0.226), smoothstep(0.44, 0.65, t));
+  c = mix(c, vec3(0.718, 0.760, 0.207), smoothstep(0.65, 0.85, t));
+  c = mix(c, vec3(1.000, 0.878, 0.596), smoothstep(0.85, 1.00, t));
+  return c;
+}
+vec3 rampMagma(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = vec3(0.020, 0.012, 0.048);
+  c = mix(c, vec3(0.240, 0.040, 0.280), smoothstep(0.00, 0.30, t));
+  c = mix(c, vec3(0.680, 0.130, 0.310), smoothstep(0.30, 0.55, t));
+  c = mix(c, vec3(0.960, 0.420, 0.180), smoothstep(0.55, 0.78, t));
+  c = mix(c, vec3(1.000, 0.880, 0.620), smoothstep(0.78, 1.00, t));
+  return c;
+}
+vec3 rampAbyss(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = vec3(0.008, 0.018, 0.040);
+  c = mix(c, vec3(0.020, 0.090, 0.220), smoothstep(0.00, 0.32, t));
+  c = mix(c, vec3(0.080, 0.340, 0.620), smoothstep(0.32, 0.60, t));
+  c = mix(c, vec3(0.320, 0.760, 0.880), smoothstep(0.60, 0.82, t));
+  c = mix(c, vec3(0.920, 0.990, 1.000), smoothstep(0.82, 1.00, t));
+  return c;
+}
+vec3 rampLichen(float t){
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = vec3(0.030, 0.028, 0.020);
+  c = mix(c, vec3(0.140, 0.140, 0.070), smoothstep(0.00, 0.28, t));
+  c = mix(c, vec3(0.420, 0.400, 0.140), smoothstep(0.28, 0.54, t));
+  c = mix(c, vec3(0.780, 0.600, 0.200), smoothstep(0.54, 0.78, t));
+  c = mix(c, vec3(0.990, 0.940, 0.820), smoothstep(0.78, 1.00, t));
+  return c;
+}
+vec3 palette(float t){
+  float p = clamp(uPal, 0.0, 3.0);
+  float i = floor(p), f = p - i;
+  vec3 a = i < 0.5 ? rampReef(t)  : i < 1.5 ? rampMagma(t)
+         : i < 2.5 ? rampAbyss(t) : rampLichen(t);
+  vec3 b = i < 0.5 ? rampMagma(t) : i < 1.5 ? rampAbyss(t)
+         : i < 2.5 ? rampLichen(t) : rampLichen(t);
+  return mix(a, b, f);
+}
+float hash(vec2 p){
+  p = fract(p * vec2(443.897, 441.423));
+  p += dot(p, p + 19.19);
+  return fract(p.x * p.y);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+
+  /* one bilinear-filtered state sample, and one for the low-frequency field */
+  vec4 S  = texture(uState, uv);
+  vec3 fl = texture(uField, uv).rgb;
+  float v  = dec(S).g;
+  vec2  grad = decG(S);
+  float h  = smoothstep(0.012, 0.340, v);
+
+  /* relief normal from the live gradient */
+  vec2 g = grad * uRelief;
+  vec3 n = normalize(vec3(-g.x, -g.y, 1.0));
+
+  /* palette: V drives the ramp; a slow deterministic field-drift breaks banding */
+  float dr = uDrift * uTime;
+  float t = h * 0.88
+          + 0.050 * sin(uv.x * 5.3 + uv.y * 3.9 + dr)
+          + 0.038 * sin(uv.y * 7.7 - uv.x * 2.1 - dr * 0.7)
+          + 0.030 * (fl.r - 0.5);
+  vec3 base = palette(clamp(t, 0.0, 1.0));
+
+  /* three-light rig: key, cool fill, tight wet specular */
+  vec3  L1 = normalize(vec3(-0.46,  0.56,  0.69));
+  vec3  L2 = normalize(vec3( 0.64, -0.40,  0.44));
+  vec3  H1 = normalize(L1 + vec3(0.0, 0.0, 1.0));
+  float d1 = max(dot(n, L1), 0.0);
+  float d2 = max(dot(n, L2), 0.0);
+  float sp = pow(max(dot(n, H1), 0.0), 48.0);
+
+  float wet  = smoothstep(0.05, 0.28, v);
+  float rim  = pow(1.0 - n.z, 2.4);
+  float gmag = length(g);
+
+  /* bioluminescent membrane where |∇V| spikes */
+  float edge = smoothstep(0.10, 0.75, gmag) * (1.0 - smoothstep(0.75, 2.6, gmag));
+  vec3  bio  = vec3(0.34, 0.98, 0.88) * edge * uRim;
+
+  /* subsurface warmth bleeding through thin tissue */
+  float thin = smoothstep(0.30, 0.06, v) * smoothstep(0.015, 0.19, v);
+  float back = pow(clamp(0.5 - 0.5 * dot(n, L1), 0.0, 1.0), 2.2);
+  vec3  sss  = vec3(0.98, 0.36, 0.13) * thin * back * (0.30 + 0.70 * fl.g) * 0.60;
+
+  float ao = 0.26 + 0.74 * h;                    // troughs occlude
+  vec3 col = base * (ao * (0.32 + 0.90 * d1) + d2 * 0.17 * vec3(0.52, 0.78, 1.00));
+  col += sp * wet * vec3(1.00, 0.97, 0.90) * 0.90;
+  col += rim * vec3(0.14, 0.40, 0.66) * 0.50;
+  col += sss;
+  col += bio;
+
+  /* depth haze keyed to the field — separates near tissue from far */
+  float haze = smoothstep(0.32, 0.95, fl.b);
+  col = mix(col, col * vec3(0.70, 0.85, 1.12), haze * 0.32);
+
+  /* vignette frames the composition */
+  vec2 q = (uv - 0.5) * vec2(uAspect, 1.0);
+  col *= 1.0 - uVig * smoothstep(0.20, 0.80, length(q));
+
+  /* deterministic film grain */
+  col += (hash(gl_FragCoord.xy + floor(uTime * 24.0) * 17.0) - 0.5) * uGrain;
+
+  frag = vec4(sqrt(clamp(col, 0.0, 1.0)), 1.0);
+}`;
+
+/* ─── GL plumbing ─────────────────────────────────────────────────────────── */
+function compile(type, src, tag){
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src); gl.compileShader(sh);
+  if(!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+    throw new Error(tag + ': ' + gl.getShaderInfoLog(sh));
+  return sh;
+}
+function program(fs, tag){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS, tag + ' vs'));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs, tag + ' fs'));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS))
+    throw new Error(tag + ' link: ' + gl.getProgramInfoLog(p));
+  const u = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i = 0; i < n; i++){
+    const info = gl.getActiveUniform(p, i);
+    u[info.name] = gl.getUniformLocation(p, info.name);
+  }
+  return { p, u };
+}
+let P_SIM, P_DISP, P_PAINT, P_SEED;
+try {
+  P_SIM   = program(SIM_FS,   'sim');
+  P_DISP  = program(DISP_FS,  'display');
+  P_PAINT = program(PAINT_FS, 'paint');
+  P_SEED  = program(SEED_FS,  'seed');
+} catch(err){
+  cv.style.display = 'none';
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;inset:0;padding:32px;color:#ff8a6a;background:#0a0407;font:12px/1.5 monospace;white-space:pre-wrap;z-index:99';
+  d.textContent = 'Shader build failed:\n\n' + err.message;
+  document.body.appendChild(d);
+  throw err;
+}
+gl.bindVertexArray(gl.createVertexArray());
+gl.disable(gl.DEPTH_TEST);
+gl.disable(gl.BLEND);
+
+/* One LINEAR sampler for the display unit.  The sim textures keep NEAREST
+   (the Laplacian needs exact texel centres, and it is ~1.9x cheaper), while
+   the display — which magnifies the grid well past 1:1 — gets hardware
+   bilinear from a single tap instead of a four-tap manual reconstruction. */
+const sampDisplay = gl.createSampler();
+gl.samplerParameteri(sampDisplay, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.samplerParameteri(sampDisplay, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.samplerParameteri(sampDisplay, gl.TEXTURE_WRAP_S, gl.REPEAT);
+gl.samplerParameteri(sampDisplay, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+/* ─── simulation state ────────────────────────────────────────────────────── */
+const SIM_W_TARGET = 448;
+let SIM_W = 0, SIM_H = 0, CVW = 0, CVH = 0;
+let state = null, fieldTex = null, fieldF32 = null;
+let swappable = 0, iterations = 0, seedCount = 0;
+
+const P = {
+  preset: 0, seed: 0x5EED,
+  feed: PRESETS[0].F, kill: PRESETS[0].K, du: 1.0, dv: 0.5, dt: 1.0,
+  fieldAmp: 0.0075, stepsPerFrame: 6,
+  relief: 150, drift: 0.05, rim: 0.9, palette: 0,
+  vignette: 0.62, grain: 0.015, radius: 0.028,
+  paused: false,
+};
+
+function makeTarget(w, h){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, FLOAT_IFMT || gl.RGBA8, w, h, 0, gl.RGBA,
+                quant ? gl.UNSIGNED_BYTE : gl.FLOAT, null);
+  /* NEAREST: the Laplacian samples exact texel centres, so filtering is pure
+     cost here — measured ~1.9x faster than LINEAR on a software rasteriser. */
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(!ok) throw new Error('framebuffer incomplete for ' + FLOAT_FMT);
+  return { tex: t, fbo: f, w, h };
+}
+
+/* 4-octave value-noise fBm, mulberry32-seeded. Returns [0,1]. */
+const OCTAVES = [[4, 0.52], [8, 0.26], [16, 0.14], [32, 0.08]];
+function fbmField(w, h, seed){
+  const rnd = mulberry32(seed ^ 0x9E3779B9);
+  const norm = OCTAVES.reduce((a, o) => a + o[1], 0);
+  const sum = new Float32Array(w * h);
+  for(let o = 0; o < OCTAVES.length; o++){
+    const n = OCTAVES[o][0], a = OCTAVES[o][1];
+    const lat = new Float32Array((n + 1) * (n + 1));
+    for(let i = 0; i < lat.length; i++) lat[i] = rnd();
+    for(let y = 0; y < h; y++){
+      const fy = y / h * n, j0 = Math.floor(fy), ty = fy - j0, wy = ty * ty * (3 - 2 * ty);
+      const r0 = j0 * (n + 1), r1 = (j0 + 1) * (n + 1), base = y * w;
+      for(let x = 0; x < w; x++){
+        const fx = x / w * n, i0 = Math.floor(fx), tx = fx - i0, wx = tx * tx * (3 - 2 * tx);
+        const a0 = lat[r0 + i0], b0 = lat[r0 + i0 + 1];
+        const c0 = lat[r1 + i0], d0 = lat[r1 + i0 + 1];
+        sum[base + x] += a * (a0 * ((1 - wx) * (1 - wy)) + b0 * (wx * (1 - wy))
+                           + c0 * ((1 - wx) * wy)       + d0 * (wx * wy));
+      }
+    }
+  }
+  for(let i = 0; i < w * h; i++) sum[i] = Math.max(0, Math.min(1, sum[i] / norm));
+  return sum;
+}
+/* kill is the inverse of feed: rich-feed basins sit in high-kill pockets, so
+   different parts of the field settle into genuinely different regimes. */
+function buildField(w, h, seed){
+  const f = fbmField(w, h, seed);
+  const bytes = new Uint8Array(w * h * 4);
+  for(let i = 0; i < w * h; i++){
+    bytes[i * 4 + 0] = Math.max(0, Math.min(255, f[i] * 255)) | 0;
+    bytes[i * 4 + 1] = Math.max(0, Math.min(255, (1 - f[i]) * 255)) | 0;
+    bytes[i * 4 + 2] = Math.max(0, Math.min(255, f[i] * 255)) | 0;
+    bytes[i * 4 + 3] = 255;
+  }
+  if(fieldTex) gl.deleteTexture(fieldTex);
+  fieldTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  fieldF32 = f;
+}
+
+/* exact replay of the seed shader's speck test → a real site count, not a guess */
+function countSeedSites(){
+  const sr = (P.seed % 65536) / 65536 * 97.3;
+  let n = 0;
+  for(let y = 0; y < SIM_H; y++){
+    for(let x = 0; x < SIM_W; x++){
+      const u = (x + 0.5) / SIM_W, v = (y + 0.5) / SIM_H;
+      const dens = smoothstepF(0.05, 0.65, fieldF32[y * SIM_W + x]) * 0.75 + 0.12;
+      if(1.0 - dens * 0.030 < hash21JS(u, v, sr)) n++;
+    }
+  }
+  return n;
+}
+function smoothstepF(a, b, x){ const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }
+function hash21JS(x, y, s){
+  let px = (x * 127.1 + s * 0.0173) % 1, py = (y * 311.7 + s * 0.0173) % 1;
+  px -= Math.floor(px); py -= Math.floor(py);
+  const d = px * px + py * py + 34.23;
+  px += d; py += d;
+  const v = px * py;
+  return v - Math.floor(v);
+}
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  let w = Math.max(320, Math.round(cv.clientWidth  * dpr));
+  let h = Math.max(240, Math.round(cv.clientHeight * dpr));
+  /* keep the display pass inside a sane software-rasteriser budget */
+  const MAXPX = 1180000;
+  if(w * h > MAXPX){ const s = Math.sqrt(MAXPX / (w * h)); w = Math.round(w * s); h = Math.round(h * s); }
+  const nh = Math.max(160, Math.round(SIM_W_TARGET * h / w));
+  if(w === CVW && h === CVH && nh === SIM_H) return false;
+  CVW = w; CVH = h; SIM_W = SIM_W_TARGET; SIM_H = nh;
+  cv.width = w; cv.height = h;
+  if(state){
+    gl.deleteTexture(state[0].tex); gl.deleteFramebuffer(state[0].fbo);
+    gl.deleteTexture(state[1].tex); gl.deleteFramebuffer(state[1].fbo);
+  }
+  state = [makeTarget(SIM_W, SIM_H), makeTarget(SIM_W, SIM_H)];
+  swappable = 0;
+  buildField(SIM_W, SIM_H, P.seed);
+  return true;
+}
+
+function drawQuad(){ gl.drawArrays(gl.TRIANGLES, 0, 3); }
+function bindTex(tex, unit){ gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); }
+
+function runSeedPass(){
+  const dst = state[1 - swappable];
+  gl.bindSampler(0, null); gl.bindSampler(1, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+  gl.viewport(0, 0, SIM_W, SIM_H);
+  gl.useProgram(P_SEED.p);
+  bindTex(fieldTex, 0); gl.uniform1i(P_SEED.u.uField, 0);
+  gl.uniform2f(P_SEED.u.uTexel, 1 / SIM_W, 1 / SIM_H);
+  gl.uniform1f(P_SEED.u.uSeed, (P.seed % 65536) / 65536 * 97.3);
+  gl.uniform1f(P_SEED.u.uAspect, SIM_W / SIM_H);
+  drawQuad();
+  swappable = 1 - swappable;
+  seedCount = countSeedSites() + NCOL + 1;   // dust + spiral + focal colony
+}
+
+function clearField(){
+  const dst = state[1 - swappable];
+  const n = SIM_W * SIM_H;
+  if(quant){
+    const b = new Uint8Array(n * 4);
+    for(let i = 0; i < n; i++){ b[i*4] = 255; b[i*4+1] = 0; b[i*4+2] = 128; b[i*4+3] = 255; }
+    gl.bindTexture(gl.TEXTURE_2D, dst.tex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIM_W, SIM_H, gl.RGBA, gl.UNSIGNED_BYTE, b);
+  } else {
+    const f = new Float32Array(n * 4);
+    for(let i = 0; i < n; i++){ f[i*4] = 1; f[i*4+3] = 1; }
+    gl.bindTexture(gl.TEXTURE_2D, dst.tex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, SIM_W, SIM_H, gl.RGBA, gl.FLOAT, f);
+  }
+  swappable = 1 - swappable;
+  iterations = 0;
+}
+
+function simStep(nSteps){
+  /* the sim must read exact texel centres — drop the display's LINEAR
+     sampler from unit 0 before the ping-pong starts */
+  gl.bindSampler(0, null);
+  gl.bindSampler(1, null);
+  gl.useProgram(P_SIM.p);
+  bindTex(state[swappable].tex, 0); gl.uniform1i(P_SIM.u.uState, 0);
+  bindTex(fieldTex, 1);             gl.uniform1i(P_SIM.u.uField, 1);
+  gl.uniform2f(P_SIM.u.uTexel, 1 / SIM_W, 1 / SIM_H);
+  gl.uniform1f(P_SIM.u.uF,  P.feed);
+  gl.uniform1f(P_SIM.u.uK,  P.kill);
+  gl.uniform1f(P_SIM.u.uDu, P.du);
+  gl.uniform1f(P_SIM.u.uDv, P.dv);
+  gl.uniform1f(P_SIM.u.uDt, P.dt);
+  gl.uniform1f(P_SIM.u.uFieldAmp, P.fieldAmp);
+  gl.viewport(0, 0, SIM_W, SIM_H);
+  let a = swappable;
+  for(let i = 0; i < nSteps; i++){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, state[1 - a].fbo);
+    bindTex(state[a].tex, 0);
+    drawQuad();
+    a = 1 - a;
+  }
+  swappable = a;
+  iterations += nSteps;
+}
+
+function paint(ax, ay, bx, by, erase){
+  const dst = state[1 - swappable];
+  gl.bindSampler(0, null); gl.bindSampler(1, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+  gl.viewport(0, 0, SIM_W, SIM_H);
+  gl.useProgram(P_PAINT.p);
+  bindTex(state[swappable].tex, 0);
+  gl.uniform1i(P_PAINT.u.uState, 0);
+  gl.uniform2f(P_PAINT.u.uTexel, 1 / SIM_W, 1 / SIM_H);
+  gl.uniform2f(P_PAINT.u.uRA, ax, ay);
+  gl.uniform2f(P_PAINT.u.uAB, bx - ax, by - ay);
+  gl.uniform1f(P_PAINT.u.uAspect, SIM_W / SIM_H);
+  gl.uniform1f(P_PAINT.u.uRadius, P.radius);
+  gl.uniform1f(P_PAINT.u.uErase, erase ? 1 : 0);
+  gl.uniform1f(P_PAINT.u.uFeather, P.radius * 0.45);
+  drawQuad();
+  swappable = 1 - swappable;
+}
+
+function display(tSec){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, CVW, CVH);
+  gl.useProgram(P_DISP.p);
+  /* unit 0 gets a LINEAR sampler object; the simulation reads the very same
+     texture with the default NEAREST sampler, so one texture serves both
+     the exact-texel Laplacian and a smooth magnified display. */
+  gl.bindSampler(0, sampDisplay);
+  gl.bindSampler(1, null);
+  bindTex(state[swappable].tex, 0); gl.uniform1i(P_DISP.u.uState, 0);
+  bindTex(fieldTex, 1);             gl.uniform1i(P_DISP.u.uField, 1);
+  gl.uniform2f(P_DISP.u.uRes,  CVW, CVH);
+  gl.uniform1f(P_DISP.u.uRelief, P.relief * (SIM_W / CVW));
+  gl.uniform1f(P_DISP.u.uDrift,  P.drift);
+  gl.uniform1f(P_DISP.u.uTime,   tSec);
+  gl.uniform1f(P_DISP.u.uAspect, CVW / CVH);
+  gl.uniform1f(P_DISP.u.uVig,    P.vignette);
+  gl.uniform1f(P_DISP.u.uGrain,  P.grain);
+  gl.uniform1f(P_DISP.u.uRim,    P.rim);
+  gl.uniform1f(P_DISP.u.uPal,    P.palette);
+  drawQuad();
+}
+
+/* ─── HUD / controls ─────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const PAL_NAMES = ['reef', 'magma', 'abyss', 'lichen'];
+const SLIDERS = [
+  { key:'feed',    label:'feed F',    min:0.010, max:0.100, step:0.0005, fmt:v=>v.toFixed(4) },
+  { key:'kill',    label:'kill k',    min:0.045, max:0.070, step:0.0002, fmt:v=>v.toFixed(4) },
+  { key:'du',      label:'D u',       min:0.30,  max:1.60,  step:0.01,   fmt:v=>v.toFixed(2) },
+  { key:'dv',      label:'D v',       min:0.20,  max:0.90,  step:0.005,  fmt:v=>v.toFixed(3) },
+  { key:'dt',      label:'dt',        min:0.20,  max:1.00,  step:0.01,   fmt:v=>v.toFixed(2) },
+  { key:'fieldAmp',label:'field var', min:0.000, max:0.018, step:0.0002, fmt:v=>v.toFixed(4) },
+  { key:'relief',  label:'relief',    min:0,     max:400,   step:1,      fmt:v=>v.toFixed(0) },
+  { key:'rim',     label:'rim glow',  min:0,     max:2.4,   step:0.02,   fmt:v=>v.toFixed(2) },
+  { key:'drift',   label:'hue drift', min:0,     max:0.30,  step:0.005,  fmt:v=>v.toFixed(3) },
+  { key:'radius',  label:'brush',     min:0.004, max:0.090, step:0.001,  fmt:v=>v.toFixed(3) },
+  { key:'stepsPerFrame', label:'steps/frame', min:1, max:30, step:1,     fmt:v=>v.toFixed(0) },
+  { key:'palette', label:'palette',   min:0,     max:3,     step:1,      fmt:v=>PAL_NAMES[Math.round(v)] },
+];
+const slOut = {};
+for(const s of SLIDERS){
+  const row = document.createElement('div'); row.className = 'sl';
+  const lab = document.createElement('label'); lab.textContent = s.label;
+  const inp = document.createElement('input');
+  inp.type = 'range'; inp.min = s.min; inp.max = s.max; inp.step = s.step; inp.value = P[s.key];
+  const out = document.createElement('output');
+  const sync = () => {
+    const v = parseFloat(inp.value);
+    P[s.key] = v;
+    out.textContent = s.fmt(v);
+    inp.style.setProperty('--p', ((v - s.min) / (s.max - s.min) * 100) + '%');
+  };
+  inp.addEventListener('input', sync);
+  sync();
+  row.append(lab, inp, out);
+  $('sliders').appendChild(row);
+  slOut[s.key] = inp;
+}
+function syncSliders(){ for(const k in slOut) slOut[k].dispatchEvent(new Event('input')); }
+
+PRESETS.forEach((pr, i) => {
+  const b = document.createElement('button');
+  b.className = 'chip'; b.textContent = pr.name;
+  b.addEventListener('click', () => setPreset(i));
+  $('presets').appendChild(b);
+});
+function setPreset(i){
+  P.preset = i;
+  P.feed = PRESETS[i].F; P.kill = PRESETS[i].K; P.du = 1.0; P.dv = 0.5;
+  syncSliders();
+  [...$('presets').children].forEach((c, j) => c.classList.toggle('on', j === i));
+  $('t-preset').textContent = PRESETS[i].name;
+}
+setPreset(0);
+
+let phase = 'warmup', warmStart = 0;
+function reseed(newSeed){
+  P.seed = (newSeed !== undefined ? newSeed : P.seed + 1) & 0xFFFF || 1;
+  $('t-seed').textContent = '0x' + P.seed.toString(16).toUpperCase().padStart(4, '0');
+  buildField(SIM_W, SIM_H, P.seed);
+  runSeedPass();
+  iterations = 0;
+  phase = 'warmup'; warmStart = performance.now();
+  $('barlab').textContent = 'SPINNING UP REACTOR';
+}
+$('b-pause').addEventListener('click', () => {
+  P.paused = !P.paused;
+  $('b-pause').textContent = P.paused ? 'Resume' : 'Pause';
+  $('b-pause').classList.toggle('on', P.paused);
+});
+$('b-reseed').addEventListener('click', () => reseed());
+$('b-clear').addEventListener('click', () => clearField());
+addEventListener('keydown', e => {
+  if(e.target && /INPUT|BUTTON/.test(e.target.tagName)) return;
+  if(e.key === ' '){ e.preventDefault(); $('b-pause').click(); }
+  else if(e.key === 'r' || e.key === 'R') reseed();
+  else if(e.key === 'p' || e.key === 'P'){
+    slOut.palette.value = (P.palette + 1) % 4;
+    slOut.palette.dispatchEvent(new Event('input'));
+  }
+  else if(e.key >= '1' && e.key <= '6') setPreset(+e.key - 1);
+});
+
+/* pointer: client → sim uv, y flipped into GL space */
+let painting = false, lastUV = null, eraseMode = false;
+function toUV(ev){
+  const r = cv.getBoundingClientRect();
+  return [ (ev.clientX - r.left) / r.width, 1 - (ev.clientY - r.top) / r.height ];
+}
+cv.addEventListener('pointerdown', ev => {
+  if(ev.button !== 0) return;
+  cv.setPointerCapture(ev.pointerId);
+  painting = true; eraseMode = ev.shiftKey;
+  lastUV = toUV(ev);
+  paint(lastUV[0], lastUV[1], lastUV[0], lastUV[1], eraseMode);
+});
+cv.addEventListener('pointermove', ev => {
+  if(!painting) return;
+  const uv = toUV(ev);
+  paint(lastUV[0], lastUV[1], uv[0], uv[1], eraseMode);
+  lastUV = uv;
+});
+const stopPaint = () => { painting = false; lastUV = null; };
+cv.addEventListener('pointerup', stopPaint);
+cv.addEventListener('pointercancel', stopPaint);
+cv.addEventListener('pointerleave', stopPaint);
+
+let resizeTimer = 0;
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if(resize()) reseed(); }, 220);
+});
+
+/* ─── main loop ───────────────────────────────────────────────────────────── */
+const WARMUP_TARGET = 3000;     // iterations needed before the field is interesting
+const WARMUP_BUDGET = 58000;    // ms ceiling on the pre-ready spin-up
+let fps = 0, fpsAcc = 0, fpsN = 0, lastT = 0, frame = 0;
+let simMs = 0, dispMs = 0;
+
+const drainBuf = new Float32Array(4);
+const drainU8  = new Uint8Array(4);
+
+function frameLoop(now){
+  requestAnimationFrame(frameLoop);
+  const dt = lastT ? (now - lastT) : 16.7;
+  lastT = now;
+  fpsAcc += dt; fpsN++;
+  if(fpsAcc > 400){ fps = 1000 / (fpsAcc / fpsN); fpsAcc = 0; fpsN = 0; }
+  const tSec = frame * 0.0166;
+
+  if(phase === 'warmup'){
+    /* The display pass costs ~3x a sim step, so running it every warm-up
+       frame would starve the spin-up. Simulate a whole slice, then draw
+       once — the progress bar animates and the user still sees it alive. */
+    const slice = 90;
+    const t0 = performance.now();
+    simStep(slice);
+    const t1 = performance.now();
+    if(simMs === 0) simMs = (t1 - t0) / slice;
+    display(tSec);
+    $('barf').style.width = (Math.min(1, iterations / WARMUP_TARGET) * 100).toFixed(1) + '%';
+    if(iterations >= WARMUP_TARGET || (now - warmStart) > WARMUP_BUDGET){
+      phase = 'live';
+      $('barf').style.width = '100%';
+      $('barlab').textContent = 'REACTOR AT STEADY STATE';
+      measure();
+    }
+  } else {
+    if(!P.paused) simStep(P.stepsPerFrame);
+    display(tSec);
+  }
+  frame++;
+  updateHUD();
+}
+
+/* Honest timing: drain the pipeline with a synced 1px readback BEFORE each
+   timer starts, so nothing queued earlier is charged to the measurement. */
+function measure(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, state[swappable].fbo);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, drainBuf);          // drain
+  const t0 = performance.now();
+  simStep(12);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, drainBuf);          // sync
+  const t1 = performance.now();
+  simMs = (t1 - t0) / 12;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  display(0);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, drainU8);   // drain
+  const t2 = performance.now();
+  display(0.0166); display(0.0332);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, drainU8);   // sync
+  const t3 = performance.now();
+  dispMs = (t3 - t2) / 2;
+
+  window.__probe = buildProbe();
+  window.__ready = true;
+}
+
+let hudTick = 0, probeTick = 0;
+function updateHUD(){
+  if((hudTick++ & 3) === 0){
+    $('m-iter').textContent  = iterations.toLocaleString('en-US');
+    $('m-grid').textContent  = SIM_W + '×' + SIM_H + '  (' + (SIM_W * SIM_H / 1000).toFixed(0) + 'k)';
+    $('m-f').textContent     = P.feed.toFixed(4);
+    $('m-k').textContent     = P.kill.toFixed(4);
+    $('m-d').textContent     = P.du.toFixed(2) + ' / ' + P.dv.toFixed(3);
+    $('m-rate').textContent  = (P.paused ? 0 : P.stepsPerFrame) + ' × ' + P.dt.toFixed(2) + ' dt';
+    $('m-seeds').textContent = seedCount.toLocaleString('en-US');
+    $('m-fps').textContent   = fps > 0 ? fps.toFixed(1) : '—';
+    $('t-cells').textContent = (SIM_W * SIM_H / 1000).toFixed(0) + 'k';
+    $('barlab').textContent  = phase === 'live'
+      ? 'REACTOR AT STEADY STATE · ' + iterations.toLocaleString('en-US') + ' ITER'
+      : 'SPINNING UP REACTOR';
+  }
+  /* keep __probe live so the verifier always reads current, real numbers */
+  if(++probeTick >= 20){ probeTick = 0; window.__probe = buildProbe(); }
+}
+function buildProbe(){
+  return {
+    gridW: SIM_W, gridH: SIM_H, cells: SIM_W * SIM_H,
+    canvasW: CVW, canvasH: CVH,
+    iterations: iterations, seedSites: seedCount,
+    regime: PRESETS[P.preset].name, palette: PAL_NAMES[Math.round(P.palette)],
+    feed: +P.feed.toFixed(5), kill: +P.kill.toFixed(5),
+    du: +P.du.toFixed(3), dv: +P.dv.toFixed(3), dt: +P.dt.toFixed(3),
+    fieldVar: +P.fieldAmp.toFixed(5), stepsPerFrame: P.stepsPerFrame, paused: P.paused,
+    stencil: '9-point isotropic 0.05/0.20/-1.0 explicit Euler',
+    floatFormat: FLOAT_FMT, seed: '0x' + P.seed.toString(16).toUpperCase(),
+    extension: extCBF ? 'EXT_color_buffer_float' : 'none',
+    simMsPerStep: +simMs.toFixed(3),
+    displayMsPerFrame: +dispMs.toFixed(2),
+    fps: +fps.toFixed(1), framesRendered: frame, phase: phase,
+    warmupTarget: WARMUP_TARGET, warmupBudgetMs: WARMUP_BUDGET,
+  };
+}
+
+/* Pixel introspection hook.  The default framebuffer is unreadable after
+   compositing (no preserveDrawingBuffer), so this redraws and reads back
+   inside the same GL task — that is genuine framebuffer content. */
+window.__sample = function(x, y, w, h){
+  x = x || 0; y = y || 0; w = w || 64; h = h || 64;
+  display(frame * 0.0166);
+  const buf = new Uint8Array(w * h * 4);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  let sum = 0, mn = 255, mx = 0;
+  const hist = new Set();
+  for(let i = 0; i < buf.length; i += 4){
+    const l = buf[i] * 0.2126 + buf[i+1] * 0.7152 + buf[i+2] * 0.0722;
+    sum += l; if(l < mn) mn = l; if(l > mx) mx = l;
+    hist.add((buf[i] >> 3) + ',' + (buf[i+1] >> 3) + ',' + (buf[i+2] >> 3));
+  }
+  const n = w * h;
+  return { mean: +(sum / n).toFixed(1), min: +mn.toFixed(1), max: +mx.toFixed(1),
+           colours: hist.size, iterations };
+};
+
+/* ─── go ─────────────────────────────────────────────────────────────────── */
+function boot(){
+  resize();
+  $('t-seed').textContent = '0x' + P.seed.toString(16).toUpperCase().padStart(4, '0');
+  runSeedPass();
+  phase = 'warmup'; warmStart = performance.now();
+  requestAnimationFrame(frameLoop);
+}
+boot();
+</script>
+</body>
+</html>
