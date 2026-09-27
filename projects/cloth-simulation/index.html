@@ -125,7 +125,13 @@ const P = {
 };
 const CW = 1.66, CH = 1.50, TOP_Y = 0.74, FLOOR_Y = -0.94;
 const DT = 1/60, MAXV = 0.05, DAMP = 0.984, TEAR_RATE = 0.34;
-const BEND_K = 0.30;        /* bend springs are far softer than structural */
+/* BEND_K is recorded per spring but NOT used by the solver, which applies one
+   global P.stiff to every member. Wiring it in (corr *= sStiff[s]) was tried
+   and reverted: at 0.30 the sheet loses its structural back and collapses --
+   luma 56.6 -> 14.2, 29 -> 97 fractured springs, max strain 1.01 -> 29.1.
+   Pleats come from SEED_RIPPLE instead. Keep this inert unless that tradeoff
+   is deliberately revisited. */
+const BEND_K = 0.30;        /* recorded per bend spring, currently not applied */
 const SEED_RIPPLE = 0.055;  /* out-of-plane imperfection that lets it pleat */
 /* the sheet is first draped from a rod, then dropped to its two corners,
    then held under a stiff breeze with the tear threshold briefly lowered

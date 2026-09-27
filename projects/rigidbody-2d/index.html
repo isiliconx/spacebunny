@@ -803,6 +803,17 @@ function drawWalls(){
 }
 
 function drawFloorEdge(){
+  // Solid slab body. Without a filled mass the floor read as empty background:
+  // the hatch is 7% alpha over the backdrop, and the only other cue was a
+  // 2.2px line, so the bottom of the frame looked unpainted. Fill the slab
+  // first, then hatch it, then put the luminous surface line on top.
+  const sg = ctx.createLinearGradient(0, 0, 0, -0.86);
+  sg.addColorStop(0, 'rgba(38,74,96,0.95)');
+  sg.addColorStop(0.45, 'rgba(24,50,68,0.92)');
+  sg.addColorStop(1, 'rgba(14,30,44,0.90)');
+  ctx.fillStyle = sg;
+  ctx.fillRect(-0.4, -0.86, VW+0.8, 0.86);
+
   // Luminous surface line along the top of the floor slab. This is the main
   // cue that the floor is a solid, collidable surface, so it is drawn bright
   // enough to survive being overlapped by the pile.
@@ -911,7 +922,11 @@ function drawImpulses(){
 }
 
 function drawScene(){
-  ctx.setTransform(PX, 0, 0, -PX, 0, CH - PX*FLOOR_Y);
+  // Map world y=-FLOOR_Y to canvas y=CH (the bottom edge) and y up as -y.
+  // The previous offset added CH as well, which pushed the floor surface to
+  // canvas y=435 in a 357px buffer -- the entire slab and its luminous top
+  // line rendered off-screen, which is why the floor read as bare background.
+  ctx.setTransform(PX, 0, 0, -PX, 0, CH + PX*FLOOR_Y);
   ctx.clearRect(-1, FLOOR_Y-1, VW+2, VH+2);
   drawBackground();
   drawGrid();
