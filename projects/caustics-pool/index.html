@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Caustics Pool — inverted photon mapping</title>
+<style>
+  :root{
+    --ink:#a6cdd4; --dim:#5f8a93; --warm:#f0dcb0; --line:rgba(126,196,206,.20);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#030e14;overflow:hidden}
+  body{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+       color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+  .panel{position:fixed;background:rgba(4,16,21,.80);border:1px solid var(--line);
+         padding:10px 12px 9px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  #ui{top:14px;left:14px;width:236px}
+  h1{margin:0;font-size:12.5px;letter-spacing:.20em;font-weight:600;color:var(--warm)}
+  .sub{margin:3px 0 0;font-size:11px;letter-spacing:.01em;color:var(--dim)}
+  .sub b{color:#8fc0c9;font-weight:500}
+  .grp{margin:9px 0 0;padding-top:6px;border-top:1px solid var(--line);
+       font-size:10.5px;letter-spacing:.18em;color:#4d757e}
+  .row{display:flex;align-items:center;gap:6px;margin-top:5px}
+  .row label{flex:0 0 78px;font-size:11px;color:#7ea9b1;letter-spacing:.02em}
+  .row input[type=range]{flex:1 1 auto;width:100%;height:14px;margin:0;accent-color:var(--warm);
+                         background:transparent;-webkit-appearance:none;appearance:none;cursor:ew-resize}
+  .row input[type=range]::-webkit-slider-runnable-track{height:2px;background:#2b4c55;border-radius:2px}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;margin-top:-3.5px;
+        border-radius:50%;background:var(--warm);box-shadow:0 0 5px rgba(240,220,176,.5)}
+  .row span{flex:0 0 40px;text-align:right;font-size:11px;color:var(--warm);font-variant-numeric:tabular-nums}
+  .btns{display:flex;gap:6px;margin-top:10px}
+  button{flex:1 1 0;background:rgba(18,44,52,.9);color:#a6cdd4;border:1px solid var(--line);
+         font:inherit;font-size:11px;letter-spacing:.10em;padding:4px 0;cursor:pointer}
+  button:hover{background:rgba(32,74,86,.95);color:var(--warm)}
+  button:active{background:rgba(52,104,118,.95)}
+  #hud{right:14px;bottom:14px;text-align:right;font-size:11px;line-height:1.6;color:#5f8a93;
+       font-variant-numeric:tabular-nums;letter-spacing:.02em;pointer-events:none}
+  #hud b{color:#9dc6ce;font-weight:500}
+  #note{left:14px;bottom:14px;font-size:11px;color:#4d757e;max-width:236px;line-height:1.5}
+  .err{position:fixed;inset:0;display:grid;place-items:center;font-size:13px;color:#d88;
+       padding:40px;text-align:center}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="ui">
+  <h1>CAUSTICS POOL</h1>
+  <p class="sub"><b>inverted photon mapping</b> — floor irradiance
+     <b>E·cosθ / |det&nbsp;∂P/∂s|</b>, Gerstner ∂² analytic, Snell refraction, Δt&nbsp;=&nbsp;1/60&nbsp;s</p>
+  <div id="rows"></div>
+  <div class="btns"><button id="bShape">RESHAPE</button><button id="bPause">PAUSE</button></div>
+</div>
+
+<div id="hud"></div>
+<div class="panel" id="note">view ray refracted through the surface into the water,
+  then the light path inverted on the floor plane. drag to look.</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ utils */
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const lerp=(a,b,t)=>a+(b-a)*t;
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+/* sRGB hex -> linear rgb */
+function lin(hex){const n=parseInt(hex.slice(1),16);
+  return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255].map(c=>Math.pow(c,2.2));}
+
+/* ------------------------------------------------------------------- gl ctx */
+const canvas=document.getElementById('gl');
+const gl=canvas.getContext('webgl2',{antialias:false,alpha:false,depth:false,stencil:false,
+  preserveDrawingBuffer:false,powerPreference:'high-performance'});
+if(!gl){
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="err">This demo needs WebGL2.<br>Try a current Chrome, Firefox or Safari build.</div>');
+  throw new Error('no webgl2');
+}
+
+/* ------------------------------------------------------------------- shader */
+const VS=`#version 300 es
+layout(location=0) in vec2 a;
+void main(){gl_Position=vec4(a,0.0,1.0);}`;
+
+const FS=`#version 300 es
+precision highp float;
+out vec4 O;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform vec3  uCam, uFwd, uRight, uUp;
+uniform float uFocal;
+uniform float uDepth, uFloorY, uEta, uSunI;
+uniform vec3  uSun;                 // direction the light travels (y<0)
+uniform float uSharp, uGain, uWater, uCanopy;
+uniform int   uCount;
+uniform vec4  uA[16];               // dirX, dirZ, k, amp
+uniform vec4  uB[16];               // omega, Q, -, -
+uniform vec3  uTileA, uTileB, uGrout, uBandCol, uSunCol, uAmbCol, uScatCol, uAbyss;
+uniform vec3  uSkyTop, uSkyHor, uBody;
+uniform float uTile, uDrainFade, uExposure;
+uniform vec2  uBandN, uDrainC;
+uniform float uBandOff, uBandW;
+uniform vec2  uOffset;
+uniform int   uDbg;
+
+const float TAU = 6.2831853;
+
+float hash21(vec2 p){
+  p = fract(p*vec2(123.34,456.21));
+  p += dot(p,p+45.32);
+  return fract(p.x*p.y);
+}
+mat2 rot(float a){ float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+
+/* ---- Gerstner height field: position, 1st and 2nd parameter derivatives ---- */
+struct Surf { vec3 p, dX, dZ, dXX, dXZ, dZZ; float detJ; };
+
+Surf waveS(vec2 q, float sc){
+  Surf s;
+  s.p  = vec3(q.x, 0.0, q.y);
+  s.dX = vec3(1.0,0.0,0.0);  s.dZ = vec3(0.0,0.0,1.0);
+  s.dXX= vec3(0.0);          s.dXZ= vec3(0.0);   s.dZZ= vec3(0.0);
+  for(int i=0;i<16;i++){
+    if(i>=uCount) break;
+    vec4 A=uA[i]; vec4 B=uB[i];
+    float kx=A.z*A.x, kz=A.z*A.y;
+    float th=kx*q.x+kz*q.y-B.x*uTime;
+    float sn=sin(th), cs=cos(th);
+    float Q=B.y*sc, am=A.w*sc;
+    s.p.x-=Q*A.x*sn;  s.p.z-=Q*A.y*sn;  s.p.y+=am*cs;
+    s.dX.x-=Q*kx*A.x*cs; s.dX.y-=am*kx*sn; s.dX.z-=Q*kx*A.y*cs;
+    s.dZ.x-=Q*kz*A.x*cs; s.dZ.y-=am*kz*sn; s.dZ.z-=Q*kz*A.y*cs;
+    s.dXX.x+=Q*kx*kx*A.x*sn; s.dXX.y-=am*kx*kx*cs; s.dXX.z+=Q*kx*kx*A.y*sn;
+    s.dXZ.x+=Q*kx*kz*A.x*sn; s.dXZ.y-=am*kx*kz*cs; s.dXZ.z+=Q*kx*kz*A.y*sn;
+    s.dZZ.x+=Q*kz*kz*A.x*sn; s.dZZ.y-=am*kz*kz*cs; s.dZZ.z+=Q*kz*kz*A.y*sn;
+  }
+  s.detJ = s.dX.x*s.dZ.z - s.dX.z*s.dZ.x;
+  return s;
+}
+vec3 snormal(Surf s){ return normalize(cross(s.dZ,s.dX)); }
+
+/* ---- sky seen by the surface reflection ---- */
+vec3 sky(vec3 d){
+  float e = clamp(d.y,0.0,1.0);
+  vec3 c = mix(uSkyHor, uSkyTop, pow(e,0.55));
+  float s = max(dot(d,-uSun),0.0);
+  c += uSunCol*(pow(s,1600.0)*14.0 + pow(s,40.0)*0.45 + pow(s,6.0)*0.10);
+  return c;
+}
+
+/* ---- caustic irradiance at a floor point P -------------------------------
+   1. invert the photon map: find the surface param q whose refracted sun ray
+      lands on P (3 fixed-point / Newton steps, damped).
+   2. build the 2x2 jacobian dP/dq analytically: the differential of Snell
+      refraction w.r.t. the normal is M = g*I + mu*n*s^, dP/dq = dq + dt*T + t*dT.
+   3. E = E0*cos(theta) * |detJ| / |det dP/dq|  ->  bright where rays converge. */
+/* the photon map: for a surface param q, where does the refracted sun ray land?
+   Carries the analytic 2x2 dP/dq (needed for irradiance AND for the newton step). */
+struct Phot { vec2 P; vec3 n; float t; float detJ; vec2 dX; vec2 dZ; vec2 sl; };
+
+Phot photMap(vec2 q){
+  Surf  s  = waveS(q,1.0);
+  vec3  c  = cross(s.dZ,s.dX);
+  float cl = max(length(c),1e-6);
+  vec3  n  = c/cl;
+  vec3  T  = refract(uSun,n,uEta);
+  if(dot(T,T)<1e-7) T = uSun;
+  float hp = s.p.y-uFloorY;
+  float t  = hp/max(-T.y,1e-3);
+  Phot o;
+  o.n = n; o.t = t; o.detJ = s.detJ;
+  o.sl = vec2(s.dX.y, s.dZ.y);
+
+  // dn/dq from the 2nd parameter derivatives of the height field
+  vec3 cx = cross(s.dXZ,s.dX) + cross(s.dZ,s.dXX);
+  vec3 cz = cross(s.dZZ,s.dX) + cross(s.dZ,s.dXZ);
+  mat3 Pm = mat3(1.0) - outerProduct(n,n);
+  vec3 nX = Pm*cx/cl, nZ = Pm*cz/cl;
+
+  // differential of Snell refraction: dT = g*uSun + mu*n*(d.n)
+  float d  = dot(uSun,n);
+  float kk = max(1.0 - uEta*uEta*(1.0-d*d), 1e-5);
+  float sk = sqrt(kk);
+  float g  = uEta*d - sk;
+  float mu = uEta + uEta*uEta*(1.0-d*d)/sk;
+  mat3 M   = g*mat3(1.0) + mu*outerProduct(n,uSun);
+  vec3 TX = M*nX, TZ = M*nZ;
+
+  float i2 = 1.0/(T.y*T.y);
+  float tX = (s.dX.y*(-T.y) + hp*TX.y)*i2;
+  float tZ = (s.dZ.y*(-T.y) + hp*TZ.y)*i2;
+  o.dX = vec2(s.dX.x + tX*T.x + t*TX.x,  s.dX.z + tX*T.z + t*TX.z);
+  o.dZ = vec2(s.dZ.x + tZ*T.x + t*TZ.x,  s.dZ.z + tZ*T.z + t*TZ.z);
+  o.P  = s.p.xz + t*T.xz;
+  return o;
+}
+
+float causticAt(vec3 P, out float lpath, out float fold, out float slope, out float resid, out vec2 qOut){
+  // damped newton on F(q) - P.xz = 0, using the exact analytic dF/dq
+  vec2  q = P.xz + uOffset;
+  Phot o = photMap(q);
+  for(int it=0; it<3; it++){
+    vec2  r = o.P - P.xz;
+    float det = o.dX.x*o.dZ.y - o.dZ.x*o.dX.y;
+    if(abs(det)<3e-2) det = det<0.0 ? -3e-2 : 3e-2;   // never step through a fold
+    vec2  st = vec2( o.dZ.y*r.x - o.dZ.x*r.y,
+                     o.dX.x*r.y - o.dX.y*r.x)/det;
+    q -= clamp(st, -0.40, 0.40);
+    o = photMap(q);
+  }
+  resid = length(o.P - P.xz);
+  qOut = q;
+  lpath = o.t;
+  slope = length(o.sl);
+  float Jr = abs(o.dX.x*o.dZ.y - o.dZ.x*o.dX.y)/max(abs(o.detJ),1e-3);
+  fold  = 1.0 - smoothstep(0.0,0.50,Jr);
+  return max(-dot(uSun,o.n),0.0)/max(Jr,1e-3);
+}
+
+/* ---- floor material ---------------------------------------------------- */
+vec3 floorAlb(vec2 p, out float lum, out float grout){
+  vec2 tp = p/uTile;
+  vec2 id = floor(tp), fr = fract(tp);
+  float r = hash21(id*1.13+7.7);
+  vec3 a = mix(uTileA,uTileB,r) * (0.90+0.18*hash21(id*3.7+1.3));
+  vec2 g = min(fr,1.0-fr);
+  grout = smoothstep(0.0,0.055,min(g.x,g.y));
+  // decorative tile band crossing the pool
+  float band = 1.0-smoothstep(uBandW-0.05,uBandW+0.05,abs(dot(p,uBandN)-uBandOff));
+  float pip  = smoothstep(0.055,0.10,uBandW-abs(dot(p,uBandN)-uBandOff));
+  a = mix(a, uBandCol, band*(1.0-pip)*0.92);
+  grout *= (1.0-band*0.8);
+  a = mix(uGrout*(1.0+0.5*hash21(id*7.1)), a, grout);
+  // drain
+  vec2 dv = p-uDrainC; float dl = length(dv);
+  float dm = smoothstep(0.150,0.138,dl);
+  float sp = smoothstep(0.30,0.55,abs(sin(atan(dv.y,dv.x)*3.0)));
+  vec3 mt = mix(vec3(0.020,0.030,0.034), vec3(0.10,0.11,0.11), sp*0.7);
+  a = mix(a, mt, dm);
+  lum = dot(a, vec3(0.2126,0.7152,0.0722));
+  return a;
+}
+
+/* ---- the pool is a finite rectangle; outside it is the sunlit deck -------- */
+uniform vec2  uPoolC, uPoolH;   // centre, half-extent (x,z)
+float inPool(vec2 p){
+  vec2 d = abs(p-uPoolC) - uPoolH;
+  return 1.0 - smoothstep(-0.01, 0.01, max(d.x,d.y));
+}
+/* sunlit deck: warm stone, coping band, long soft shadow from the pool wall */
+vec3 deckShade(vec2 p, float fade){
+  // travertine deck boards laid across the pool, sun bleached
+  vec2 tp = vec2(p.x/0.92, p.y/0.62);
+  float sd = hash21(floor(tp)*2.3);
+  vec3 a = mix(vec3(0.520,0.486,0.418), vec3(0.404,0.374,0.320), sd);
+  vec2 fr = fract(tp);
+  // joint contrast falls off as the boards shrink below a pixel: without this
+  // the seams alias into a field of bright dashes across the whole deck
+  float px = max(fwidth(tp.x), fwidth(tp.y));
+  float joint = 1.0-smoothstep(0.020,0.11,px);
+  float gap = 1.0-smoothstep(0.0,0.05,min(fr.x, fr.y));
+  a = mix(a, vec3(0.195,0.182,0.160), gap*joint);
+  a *= 1.0+(0.93+0.14*hash21(floor(tp*vec2(1.0,2.0))*7.7)-1.0)*joint;
+  a *= 1.0+(0.95+0.10*hash21(floor(tp*4.0)*3.3)-1.0)*joint;
+  vec2 dd = abs(p-uPoolC)-uPoolH;
+  float edge = 1.0-smoothstep(0.010,0.048,max(dd.x,dd.y));
+  a = mix(a, vec3(0.78,0.76,0.70), edge);                        // pale coping
+  // the coping overhangs the water: a dark line right at the lip reads as depth
+  float lipL = 1.0-smoothstep(0.0,0.022,max(dd.x,dd.y));
+  a = mix(a, vec3(0.16,0.19,0.20), lipL*0.75);
+  // the pool wall casts a shadow AWAY from the sun, on the far side only
+  float sh = smoothstep(-0.02,0.30,max(dd.x,dd.y))
+           * smoothstep(0.0,0.6,-uSun.x*(p.x-uPoolC.x)-uSun.z*(p.y-uPoolC.y));
+  a *= 1.0-0.38*clamp(sh,0.0,1.0);
+  // past a few metres a board is sub-pixel: converge to its mean, or the
+  // seams alias into a field of bright dashes
+  return mix(a, vec3(0.430,0.400,0.348), fade);
+}
+
+/* ---- soft canopy shadow (pergola bars, projected on the floor) ---------- */
+float canopy(vec2 p){
+  vec2 q = rot(0.42)*p + vec2(uTime*0.035, 0.0);
+  float bar = smoothstep(-0.30,0.42, sin(q.x*2.05 + 0.6*sin(q.y*0.35)));
+  float fall = 1.0 - smoothstep(2.2,5.6, length(p-vec2(-0.3,-1.1)));
+  return bar*fall;
+}
+
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+
+void main(){
+  vec2  uv = (2.0*gl_FragCoord.xy - uRes)/uRes.y;
+  vec3  rd = normalize(uFwd + (uRight*uv.x + uUp*uv.y)*uFocal);
+  if(uDbg==99){ O=vec4(uv.x*0.5+0.5, uv.y*0.5+0.5, 0.35, 1.0); return; }
+  vec3  col;
+  float dCam, dFloor = 0.0;
+
+  if(rd.y < -1e-4){
+    /* camera above the water, looking down: refract into the pool */
+    float tA = -uCam.y/rd.y;
+    vec3  sH = uCam + rd*tA;
+
+    // A ray that would miss the water hits the deck first: the deck is a plane
+    // 0.06 above the water, so compare the two hits.
+    float deckT = (0.06-uCam.y)/rd.y;
+    vec3  deckP = uCam + rd*deckT;
+    bool  onDeck = (deckT<tA) && (inPool(deckP.xz)<0.5);
+    if(onDeck){
+      vec3 dc = deckShade(deckP.xz, smoothstep(3.0,13.0,deckT))*uSunCol*uSunI*0.92;
+      // sky bounce onto the deck + aerial haze toward the horizon
+      dc += uSkyHor*0.055;
+      // a garden wall far off, so the deck terminates instead of running to the
+      // horizon line as an infinite plane
+      float far = smoothstep(13.0,26.0,deckT);
+      vec3 wall = mix(vec3(0.40,0.375,0.330), uSkyHor*0.80, 0.35+0.30*deckT/30.0);
+      wall *= 0.90+0.14*hash21(vec2(floor(deckP.x/0.7),0.0)*5.1);
+      dc = mix(dc, wall, far);
+      dc = mix(dc, uSkyHor*0.78, smoothstep(24.0,60.0,deckT)*0.85);
+      col = dc; dCam = deckT;
+    } else {
+    float far = smoothstep(7.0,95.0,tA);
+    Surf  sv = waveS(sH.xz, mix(1.0,0.09,far));
+    vec3  nv = snormal(sv);
+    vec3  T  = refract(rd,nv,uEta);
+    if(dot(T,T)<1e-7) T = rd;
+
+    float tW = (0.0-uFloorY)/max(-T.y,1e-3);
+    vec3  P  = sH + T*tW;
+    dCam  = tA + tW;
+    dFloor= length(P-sH);
+
+    float lp, fold, slope, soft, resid; vec2 qs;
+    float irr = causticAt(P, lp, fold, slope, resid, qs);
+    float fw = smoothstep(4.0,22.0,dCam);
+
+    if(uDbg==98){ O=vec4(uv.x*0.5+0.5, uv.y*0.5+0.5, 0.6, 1.0); return; }
+    if(uDbg==1){ O=vec4(vec3(clamp(irr*0.30,0.0,1.0)),1.0); return; }
+    if(uDbg==2){ O=vec4(vec3(clamp(1.0-dFloor*0.30,0.0,1.0)),1.0); return; }
+    if(uDbg==3){ O=vec4(nv*0.5+0.5,1.0); return; }
+    if(uDbg==4){ O=vec4(vec3(clamp(irr*0.05,0.0,1.0)),1.0); return; }
+    if(uDbg==5){ O=vec4(vec3(clamp(slope*1.5,0.0,1.0)),1.0); return; }
+    if(uDbg==6){ O=vec4(vec3(fold),1.0); return; }
+    if(uDbg==7){ O=vec4(vec3(clamp(resid*3.0,0.0,1.0)),1.0); return; }
+    if(uDbg==8){ O=vec4(vec3(clamp(lp*0.30,0.0,1.0)),1.0); return; }
+    if(uDbg==9){ O=vec4(vec3(clamp(pow(min(irr,60.0),uSharp)*uGain*0.25,0.0,1.0)),1.0); return; }
+    if(uDbg>=10){
+      // self-test: analytic dP/dq vs central differences of the *same* map.
+      // black = the closed form matches the numerically differentiated operator.
+      vec2 q = qs;
+      Phot A = photMap(q);
+      const float h = 0.004;
+      vec2 Fx = photMap(q+vec2(h,0.0)).P, Fm = photMap(q-vec2(h,0.0)).P;
+      vec2 Fz = photMap(q+vec2(0.0,h)).P, Fp = photMap(q-vec2(0.0,h)).P;
+      vec2 nx = (Fx-Fm)/(2.0*h), nz = (Fz-Fp)/(2.0*h);
+      float e = max(length(nx-A.dX), length(nz-A.dZ));
+      O = vec4(vec3(1.0)-vec3(clamp(e*3.0,0.0,1.0)),1.0); return;
+    }
+    // Slow large-scale variation: real caustics pool and flare, they do not tile.
+    // Two incommensurate frequencies plus a slow drift, so no cell is like its
+    // neighbour and the net never reads as a printed repeat.
+    float br = 0.66+0.44*sin(P.x*0.43+uTime*0.19)*cos(P.z*0.37-uTime*0.15)
+                    +0.26*sin((P.x*0.81+P.z*1.07)+uTime*0.29)
+                    +0.14*sin((P.x*1.93-P.z*1.47)+uTime*0.41);
+    br = clamp(br, 0.22, 1.45);
+    // local sharpness: some patches focus tightly, others blur out
+    float shMix = 0.72+0.30*sin(P.x*0.51-uTime*0.13)*cos(P.z*0.44+uTime*0.11);
+    // soften the far field so the net never aliases
+    float sh = clamp(mix(uSharp, 1.0, fw*0.75)*shMix, 0.30, 3.20);
+    // Filmic knee: the dark cells must stay genuinely dark, or the net reads as
+    // a flat two-tone print instead of light on a dark floor.
+    float Ic = min(irr, 60.0);
+    float I  = Ic/(1.0+Ic/3.2) * uGain;
+    I = pow(I, sh) * br;
+    I = max(I - 0.40, 0.0)/(1.0-0.40);            // pedestal: unlit floor is dark
+
+    float lum, grout;
+    vec3 alb = floorAlb(P.xz, lum, grout);
+    alb = mix(alb, uAbyss, smoothstep(0.10,0.0, lum));
+    float farMix = smoothstep(5.0,17.0,dCam);
+    alb = mix(alb, mix(uTileA,uTileB,0.5)*0.85, farMix*0.85);
+
+    // canopy shadow: dims the direct sun, not the ambient
+    float csh = canopy(P.xz)*uCanopy;
+    float direct = I*mix(1.0,0.30,csh)*(1.0-0.28*smoothstep(0.05,0.55,slope));
+
+    // the basin is a box: near the wall the floor rises into a submerged wall,
+    // so the water reads as recessed rather than as a decal on the deck
+    float wallD = inPool(P.xz);
+    float shal = 0.30+0.70*smoothstep(0.0,0.42,wallD);
+    vec3 sig = vec3(1.15,0.24,0.13)*uWater;        // per-metre absorption
+    float path = max(lp, 0.0);                      // surface -> floor, once
+    vec3 Tr  = exp(-sig*path);
+    vec3 amb = uAmbCol*exp(-sig*path*1.5)*0.30;
+    float rim = smoothstep(0.0,0.16,wallD);
+    // the submerged wall: darker, less caustic light, strongly tinted by depth
+    float wallM = 1.0-smoothstep(0.0,0.40,wallD);
+    // the submerged wall darkens downward as the water column above it thickens
+    float depthBelow = clamp((sH.z-uPoolC.y+uPoolH.y)/(2.0*uPoolH.y), 0.0, 1.0);
+    // the submerged wall is a matte tiled surface, not a caustic receiver
+    float direct2 = mix(direct, I*0.30, wallM);
+    vec3 warm = mix(vec3(0.80,0.94,1.05), vec3(1.24,1.12,0.90),
+                    clamp(direct*0.22,0.0,1.0));     // blue water, warm light
+    vec3 wallCol = mix(uSkyHor*0.62, uScatCol*0.34, depthBelow)
+                 * exp(-sig*1.35)
+                 + warm*uSunI*Tr*0.10*depthBelow;
+    col = mix( alb*(warm*uSunI*direct2*Tr + amb*mix(1.0,0.55,wallM)),
+               wallCol, wallM*0.95 );
+    col *= mix(0.22,1.0,rim);
+    // scattering halo: the focused ridges bleed light into the water around them
+    float glow = pow(min(irr,60.0), 0.42)/(1.0+pow(min(irr,60.0),0.42)/9.0);
+    col += warm*Tr*glow*0.13*uSunI*mix(0.25,1.0,rim);
+    // the water body itself: what you see even where no caustic is focused
+    col = mix(col, uScatCol*0.10, (1.0-exp(-sig*path*0.85))*0.22*uWater);
+    col *= 1.0-0.42*wallM;
+    // corner AO: light does not reach into the angles of a real basin
+    float ao = smoothstep(0.0,0.75,wallD)*0.35 + 0.65;
+    col *= ao;
+    col *= 1.0-0.22*smoothstep(-0.2,1.6,P.z);
+    // surface reflection on top
+    float F = 0.02+0.98*pow(1.0-max(dot(-rd,nv),0.0),5.0);
+    col = mix(col, sky(reflect(rd,nv)), clamp(F,0.0,0.30));
+    // sun glitter: the specular track that makes a water surface legible
+    vec3  hv = normalize(uSun - rd);
+    float sp = pow(max(dot(nv,hv),0.0), 420.0);
+    col += uSunCol*sp*(2.2*uSunI)*mix(0.30,1.0,fw);
+    // wet rim: a bright hairline where the water meets the coping
+    float lip = 1.0-smoothstep(0.0,0.035,min(min(sH.x-uPoolC.x-uPoolH.x,
+                -(sH.x-uPoolC.x-uPoolH.x)), min(sH.z-uPoolC.y-uPoolH.y,
+                -(sH.z-uPoolC.y-uPoolH.y))));
+    col = mix(col, uSunCol*0.22+uAmbCol*0.30, lip*0.40);
+    col = mix(col, mix(uBody,uSkyHor,0.42), smoothstep(60.0,240.0,tA));
+    }
+  } else {
+    /* the water surface itself, reflecting the sky */
+    float tS = 0.0;
+    vec3  sH = uCam + rd*max(tS,0.0);
+    float far = smoothstep(9.0,150.0, length(sH.xz-uCam.xz));
+    Surf  sv = waveS(sH.xz, mix(1.0,0.07,far));
+    vec3  nv = snormal(sv);
+    float ndv = max(dot(-rd,nv),0.0);
+    float F = 0.02+0.98*pow(1.0-ndv,5.0);
+    vec3 refl = sky(reflect(rd,nv));
+    col = mix(uBody*(0.20+0.55*ndv), refl, F);
+  }
+
+  // grade
+  col *= uExposure;
+  col  = aces(col);
+  col  = pow(col, vec3(1.0/2.2));
+  float r = length(uv*vec2(0.60,1.0));
+  col *= 1.0 - 0.26*smoothstep(0.34,1.20,r);
+  col += (hash21(gl_FragCoord.xy)-0.5)*(1.6/255.0);
+  O = vec4(clamp(col,0.0,1.0),1.0);
+}`;
+
+/* ------------------------------------------------------------------ program */
+function sh(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
+    throw new Error(gl.getShaderInfoLog(s)+"\n"+src.split("\n").map((l,i)=>(i+1)+": "+l).join("\n"));
+  return s;}
+const prog=gl.createProgram();
+gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));
+gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={}; ["uRes","uTime","uCam","uFwd","uRight","uUp","uFocal","uDepth","uFloorY","uEta",
+ "uSunI","uSun","uSharp","uGain","uWater","uCanopy","uCount","uA[0]","uB[0]","uTileA","uTileB",
+ "uGrout","uBandCol","uSunCol","uAmbCol","uScatCol","uAbyss","uSkyTop","uSkyHor","uBody","uTile",
+ "uDrainFade","uExposure","uBandN","uBandOff","uDrainC","uBandW","uOffset","uDbg",
+ "uPoolC","uPoolH"]
+ .forEach(n=>U[n]=gl.getUniformLocation(prog,n));
+if(!U["uA[0]"]||!U["uBandW"]) throw new Error("uniform lookup failed");
+gl.uniform1i(U.uCount,9);
+gl.uniform3fv(U.uTileA,lin("#6e7a75")); gl.uniform3fv(U.uTileB,lin("#3f5c5e"));
+gl.uniform3fv(U.uGrout,lin("#3a6068"));  gl.uniform3fv(U.uBandCol,lin("#1f4a58"));
+gl.uniform3fv(U.uSunCol,lin("#fff2d6")); gl.uniform3fv(U.uAmbCol,lin("#1b4a58"));
+gl.uniform3fv(U.uScatCol,lin("#2a9aab")); gl.uniform3fv(U.uAbyss,lin("#0a2028"));
+gl.uniform3fv(U.uSkyTop,lin("#3f79b4")); gl.uniform3fv(U.uSkyHor,lin("#9fc0cc"));
+gl.uniform3fv(U.uBody,lin("#0a2833"));   gl.uniform1f(U.uTile,0.30);
+gl.uniform1f(U.uExposure,1.42); gl.uniform1f(U.uSunI,1.0);
+gl.uniform1f(U.uEta,1.0/1.333); gl.uniform1f(U.uFloorY,-1.75);
+gl.uniform2f(U.uPoolC,-0.15,-1.15); gl.uniform2f(U.uPoolH,2.05,2.55);
+gl.uniform2f(U.uBandN, Math.cos(0.19), Math.sin(0.19)); gl.uniform1f(U.uBandOff,-3.35);
+gl.uniform1f(U.uBandW,0.34); gl.uniform2f(U.uDrainC, 1.42, 0.55);
+const IOR=1.333;
+
+/* ------------------------------------------------------------------ state */
+const P={
+  amp:1.00, freq:1.00, waves:15, gain:1.60, sharp:2.10, water:0.55,
+  sunEl:46, sunAz:208, canopy:0.30
+};
+const SPEC=[
+  ["WATER SURFACE", [
+    ["amp","amplitude",0.00,2.50,0.01,1,v=>v.toFixed(2)],
+    ["freq","frequency",0.45,2.30,0.01,1,v=>v.toFixed(2)],
+    ["waves","wave count",1,16,1,0,v=>v.toFixed(0)]]],
+  ["LIGHT", [
+    ["gain","caustic gain",0.10,3.40,0.01,1,v=>v.toFixed(2)],
+    ["sharp","sharpness",0.40,3.00,0.01,1,v=>v.toFixed(2)],
+    ["sunEl","sun angle",12,82,0.5,0,v=>v.toFixed(0)+"°"]]],
+  ["MEDIUM", [
+    ["water","water colour",0.08,1.70,0.01,1,v=>v.toFixed(2)],
+    ["canopy","canopy shade",0.00,1.00,0.01,1,v=>v.toFixed(2)]]]
+];
+const rowsEl=document.getElementById('rows');
+const fmt={};
+for(const [group,items] of SPEC){
+  const g=document.createElement('div'); g.className='grp'; g.textContent=group; rowsEl.appendChild(g);
+  for(const [key,label,min,max,step,dp,f] of items){
+    fmt[key]=f;
+    const r=document.createElement('div'); r.className='row';
+    r.innerHTML='<label>'+label+'</label>';
+    const i=document.createElement('input'); i.type='range';
+    i.min=min; i.max=max; i.step=step; i.value=P[key];
+    const s=document.createElement('span');
+    r.appendChild(i); r.appendChild(s); rowsEl.appendChild(r);
+    const sync=()=>{P[key]=parseFloat(i.value); s.textContent=fmt[key](P[key]);};
+    i.addEventListener('input',sync); sync();
+  }
+}
+document.getElementById('bShape').addEventListener('click',()=>{ seed=(seed+1)|0; buildWaves(); });
+let paused=false;
+const bPause=document.getElementById('bPause');
+bPause.addEventListener('click',()=>{paused=!paused; bPause.textContent=paused?'PLAY':'PAUSE';});
+
+/* --------------------------------------------------- wave spectrum (seeded) */
+P.depth0=1.75;
+let seed=7, A=new Float32Array(64), B=new Float32Array(64), zFocus=0, maxSlope=0;
+function buildWaves(){
+  const rnd=mulberry32(seed*7919+13);
+  const n=Math.round(P.waves), k0=2*Math.PI/0.20*P.freq;
+  const steep0 = 0.150*P.amp;            // base steepness a0*k0
+  zFocus=0; maxSlope=0;
+  for(let i=0;i<16;i++){
+    const o=i*4;
+    if(i>=n){A[o+3]=0;B[o+1]=0;A[o+2]=0;B[o+0]=0;continue;}
+    // spread the spectrum over ranks and jitter each one
+    const rank=i/Math.max(1,n-1);
+    // A wide log spread: one dominant scale gives uniform cobblestone cells,
+    // so the ranks are spread far enough that several scales fold at once.
+    const k=k0*Math.pow(1.50,rank)*(0.84+0.32*rnd());
+    // directions cluster around a wind axis with jitter: a real wind sea is
+    // anisotropic, and anisotropic waves fold light into stretched filaments
+    // instead of the isotropic cells an even spread of angles produces
+    const wind=0.62;
+    const ang = wind*Math.cos(rank*1.7) + (rnd()-0.5)*1.25 + (i*2.399963)*0.16;
+    const dx=Math.cos(ang), dz=Math.sin(ang);
+    // Phillips-like spectrum: steepness a*k falls off as k^-1.1, so the
+    // dominant focusing scales are the short ones and the caustic cells come
+    // out pool-sized rather than as giant swell blobs. Focus distance is
+    // 1/((n-1)*a*k^2) -- centimetres, well above the floor, which is exactly
+    // why a real pool lights up: the surface is a lens array, not a lens
+    // focused at pool depth.
+    // Amplitude from a steepness that FALLS with k:  a*k = steep0*(k0/k)^0.75.
+    // A flat steepness across the spectrum makes every wavelength focus at the
+    // same place, and the caustic net tiles into a single cell size. Jitter is
+    // multiplicative and mild, and there is no clamp -- clamping flattens the
+    // steepness again, which is exactly the bug this spectrum is fixing.
+    const jt = 0.72+0.56*rnd();
+    const amp = (steep0/k)*Math.pow(k0/k, 0.75)*jt;   // steepness a*k, not amplitude
+    const Q  = Math.min(0.50, amp*k*(0.24+0.30*rnd()));
+    const om =0.62*Math.sqrt(9.81*k);
+    A[o]=dx; A[o+1]=dz; A[o+2]=k; A[o+3]=amp;
+    B[o]=om; B[o+1]=Q;  B[o+2]=0; B[o+3]=0;
+    const f=1/(0.33*amp*k*k);
+    if(i===0) zFocus=f;
+    if(amp*k>maxSlope) maxSlope=amp*k;
+  }
+  gl.uniform4fv(U["uA[0]"],A); gl.uniform4fv(U["uB[0]"],B);
+  gl.uniform1i(U.uCount,n);
+}
+const rowInputs=[...rowsEl.querySelectorAll('input')];
+function rebind(){buildWaves();}
+rowInputs.forEach(i=>i.addEventListener('input',rebind));
+buildWaves();
+
+/* ------------------------------------------------------------------- camera */
+const cam={yaw:0, pitch:0, tx:0, ty:0, drag:false, px:0, py:0};
+function onMove(e){
+  if(!cam.drag) return;
+  const r=canvas.getBoundingClientRect();
+  cam.yaw=clamp(cam.yaw-((e.clientX-cam.px)/r.width)*1.5,-0.60,0.60);
+  cam.pitch=clamp(cam.pitch+((e.clientY-cam.py)/r.height)*0.9,-0.30,0.30);
+}
+canvas.addEventListener('pointerdown',e=>{cam.drag=true;cam.px=e.clientX;cam.py=e.clientY;
+  canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointermove',onMove);
+addEventListener('pointerup',()=>cam.drag=false);
+addEventListener('pointercancel',()=>cam.drag=false);
+canvas.style.cursor='grab';
+
+const UP0=[0,1,0];
+function camera(){
+  // orbit a target on the floor: aim, don't guess a direction
+  const az=(209+cam.yaw*57.3)*Math.PI/180;
+  const el=(50+cam.pitch*57.3)*Math.PI/180;
+  const tgt=[0.34,-1.25];
+  const R=3.05;
+  const pos=[tgt[0]+Math.cos(el)*Math.sin(az)*R, Math.sin(el)*R, tgt[1]+Math.cos(el)*Math.cos(az)*R];
+  const fd=[tgt[0]-pos[0], -pos[1], tgt[1]-pos[2]];
+  const fl=Math.hypot(fd[0],fd[1],fd[2])||1;
+  const f=[fd[0]/fl,fd[1]/fl,fd[2]/fl];
+  // right = normalize(cross(f, worldUp)) with worldUp = +Y
+  let r=[-f[2],0,f[0]];
+  const rl=Math.hypot(r[0],r[1],r[2])||1; r=r.map(v=>v/rl);
+  const u=[r[1]*f[2]-r[2]*f[1], r[2]*f[0]-r[0]*f[2], r[0]*f[1]-r[1]*f[0]];
+  return {pos,f,r,u};
+}
+
+/* ---------------------------------------------------------------- main loop */
+const DT=1/60, T0=18.0;
+let t=T0, frames=0, fps=0, last=performance.now(), acc=0, ready=false;
+const probe={fps:0,frames:0,time:0,res:'--',waves:0,seed:0,focus:0,slope:0,
+  amp:0,freq:0,gain:0,sharp:0,water:0,sunEl:0,canopy:0,focalZ:0,
+  spectrum:null, minK:0, maxK:0};
+window.__probe=probe;
+const hud=document.getElementById('hud');
+
+function resize(){
+  const w=Math.max(1,canvas.clientWidth), h=Math.max(1,canvas.clientHeight);
+  const ih=400, iw=Math.round(ih*w/h);
+  const W=clamp(iw,420,860), H=ih;
+  if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H;
+    gl.viewport(0,0,W,H); probe.res=W+'x'+H;}
+}
+function draw(){
+  const c=camera();
+  const el=P.sunEl*Math.PI/180, az=P.sunAz*Math.PI/180;
+  const sun=[Math.cos(el)*Math.sin(az),-Math.cos(el),Math.cos(el)*Math.cos(az)];
+  // first guess for the inversion: where the sun ray refracted by a *flat*
+  // surface would land on the floor, offset by the wave displacement.
+  const I=1/IOR, d0=-Math.cos(el);
+  const kk=Math.max(1-I*I*(1-d0*d0),1e-5);
+  const g0=I*d0-Math.sqrt(kk);
+  const Ty=I*sun[1]+g0, tf=-P.depth0/Math.min(Ty,-1e-3);
+  gl.uniform2f(U.uOffset, -I*sun[0]*tf, -I*sun[2]*tf);
+
+  gl.uniform2f(U.uRes, canvas.width, canvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform3fv(U.uCam,c.pos); gl.uniform3fv(U.uFwd,c.f);
+  gl.uniform3fv(U.uRight,c.r); gl.uniform3fv(U.uUp,c.u);
+  gl.uniform1f(U.uFocal,1/Math.tan(0.5*42*Math.PI/180));
+  gl.uniform1f(U.uFloorY,-P.depth0); gl.uniform1f(U.uDepth,P.depth0);
+  gl.uniform3f(U.uSun,sun[0],sun[1],sun[2]);
+  gl.uniform1f(U.uGain,P.gain); gl.uniform1f(U.uSharp,P.sharp);
+  gl.uniform1f(U.uWater,P.water); gl.uniform1f(U.uCanopy,P.canopy);
+  gl.uniform1i(U.uDbg, DEBUG);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+let DEBUG=+(location.hash.replace('#d','')||0);
+addEventListener('hashchange',()=>{DEBUG=+(location.hash.replace('#d','')||0);});
+resize();
+addEventListener('resize',resize);
+gl.enable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
+
+function frame(now){
+  const dt=now-last; last=now;
+  acc+=dt; if(acc>400){acc=400;}
+  fps = fps? fps*0.9 + (1000/Math.max(dt,1))*0.1 : 1000/Math.max(dt,1);
+  resize();
+  if(!paused) t+=DT;
+  draw();
+  frames++;
+  if(!ready && frames>=2){ ready=true; window.__ready=true; }
+  probe.fps=Math.round(fps*10)/10; probe.frames=frames; probe.time=Math.round(t*100)/100;
+  probe.waves=Math.round(P.waves); probe.seed=seed;
+  probe.focus=Math.round(zFocus*1000)/1000; probe.slope=Math.round(maxSlope*1000)/1000;
+  probe.amp=P.amp; probe.freq=P.freq; probe.gain=P.gain; probe.sharp=P.sharp;
+  probe.water=P.water; probe.sunEl=P.sunEl; probe.canopy=P.canopy;
+  probe.focalZ=Math.round(zFocus*100)/100;
+  { // the actual uploaded spectrum, so the caustics can be checked from outside
+    const s=[]; let kmin=1e9, kmax=0;
+    for(let i=0;i<Math.round(P.waves);i++){
+      const k=A[i*4+2], a=A[i*4+3];
+      s.push([+k.toFixed(2), +(a*k).toFixed(4), +Math.atan2(A[i*4+1],A[i*4]).toFixed(2)]);
+      if(k<kmin)kmin=k; if(k>kmax)kmax=k;
+    }
+    probe.spectrum=s; probe.minK=+kmin.toFixed(2); probe.maxK=+kmax.toFixed(2);
+  }
+  if((frames&15)===0){
+    hud.innerHTML='<b>'+probe.fps+'</b> fps &nbsp; Δt 1/60 s<br>t = <b>'+probe.time.toFixed(2)+
+      '</b> s &nbsp; '+probe.res+'<br>'+probe.waves+' waves &nbsp; seed '+seed+
+      '<br>focus <b>'+probe.focus.toFixed(2)+'</b> m &nbsp; max slope '+probe.slope;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

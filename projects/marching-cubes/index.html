@@ -1,0 +1,1606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Marching Cubes — isosurface extraction from an animated scalar field</title>
+<style>
+  :root{
+    --ink:#e9f1ff;
+    --dim:#8ba3c6;
+    --line:rgba(130,175,240,.20);
+    --panel:rgba(7,12,24,.66);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#04060d;overflow:hidden}
+  body{font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+       color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:9px;
+         backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+         box-shadow:0 10px 34px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.05)}
+
+  /* ---------------- title + technique ---------------- */
+  #ttl{left:20px;top:18px;padding:12px 16px 11px;width:388px}
+  #ttl h1{margin:0;font-size:14px;letter-spacing:.05em;font-weight:600;
+          background:linear-gradient(96deg,#7fd8ff,#5ee0c0 42%,#ffd166 80%);
+          -webkit-background-clip:text;background-clip:text;color:transparent}
+  #ttl .sub{margin-top:4px;color:var(--dim);font-size:10px;letter-spacing:.02em}
+  #tech{margin-top:7px;color:#a9c2e6;font-size:10px;line-height:1.55}
+  #tech b{color:#ffd166;font-weight:600}
+  #pipe{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+  #pipe span{padding:2.5px 6px;border:1px solid var(--line);border-radius:4px;font-size:9.5px;
+            letter-spacing:.04em;color:#cfe0ff;background:rgba(120,160,255,.07);white-space:nowrap}
+  #pipe i{color:#5c739b;font-style:normal;font-size:9px}
+
+  /* ---------------- field inset ---------------- */
+  #ins{right:20px;top:18px;padding:10px 12px 9px;width:212px}
+  .hd{display:flex;justify-content:space-between;align-items:baseline;font-size:9.5px;
+      letter-spacing:.14em;color:#7f96bb;text-transform:uppercase;margin-bottom:8px}
+  .hd em{font-style:normal;color:#cfe0ff;letter-spacing:.03em;text-transform:none;font-size:10px}
+  #sliceWrap{position:relative;width:188px;height:111px;border:1px solid var(--line);
+             border-radius:5px;overflow:hidden;background:#03060e}
+  #slice{position:absolute;left:0;top:0;width:188px;height:111px;display:block}
+  #legWrap{margin-top:9px}
+  #leg{width:188px;height:9px;border-radius:3px;display:block}
+  #legAxis{position:relative;width:188px;height:14px;margin-top:2px}
+  #legAxis span{position:absolute;top:0;color:#7f96bb;font-size:8.5px;transform:translateX(-50%);
+                font-variant-numeric:tabular-nums}
+  #legAxis i{position:absolute;top:-4px;width:2px;height:16px;background:#fff;border-radius:1px;
+             box-shadow:0 0 6px rgba(255,255,255,.95);transform:translateX(-1px)}
+  #ins .cap{margin-top:5px;color:#6e86ad;font-size:9px;line-height:1.45}
+
+  /* ---------------- controls ---------------- */
+  #ctl{left:20px;bottom:18px;padding:11px 15px 12px;width:296px}
+  .row{display:grid;grid-template-columns:60px 1fr 46px;align-items:center;gap:8px;margin:5px 0}
+  .row label{color:#a8bcdb;font-size:10px}
+  .row .val{color:#e2ecff;font-size:10px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;
+                    cursor:ew-resize;margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
+      background:linear-gradient(90deg,rgba(90,190,255,.8),rgba(60,220,190,.7) 45%,rgba(255,190,90,.75))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+      background:#eaf2ff;margin-top:-4px;box-shadow:0 0 7px rgba(150,200,255,.85),0 1px 3px rgba(0,0,0,.6)}
+  input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:rgba(140,180,240,.55)}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#eaf2ff}
+  .seg{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 8px}
+  .seg button{flex:1 1 auto;min-width:48px;font:inherit;font-size:9.5px;letter-spacing:.05em;padding:5px 2px;
+      color:#b9cdea;background:rgba(120,160,255,.07);border:1px solid var(--line);border-radius:5px;
+      cursor:pointer;text-transform:uppercase}
+  .seg button:hover{background:rgba(140,180,255,.2);color:#eaf2ff}
+  .seg button.on{background:linear-gradient(180deg,rgba(255,209,102,.30),rgba(255,150,90,.16));
+      border-color:rgba(255,200,120,.55);color:#fff2d8}
+  .tgls{display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:7px}
+  .tgl{display:flex;align-items:center;gap:6px;color:#a8bcdb;font-size:10px;cursor:pointer;user-select:none}
+  .tgl input{accent-color:#8ab6ff;width:12px;height:12px;cursor:pointer}
+  #hint{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);color:#7f96bb;
+        font-size:9.5px;line-height:1.55}
+  #hint kbd{border:1px solid var(--line);border-radius:3px;padding:0 3px;color:#cfe0ff;font-size:9px}
+  #hint em{font-style:normal;color:#cfe0ff}
+
+  /* ---------------- report ---------------- */
+  #sta{right:20px;bottom:18px;padding:10px 13px 10px;width:212px}
+  #sta .hd{margin-bottom:7px}
+  #sta dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:1px 8px;font-size:10px}
+  #sta dt{color:#8ba3c6}
+  #sta dd{margin:0;color:#e8f1ff;text-align:right;font-variant-numeric:tabular-nums}
+  #sta .bar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:8px;overflow:hidden}
+  #sta .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5ec8ff,#ffd166)}
+
+  /* ---------------- empty-state notice ---------------- */
+  #noSurf{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+          padding:9px 15px;border:1px solid rgba(255,180,120,.34);border-radius:7px;
+          background:rgba(24,14,8,.80);color:#ffcda3;font-size:11px;letter-spacing:.04em;
+          opacity:0;transition:opacity .18s;pointer-events:none;white-space:nowrap;
+          box-shadow:0 8px 26px rgba(0,0,0,.5)}
+  #noSurf.on{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="ttl">
+  <h1>MARCHING CUBES · LIVE ISOSURFACE</h1>
+  <div class="sub">Lorensen &amp; Cline 1987 · canonical 256-case table, CPU-extracted every frame</div>
+  <div id="tech"><b>Pipeline</b> — analytic scalar field → 3-D lattice sample → 8-bit cube index per cell →
+    edge interpolation → triangle soup → GPU flat shading on a value ramp.</div>
+  <div id="pipe"></div>
+</div>
+
+<div class="panel" id="ins">
+  <div class="hd"><span>Scalar field</span><em id="fldName">metaballs</em></div>
+  <div id="sliceWrap"><canvas id="slice" width="94" height="56"></canvas></div>
+  <div id="legWrap">
+    <canvas id="leg" width="188" height="9"></canvas>
+    <div id="legAxis"><span id="legL">0.00</span><span id="legR">1.00</span><i id="legIso"></i></div>
+  </div>
+  <div class="cap" id="sliceCap">y = 0 slice · white line = the isosurface cross-section</div>
+</div>
+
+<div class="panel" id="ctl">
+  <div class="hd"><span>Live controls</span><em id="ctlHint">drag to orbit</em></div>
+  <div class="row"><label>isovalue</label><input type="range" id="sIso" min="0.20" max="0.90" step="0.005" value="0.5"><span class="val" id="vIso">0.500</span></div>
+  <div class="row"><label>field scale</label><input type="range" id="sScale" min="0.55" max="2.2" step="0.01" value="1"><span class="val" id="vScale">1.00</span></div>
+  <div class="row"><label>anim speed</label><input type="range" id="sSpeed" min="0" max="2" step="0.01" value="0.5"><span class="val" id="vSpeed">0.50</span></div>
+  <div class="row"><label>lattice</label><input type="range" id="sGrid" min="0" max="2" step="1" value="1"><span class="val" id="vGrid">48³</span></div>
+  <div class="seg" id="segField"></div>
+  <div class="tgls">
+    <label class="tgl"><input type="checkbox" id="tSpin" checked> rotate mesh</label>
+    <label class="tgl"><input type="checkbox" id="tBand"> contour bands</label>
+    <label class="tgl"><input type="checkbox" id="tGrid" checked> floor grid</label>
+  </div>
+  <div id="hint"><kbd>1</kbd>–<kbd>5</kbd> field &nbsp; <kbd>space</kbd> pause &nbsp; <kbd>R</kbd> rotate<br>
+    <kbd>drag</kbd> orbit &nbsp; <kbd>wheel</kbd> dolly<br>
+    The <em>classic</em> table: face-ambiguous configurations are left un-split.</div>
+</div>
+
+<div id="noSurf">no surface at this isovalue &mdash; raise or lower it</div>
+
+<div class="panel" id="sta">
+  <div class="hd">Mesh report</div>
+  <dl>
+    <dt>triangles</dt><dd id="mTri">—</dd>
+    <dt>active cells</dt><dd id="mCell">—</dd>
+    <dt>lattice samples</dt><dd id="mSamp">—</dd>
+    <dt>value range</dt><dd id="mRange">—</dd>
+    <dt>extract</dt><dd id="mExt">—</dd>
+    <dt>frame</dt><dd id="mFps">—</dd>
+  </dl>
+  <div class="bar"><i id="mBar"></i></div>
+</div>
+
+<script>
+"use strict";
+/* ===========================================================================
+   MARCHING CUBES over an animated three-dimensional scalar field.
+
+   Every frame, on the CPU:
+     1. sample the analytic field on an (N+1)^3 lattice,
+     2. walk each cell and build an 8-bit cube index from the corner signs,
+     3. look that index up in the canonical 256-case table,
+     4. linearly interpolate the crossing edges into a fresh triangle soup,
+     5. upload and draw it with per-face (flat) shading.
+
+   Surface colour is the scalar field read a short step *inward* along the
+   outward normal -grad(f).  The field value on the isosurface is constant by
+   construction, so reading it there would give a flat grey mesh; stepping
+   inside recovers the scalar structure the isosurface is a slice of.
+
+   The ramp endpoints are auto-calibrated from a per-frame histogram of those
+   inward values (2nd / 98th percentile, EMA-smoothed), so the palette is
+   always fully used whichever field or isovalue is selected.
+   =========================================================================== */
+
+/* The canonical Marching Cubes tables (Lorensen & Cline 1987; the
+   Cory Gene Bloyd tables published by Paul Bourke, and the same data
+   in three.js). edgeTable[case] is a 12-bit mask of the cube edges that
+   straddle the isosurface; triTable[case] is 16 edge ids, -1 padded. */
+const EDGE_TABLE = new Int16Array([
+  0x000, 0x109, 0x203, 0x30a, 0x406, 0x50f, 0x605, 0x70c,
+  0x80c, 0x905, 0xa0f, 0xb06, 0xc0a, 0xd03, 0xe09, 0xf00,
+  0x190, 0x099, 0x393, 0x29a, 0x596, 0x49f, 0x795, 0x69c,
+  0x99c, 0x895, 0xb9f, 0xa96, 0xd9a, 0xc93, 0xf99, 0xe90,
+  0x230, 0x339, 0x033, 0x13a, 0x636, 0x73f, 0x435, 0x53c,
+  0xa3c, 0xb35, 0x83f, 0x936, 0xe3a, 0xf33, 0xc39, 0xd30,
+  0x3a0, 0x2a9, 0x1a3, 0x0aa, 0x7a6, 0x6af, 0x5a5, 0x4ac,
+  0xbac, 0xaa5, 0x9af, 0x8a6, 0xfaa, 0xea3, 0xda9, 0xca0,
+  0x460, 0x569, 0x663, 0x76a, 0x066, 0x16f, 0x265, 0x36c,
+  0xc6c, 0xd65, 0xe6f, 0xf66, 0x86a, 0x963, 0xa69, 0xb60,
+  0x5f0, 0x4f9, 0x7f3, 0x6fa, 0x1f6, 0x0ff, 0x3f5, 0x2fc,
+  0xdfc, 0xcf5, 0xfff, 0xef6, 0x9fa, 0x8f3, 0xbf9, 0xaf0,
+  0x650, 0x759, 0x453, 0x55a, 0x256, 0x35f, 0x055, 0x15c,
+  0xe5c, 0xf55, 0xc5f, 0xd56, 0xa5a, 0xb53, 0x859, 0x950,
+  0x7c0, 0x6c9, 0x5c3, 0x4ca, 0x3c6, 0x2cf, 0x1c5, 0x0cc,
+  0xfcc, 0xec5, 0xdcf, 0xcc6, 0xbca, 0xac3, 0x9c9, 0x8c0,
+  0x8c0, 0x9c9, 0xac3, 0xbca, 0xcc6, 0xdcf, 0xec5, 0xfcc,
+  0x0cc, 0x1c5, 0x2cf, 0x3c6, 0x4ca, 0x5c3, 0x6c9, 0x7c0,
+  0x950, 0x859, 0xb53, 0xa5a, 0xd56, 0xc5f, 0xf55, 0xe5c,
+  0x15c, 0x055, 0x35f, 0x256, 0x55a, 0x453, 0x759, 0x650,
+  0xaf0, 0xbf9, 0x8f3, 0x9fa, 0xef6, 0xfff, 0xcf5, 0xdfc,
+  0x2fc, 0x3f5, 0x0ff, 0x1f6, 0x6fa, 0x7f3, 0x4f9, 0x5f0,
+  0xb60, 0xa69, 0x963, 0x86a, 0xf66, 0xe6f, 0xd65, 0xc6c,
+  0x36c, 0x265, 0x16f, 0x066, 0x76a, 0x663, 0x569, 0x460,
+  0xca0, 0xda9, 0xea3, 0xfaa, 0x8a6, 0x9af, 0xaa5, 0xbac,
+  0x4ac, 0x5a5, 0x6af, 0x7a6, 0x0aa, 0x1a3, 0x2a9, 0x3a0,
+  0xd30, 0xc39, 0xf33, 0xe3a, 0x936, 0x83f, 0xb35, 0xa3c,
+  0x53c, 0x435, 0x73f, 0x636, 0x13a, 0x033, 0x339, 0x230,
+  0xe90, 0xf99, 0xc93, 0xd9a, 0xa96, 0xb9f, 0x895, 0x99c,
+  0x69c, 0x795, 0x49f, 0x596, 0x29a, 0x393, 0x099, 0x190,
+  0xf00, 0xe09, 0xd03, 0xc0a, 0xb06, 0xa0f, 0x905, 0x80c,
+  0x70c, 0x605, 0x50f, 0x406, 0x30a, 0x203, 0x109, 0x000,
+]);
+
+const TRI_TABLE = new Int8Array([
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 0
+  0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 1
+  0, 1, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 2
+  1, 8, 3, 9, 8, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 3
+  1, 2, 10, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 4
+  0, 8, 3, 1, 2, 10, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 5
+  9, 2, 10, 0, 2, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 6
+  2, 8, 3, 2, 10, 8, 10, 9, 8, -1, -1, -1, -1, -1, -1, -1,   // 7
+  3, 11, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 8
+  0, 11, 2, 8, 11, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 9
+  1, 9, 0, 2, 3, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 10
+  1, 11, 2, 1, 9, 11, 9, 8, 11, -1, -1, -1, -1, -1, -1, -1,   // 11
+  3, 10, 1, 11, 10, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 12
+  0, 10, 1, 0, 8, 10, 8, 11, 10, -1, -1, -1, -1, -1, -1, -1,   // 13
+  3, 9, 0, 3, 11, 9, 11, 10, 9, -1, -1, -1, -1, -1, -1, -1,   // 14
+  9, 8, 10, 10, 8, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 15
+  4, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 16
+  4, 3, 0, 7, 3, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 17
+  0, 1, 9, 8, 4, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 18
+  4, 1, 9, 4, 7, 1, 7, 3, 1, -1, -1, -1, -1, -1, -1, -1,   // 19
+  1, 2, 10, 8, 4, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 20
+  3, 4, 7, 3, 0, 4, 1, 2, 10, -1, -1, -1, -1, -1, -1, -1,   // 21
+  9, 2, 10, 9, 0, 2, 8, 4, 7, -1, -1, -1, -1, -1, -1, -1,   // 22
+  2, 10, 9, 2, 9, 7, 2, 7, 3, 7, 9, 4, -1, -1, -1, -1,   // 23
+  8, 4, 7, 3, 11, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 24
+  11, 4, 7, 11, 2, 4, 2, 0, 4, -1, -1, -1, -1, -1, -1, -1,   // 25
+  9, 0, 1, 8, 4, 7, 2, 3, 11, -1, -1, -1, -1, -1, -1, -1,   // 26
+  4, 7, 11, 9, 4, 11, 9, 11, 2, 9, 2, 1, -1, -1, -1, -1,   // 27
+  3, 10, 1, 3, 11, 10, 7, 8, 4, -1, -1, -1, -1, -1, -1, -1,   // 28
+  1, 11, 10, 1, 4, 11, 1, 0, 4, 7, 11, 4, -1, -1, -1, -1,   // 29
+  4, 7, 8, 9, 0, 11, 9, 11, 10, 11, 0, 3, -1, -1, -1, -1,   // 30
+  4, 7, 11, 4, 11, 9, 9, 11, 10, -1, -1, -1, -1, -1, -1, -1,   // 31
+  9, 5, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 32
+  9, 5, 4, 0, 8, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 33
+  0, 5, 4, 1, 5, 0, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 34
+  8, 5, 4, 8, 3, 5, 3, 1, 5, -1, -1, -1, -1, -1, -1, -1,   // 35
+  1, 2, 10, 9, 5, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 36
+  3, 0, 8, 1, 2, 10, 4, 9, 5, -1, -1, -1, -1, -1, -1, -1,   // 37
+  5, 2, 10, 5, 4, 2, 4, 0, 2, -1, -1, -1, -1, -1, -1, -1,   // 38
+  2, 10, 5, 3, 2, 5, 3, 5, 4, 3, 4, 8, -1, -1, -1, -1,   // 39
+  9, 5, 4, 2, 3, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 40
+  0, 11, 2, 0, 8, 11, 4, 9, 5, -1, -1, -1, -1, -1, -1, -1,   // 41
+  0, 5, 4, 0, 1, 5, 2, 3, 11, -1, -1, -1, -1, -1, -1, -1,   // 42
+  2, 1, 5, 2, 5, 8, 2, 8, 11, 4, 8, 5, -1, -1, -1, -1,   // 43
+  10, 3, 11, 10, 1, 3, 9, 5, 4, -1, -1, -1, -1, -1, -1, -1,   // 44
+  4, 9, 5, 0, 8, 1, 8, 10, 1, 8, 11, 10, -1, -1, -1, -1,   // 45
+  5, 4, 0, 5, 0, 11, 5, 11, 10, 11, 0, 3, -1, -1, -1, -1,   // 46
+  5, 4, 8, 5, 8, 10, 10, 8, 11, -1, -1, -1, -1, -1, -1, -1,   // 47
+  9, 7, 8, 5, 7, 9, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 48
+  9, 3, 0, 9, 5, 3, 5, 7, 3, -1, -1, -1, -1, -1, -1, -1,   // 49
+  0, 7, 8, 0, 1, 7, 1, 5, 7, -1, -1, -1, -1, -1, -1, -1,   // 50
+  1, 5, 3, 3, 5, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 51
+  9, 7, 8, 9, 5, 7, 10, 1, 2, -1, -1, -1, -1, -1, -1, -1,   // 52
+  10, 1, 2, 9, 5, 0, 5, 3, 0, 5, 7, 3, -1, -1, -1, -1,   // 53
+  8, 0, 2, 8, 2, 5, 8, 5, 7, 10, 5, 2, -1, -1, -1, -1,   // 54
+  2, 10, 5, 2, 5, 3, 3, 5, 7, -1, -1, -1, -1, -1, -1, -1,   // 55
+  7, 9, 5, 7, 8, 9, 3, 11, 2, -1, -1, -1, -1, -1, -1, -1,   // 56
+  9, 5, 7, 9, 7, 2, 9, 2, 0, 2, 7, 11, -1, -1, -1, -1,   // 57
+  2, 3, 11, 0, 1, 8, 1, 7, 8, 1, 5, 7, -1, -1, -1, -1,   // 58
+  11, 2, 1, 11, 1, 7, 7, 1, 5, -1, -1, -1, -1, -1, -1, -1,   // 59
+  9, 5, 8, 8, 5, 7, 10, 1, 3, 10, 3, 11, -1, -1, -1, -1,   // 60
+  5, 7, 0, 5, 0, 9, 7, 11, 0, 1, 0, 10, 11, 10, 0, -1,   // 61
+  11, 10, 0, 11, 0, 3, 10, 5, 0, 8, 0, 7, 5, 7, 0, -1,   // 62
+  11, 10, 5, 7, 11, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 63
+  10, 6, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 64
+  0, 8, 3, 5, 10, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 65
+  9, 0, 1, 5, 10, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 66
+  1, 8, 3, 1, 9, 8, 5, 10, 6, -1, -1, -1, -1, -1, -1, -1,   // 67
+  1, 6, 5, 2, 6, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 68
+  1, 6, 5, 1, 2, 6, 3, 0, 8, -1, -1, -1, -1, -1, -1, -1,   // 69
+  9, 6, 5, 9, 0, 6, 0, 2, 6, -1, -1, -1, -1, -1, -1, -1,   // 70
+  5, 9, 8, 5, 8, 2, 5, 2, 6, 3, 2, 8, -1, -1, -1, -1,   // 71
+  2, 3, 11, 10, 6, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 72
+  11, 0, 8, 11, 2, 0, 10, 6, 5, -1, -1, -1, -1, -1, -1, -1,   // 73
+  0, 1, 9, 2, 3, 11, 5, 10, 6, -1, -1, -1, -1, -1, -1, -1,   // 74
+  5, 10, 6, 1, 9, 2, 9, 11, 2, 9, 8, 11, -1, -1, -1, -1,   // 75
+  6, 3, 11, 6, 5, 3, 5, 1, 3, -1, -1, -1, -1, -1, -1, -1,   // 76
+  0, 8, 11, 0, 11, 5, 0, 5, 1, 5, 11, 6, -1, -1, -1, -1,   // 77
+  3, 11, 6, 0, 3, 6, 0, 6, 5, 0, 5, 9, -1, -1, -1, -1,   // 78
+  6, 5, 9, 6, 9, 11, 11, 9, 8, -1, -1, -1, -1, -1, -1, -1,   // 79
+  5, 10, 6, 4, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 80
+  4, 3, 0, 4, 7, 3, 6, 5, 10, -1, -1, -1, -1, -1, -1, -1,   // 81
+  1, 9, 0, 5, 10, 6, 8, 4, 7, -1, -1, -1, -1, -1, -1, -1,   // 82
+  10, 6, 5, 1, 9, 7, 1, 7, 3, 7, 9, 4, -1, -1, -1, -1,   // 83
+  6, 1, 2, 6, 5, 1, 4, 7, 8, -1, -1, -1, -1, -1, -1, -1,   // 84
+  1, 2, 5, 5, 2, 6, 3, 0, 4, 3, 4, 7, -1, -1, -1, -1,   // 85
+  8, 4, 7, 9, 0, 5, 0, 6, 5, 0, 2, 6, -1, -1, -1, -1,   // 86
+  7, 3, 9, 7, 9, 4, 3, 2, 9, 5, 9, 6, 2, 6, 9, -1,   // 87
+  3, 11, 2, 7, 8, 4, 10, 6, 5, -1, -1, -1, -1, -1, -1, -1,   // 88
+  5, 10, 6, 4, 7, 2, 4, 2, 0, 2, 7, 11, -1, -1, -1, -1,   // 89
+  0, 1, 9, 4, 7, 8, 2, 3, 11, 5, 10, 6, -1, -1, -1, -1,   // 90
+  9, 2, 1, 9, 11, 2, 9, 4, 11, 7, 11, 4, 5, 10, 6, -1,   // 91
+  8, 4, 7, 3, 11, 5, 3, 5, 1, 5, 11, 6, -1, -1, -1, -1,   // 92
+  5, 1, 11, 5, 11, 6, 1, 0, 11, 7, 11, 4, 0, 4, 11, -1,   // 93
+  0, 5, 9, 0, 6, 5, 0, 3, 6, 11, 6, 3, 8, 4, 7, -1,   // 94
+  6, 5, 9, 6, 9, 11, 4, 7, 9, 7, 11, 9, -1, -1, -1, -1,   // 95
+  10, 4, 9, 6, 4, 10, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 96
+  4, 10, 6, 4, 9, 10, 0, 8, 3, -1, -1, -1, -1, -1, -1, -1,   // 97
+  10, 0, 1, 10, 6, 0, 6, 4, 0, -1, -1, -1, -1, -1, -1, -1,   // 98
+  8, 3, 1, 8, 1, 6, 8, 6, 4, 6, 1, 10, -1, -1, -1, -1,   // 99
+  1, 4, 9, 1, 2, 4, 2, 6, 4, -1, -1, -1, -1, -1, -1, -1,   // 100
+  3, 0, 8, 1, 2, 9, 2, 4, 9, 2, 6, 4, -1, -1, -1, -1,   // 101
+  0, 2, 4, 4, 2, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 102
+  8, 3, 2, 8, 2, 4, 4, 2, 6, -1, -1, -1, -1, -1, -1, -1,   // 103
+  10, 4, 9, 10, 6, 4, 11, 2, 3, -1, -1, -1, -1, -1, -1, -1,   // 104
+  0, 8, 2, 2, 8, 11, 4, 9, 10, 4, 10, 6, -1, -1, -1, -1,   // 105
+  3, 11, 2, 0, 1, 6, 0, 6, 4, 6, 1, 10, -1, -1, -1, -1,   // 106
+  6, 4, 1, 6, 1, 10, 4, 8, 1, 2, 1, 11, 8, 11, 1, -1,   // 107
+  9, 6, 4, 9, 3, 6, 9, 1, 3, 11, 6, 3, -1, -1, -1, -1,   // 108
+  8, 11, 1, 8, 1, 0, 11, 6, 1, 9, 1, 4, 6, 4, 1, -1,   // 109
+  3, 11, 6, 3, 6, 0, 0, 6, 4, -1, -1, -1, -1, -1, -1, -1,   // 110
+  6, 4, 8, 11, 6, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 111
+  7, 10, 6, 7, 8, 10, 8, 9, 10, -1, -1, -1, -1, -1, -1, -1,   // 112
+  0, 7, 3, 0, 10, 7, 0, 9, 10, 6, 7, 10, -1, -1, -1, -1,   // 113
+  10, 6, 7, 1, 10, 7, 1, 7, 8, 1, 8, 0, -1, -1, -1, -1,   // 114
+  10, 6, 7, 10, 7, 1, 1, 7, 3, -1, -1, -1, -1, -1, -1, -1,   // 115
+  1, 2, 6, 1, 6, 8, 1, 8, 9, 8, 6, 7, -1, -1, -1, -1,   // 116
+  2, 6, 9, 2, 9, 1, 6, 7, 9, 0, 9, 3, 7, 3, 9, -1,   // 117
+  7, 8, 0, 7, 0, 6, 6, 0, 2, -1, -1, -1, -1, -1, -1, -1,   // 118
+  7, 3, 2, 6, 7, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 119
+  2, 3, 11, 10, 6, 8, 10, 8, 9, 8, 6, 7, -1, -1, -1, -1,   // 120
+  2, 0, 7, 2, 7, 11, 0, 9, 7, 6, 7, 10, 9, 10, 7, -1,   // 121
+  1, 8, 0, 1, 7, 8, 1, 10, 7, 6, 7, 10, 2, 3, 11, -1,   // 122
+  11, 2, 1, 11, 1, 7, 10, 6, 1, 6, 7, 1, -1, -1, -1, -1,   // 123
+  8, 9, 6, 8, 6, 7, 9, 1, 6, 11, 6, 3, 1, 3, 6, -1,   // 124
+  0, 9, 1, 11, 6, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 125
+  7, 8, 0, 7, 0, 6, 3, 11, 0, 11, 6, 0, -1, -1, -1, -1,   // 126
+  7, 11, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 127
+  7, 6, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 128
+  3, 0, 8, 11, 7, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 129
+  0, 1, 9, 11, 7, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 130
+  8, 1, 9, 8, 3, 1, 11, 7, 6, -1, -1, -1, -1, -1, -1, -1,   // 131
+  10, 1, 2, 6, 11, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 132
+  1, 2, 10, 3, 0, 8, 6, 11, 7, -1, -1, -1, -1, -1, -1, -1,   // 133
+  2, 9, 0, 2, 10, 9, 6, 11, 7, -1, -1, -1, -1, -1, -1, -1,   // 134
+  6, 11, 7, 2, 10, 3, 10, 8, 3, 10, 9, 8, -1, -1, -1, -1,   // 135
+  7, 2, 3, 6, 2, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 136
+  7, 0, 8, 7, 6, 0, 6, 2, 0, -1, -1, -1, -1, -1, -1, -1,   // 137
+  2, 7, 6, 2, 3, 7, 0, 1, 9, -1, -1, -1, -1, -1, -1, -1,   // 138
+  1, 6, 2, 1, 8, 6, 1, 9, 8, 8, 7, 6, -1, -1, -1, -1,   // 139
+  10, 7, 6, 10, 1, 7, 1, 3, 7, -1, -1, -1, -1, -1, -1, -1,   // 140
+  10, 7, 6, 1, 7, 10, 1, 8, 7, 1, 0, 8, -1, -1, -1, -1,   // 141
+  0, 3, 7, 0, 7, 10, 0, 10, 9, 6, 10, 7, -1, -1, -1, -1,   // 142
+  7, 6, 10, 7, 10, 8, 8, 10, 9, -1, -1, -1, -1, -1, -1, -1,   // 143
+  6, 8, 4, 11, 8, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 144
+  3, 6, 11, 3, 0, 6, 0, 4, 6, -1, -1, -1, -1, -1, -1, -1,   // 145
+  8, 6, 11, 8, 4, 6, 9, 0, 1, -1, -1, -1, -1, -1, -1, -1,   // 146
+  9, 4, 6, 9, 6, 3, 9, 3, 1, 11, 3, 6, -1, -1, -1, -1,   // 147
+  6, 8, 4, 6, 11, 8, 2, 10, 1, -1, -1, -1, -1, -1, -1, -1,   // 148
+  1, 2, 10, 3, 0, 11, 0, 6, 11, 0, 4, 6, -1, -1, -1, -1,   // 149
+  4, 11, 8, 4, 6, 11, 0, 2, 9, 2, 10, 9, -1, -1, -1, -1,   // 150
+  10, 9, 3, 10, 3, 2, 9, 4, 3, 11, 3, 6, 4, 6, 3, -1,   // 151
+  8, 2, 3, 8, 4, 2, 4, 6, 2, -1, -1, -1, -1, -1, -1, -1,   // 152
+  0, 4, 2, 4, 6, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 153
+  1, 9, 0, 2, 3, 4, 2, 4, 6, 4, 3, 8, -1, -1, -1, -1,   // 154
+  1, 9, 4, 1, 4, 2, 2, 4, 6, -1, -1, -1, -1, -1, -1, -1,   // 155
+  8, 1, 3, 8, 6, 1, 8, 4, 6, 6, 10, 1, -1, -1, -1, -1,   // 156
+  10, 1, 0, 10, 0, 6, 6, 0, 4, -1, -1, -1, -1, -1, -1, -1,   // 157
+  4, 6, 3, 4, 3, 8, 6, 10, 3, 0, 3, 9, 10, 9, 3, -1,   // 158
+  10, 9, 4, 6, 10, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 159
+  4, 9, 5, 7, 6, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 160
+  0, 8, 3, 4, 9, 5, 11, 7, 6, -1, -1, -1, -1, -1, -1, -1,   // 161
+  5, 0, 1, 5, 4, 0, 7, 6, 11, -1, -1, -1, -1, -1, -1, -1,   // 162
+  11, 7, 6, 8, 3, 4, 3, 5, 4, 3, 1, 5, -1, -1, -1, -1,   // 163
+  9, 5, 4, 10, 1, 2, 7, 6, 11, -1, -1, -1, -1, -1, -1, -1,   // 164
+  6, 11, 7, 1, 2, 10, 0, 8, 3, 4, 9, 5, -1, -1, -1, -1,   // 165
+  7, 6, 11, 5, 4, 10, 4, 2, 10, 4, 0, 2, -1, -1, -1, -1,   // 166
+  3, 4, 8, 3, 5, 4, 3, 2, 5, 10, 5, 2, 11, 7, 6, -1,   // 167
+  7, 2, 3, 7, 6, 2, 5, 4, 9, -1, -1, -1, -1, -1, -1, -1,   // 168
+  9, 5, 4, 0, 8, 6, 0, 6, 2, 6, 8, 7, -1, -1, -1, -1,   // 169
+  3, 6, 2, 3, 7, 6, 1, 5, 0, 5, 4, 0, -1, -1, -1, -1,   // 170
+  6, 2, 8, 6, 8, 7, 2, 1, 8, 4, 8, 5, 1, 5, 8, -1,   // 171
+  9, 5, 4, 10, 1, 6, 1, 7, 6, 1, 3, 7, -1, -1, -1, -1,   // 172
+  1, 6, 10, 1, 7, 6, 1, 0, 7, 8, 7, 0, 9, 5, 4, -1,   // 173
+  4, 0, 10, 4, 10, 5, 0, 3, 10, 6, 10, 7, 3, 7, 10, -1,   // 174
+  7, 6, 10, 7, 10, 8, 5, 4, 10, 4, 8, 10, -1, -1, -1, -1,   // 175
+  6, 9, 5, 6, 11, 9, 11, 8, 9, -1, -1, -1, -1, -1, -1, -1,   // 176
+  3, 6, 11, 0, 6, 3, 0, 5, 6, 0, 9, 5, -1, -1, -1, -1,   // 177
+  0, 11, 8, 0, 5, 11, 0, 1, 5, 5, 6, 11, -1, -1, -1, -1,   // 178
+  6, 11, 3, 6, 3, 5, 5, 3, 1, -1, -1, -1, -1, -1, -1, -1,   // 179
+  1, 2, 10, 9, 5, 11, 9, 11, 8, 11, 5, 6, -1, -1, -1, -1,   // 180
+  0, 11, 3, 0, 6, 11, 0, 9, 6, 5, 6, 9, 1, 2, 10, -1,   // 181
+  11, 8, 5, 11, 5, 6, 8, 0, 5, 10, 5, 2, 0, 2, 5, -1,   // 182
+  6, 11, 3, 6, 3, 5, 2, 10, 3, 10, 5, 3, -1, -1, -1, -1,   // 183
+  5, 8, 9, 5, 2, 8, 5, 6, 2, 3, 8, 2, -1, -1, -1, -1,   // 184
+  9, 5, 6, 9, 6, 0, 0, 6, 2, -1, -1, -1, -1, -1, -1, -1,   // 185
+  1, 5, 8, 1, 8, 0, 5, 6, 8, 3, 8, 2, 6, 2, 8, -1,   // 186
+  1, 5, 6, 2, 1, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 187
+  1, 3, 6, 1, 6, 10, 3, 8, 6, 5, 6, 9, 8, 9, 6, -1,   // 188
+  10, 1, 0, 10, 0, 6, 9, 5, 0, 5, 6, 0, -1, -1, -1, -1,   // 189
+  0, 3, 8, 5, 6, 10, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 190
+  10, 5, 6, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 191
+  11, 5, 10, 7, 5, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 192
+  11, 5, 10, 11, 7, 5, 8, 3, 0, -1, -1, -1, -1, -1, -1, -1,   // 193
+  5, 11, 7, 5, 10, 11, 1, 9, 0, -1, -1, -1, -1, -1, -1, -1,   // 194
+  10, 7, 5, 10, 11, 7, 9, 8, 1, 8, 3, 1, -1, -1, -1, -1,   // 195
+  11, 1, 2, 11, 7, 1, 7, 5, 1, -1, -1, -1, -1, -1, -1, -1,   // 196
+  0, 8, 3, 1, 2, 7, 1, 7, 5, 7, 2, 11, -1, -1, -1, -1,   // 197
+  9, 7, 5, 9, 2, 7, 9, 0, 2, 2, 11, 7, -1, -1, -1, -1,   // 198
+  7, 5, 2, 7, 2, 11, 5, 9, 2, 3, 2, 8, 9, 8, 2, -1,   // 199
+  2, 5, 10, 2, 3, 5, 3, 7, 5, -1, -1, -1, -1, -1, -1, -1,   // 200
+  8, 2, 0, 8, 5, 2, 8, 7, 5, 10, 2, 5, -1, -1, -1, -1,   // 201
+  9, 0, 1, 5, 10, 3, 5, 3, 7, 3, 10, 2, -1, -1, -1, -1,   // 202
+  9, 8, 2, 9, 2, 1, 8, 7, 2, 10, 2, 5, 7, 5, 2, -1,   // 203
+  1, 3, 5, 3, 7, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 204
+  0, 8, 7, 0, 7, 1, 1, 7, 5, -1, -1, -1, -1, -1, -1, -1,   // 205
+  9, 0, 3, 9, 3, 5, 5, 3, 7, -1, -1, -1, -1, -1, -1, -1,   // 206
+  9, 8, 7, 5, 9, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 207
+  5, 8, 4, 5, 10, 8, 10, 11, 8, -1, -1, -1, -1, -1, -1, -1,   // 208
+  5, 0, 4, 5, 11, 0, 5, 10, 11, 11, 3, 0, -1, -1, -1, -1,   // 209
+  0, 1, 9, 8, 4, 10, 8, 10, 11, 10, 4, 5, -1, -1, -1, -1,   // 210
+  10, 11, 4, 10, 4, 5, 11, 3, 4, 9, 4, 1, 3, 1, 4, -1,   // 211
+  2, 5, 1, 2, 8, 5, 2, 11, 8, 4, 5, 8, -1, -1, -1, -1,   // 212
+  0, 4, 11, 0, 11, 3, 4, 5, 11, 2, 11, 1, 5, 1, 11, -1,   // 213
+  0, 2, 5, 0, 5, 9, 2, 11, 5, 4, 5, 8, 11, 8, 5, -1,   // 214
+  9, 4, 5, 2, 11, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 215
+  2, 5, 10, 3, 5, 2, 3, 4, 5, 3, 8, 4, -1, -1, -1, -1,   // 216
+  5, 10, 2, 5, 2, 4, 4, 2, 0, -1, -1, -1, -1, -1, -1, -1,   // 217
+  3, 10, 2, 3, 5, 10, 3, 8, 5, 4, 5, 8, 0, 1, 9, -1,   // 218
+  5, 10, 2, 5, 2, 4, 1, 9, 2, 9, 4, 2, -1, -1, -1, -1,   // 219
+  8, 4, 5, 8, 5, 3, 3, 5, 1, -1, -1, -1, -1, -1, -1, -1,   // 220
+  0, 4, 5, 1, 0, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 221
+  8, 4, 5, 8, 5, 3, 9, 0, 5, 0, 3, 5, -1, -1, -1, -1,   // 222
+  9, 4, 5, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 223
+  4, 11, 7, 4, 9, 11, 9, 10, 11, -1, -1, -1, -1, -1, -1, -1,   // 224
+  0, 8, 3, 4, 9, 7, 9, 11, 7, 9, 10, 11, -1, -1, -1, -1,   // 225
+  1, 10, 11, 1, 11, 4, 1, 4, 0, 7, 4, 11, -1, -1, -1, -1,   // 226
+  3, 1, 4, 3, 4, 8, 1, 10, 4, 7, 4, 11, 10, 11, 4, -1,   // 227
+  4, 11, 7, 9, 11, 4, 9, 2, 11, 9, 1, 2, -1, -1, -1, -1,   // 228
+  9, 7, 4, 9, 11, 7, 9, 1, 11, 2, 11, 1, 0, 8, 3, -1,   // 229
+  11, 7, 4, 11, 4, 2, 2, 4, 0, -1, -1, -1, -1, -1, -1, -1,   // 230
+  11, 7, 4, 11, 4, 2, 8, 3, 4, 3, 2, 4, -1, -1, -1, -1,   // 231
+  2, 9, 10, 2, 7, 9, 2, 3, 7, 7, 4, 9, -1, -1, -1, -1,   // 232
+  9, 10, 7, 9, 7, 4, 10, 2, 7, 8, 7, 0, 2, 0, 7, -1,   // 233
+  3, 7, 10, 3, 10, 2, 7, 4, 10, 1, 10, 0, 4, 0, 10, -1,   // 234
+  1, 10, 2, 8, 7, 4, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 235
+  4, 9, 1, 4, 1, 7, 7, 1, 3, -1, -1, -1, -1, -1, -1, -1,   // 236
+  4, 9, 1, 4, 1, 7, 0, 8, 1, 8, 7, 1, -1, -1, -1, -1,   // 237
+  4, 0, 3, 7, 4, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 238
+  4, 8, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 239
+  9, 10, 8, 10, 11, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 240
+  3, 0, 9, 3, 9, 11, 11, 9, 10, -1, -1, -1, -1, -1, -1, -1,   // 241
+  0, 1, 10, 0, 10, 8, 8, 10, 11, -1, -1, -1, -1, -1, -1, -1,   // 242
+  3, 1, 10, 11, 3, 10, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 243
+  1, 2, 11, 1, 11, 9, 9, 11, 8, -1, -1, -1, -1, -1, -1, -1,   // 244
+  3, 0, 9, 3, 9, 11, 1, 2, 9, 2, 11, 9, -1, -1, -1, -1,   // 245
+  0, 2, 11, 8, 0, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 246
+  3, 2, 11, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 247
+  2, 3, 8, 2, 8, 10, 10, 8, 9, -1, -1, -1, -1, -1, -1, -1,   // 248
+  9, 10, 2, 0, 9, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 249
+  2, 3, 8, 2, 8, 10, 0, 1, 8, 1, 10, 8, -1, -1, -1, -1,   // 250
+  1, 10, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 251
+  1, 3, 8, 9, 1, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 252
+  0, 9, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 253
+  0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 254
+  -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,   // 255
+]);
+
+/* Cube topology: corner i sits at grid offset (i&1, (i>>1)&1, (i>>2)&1) in the
+   standard Lorensen order - 0-3 around the z=0 face, 4-7 the same face at
+   z=1 - and the 12 cube edges as corner index pairs. */
+const EDGE_AX = new Int8Array([0,1,2,3,4,5,6,7,0,1,2,3]);
+const EDGE_BX = new Int8Array([1,2,3,0,5,6,7,4,4,5,6,7]);
+
+/* ------------------------------- constants ------------------------------- */
+const RENDER_W = 640;                     // internal res; CSS upscales to the window
+const RENDER_H_MIN = 320, RENDER_H_MAX = 400;
+const MAX_TRIS = 190000;                  // hard ceiling; measured worst case is ~108k
+const FIXED_DT = 1 / 60;                  // simulation is frame-counted, never wall clock
+const STEP_IN  = 2.60;                    // cells to step inward to read the field value
+const GRID_OPTS = [36, 48, 60];
+const SEED = 0x51ac3b;
+const GY = -1.14;                         // floor plane height
+const HIST_BINS = 128;
+// The surface-value distribution is strongly right-skewed for every field here
+// (stepping inward off a thin neck lands on a field maximum, off a thick body
+// it barely moves).  A plain min/max ramp therefore collapses to the warm end.
+// RANK_BLEND mixes a linear percentile mapping with a rank (histogram
+// equalisation) mapping, so the palette is always used end to end while the
+// ordering of the colours still tracks the scalar value.
+const RANK_BLEND = 0.72;
+
+/* ------------------------------ tiny utils ------------------------------- */
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp  = (a, b, t) => a + (b - a) * t;
+const fmt   = (v, n) => v.toFixed(n);
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* --------------------------- live configuration -------------------------- */
+const CFG = {
+  field: 'metaballs',
+  iso: 0.50,          // slider position, 0..1
+  isoRaw: 0.5,        // the actual field value the extractor uses
+  scale: 1.0,
+  speed: 0.50,
+  grid: 48,
+  time: 0,
+  rot: 0,
+  bands: false,
+  floor: true,
+  paused: false,
+};
+
+/* ------------------------------ colour ramp ------------------------------ */
+/* One source of truth: the stop table drives both the GLSL ramp and the
+   JS ramp used for the field inset and the legend. */
+const STOPS = [
+  [0.055, 0.129, 0.361],   // deep indigo  — furthest from any core
+  [0.106, 0.400, 0.706],   // ocean blue
+  [0.196, 0.780, 0.741],   // teal
+  [0.984, 0.706, 0.286],   // amber
+  [1.000, 0.965, 0.878],   // warm white  — core
+];
+const NSTOP = STOPS.length - 1;
+function rampJS(t) {
+  t = clamp(t, 0, 1) * NSTOP;
+  const i = Math.min(NSTOP - 1, t | 0), u = t - i;
+  const s = u * u * (3 - 2 * u);
+  const a = STOPS[i], b = STOPS[i + 1];
+  return [lerp(a[0], b[0], s), lerp(a[1], b[1], s), lerp(a[2], b[2], s)];
+}
+/** Map a raw field value to its position on the colour ramp (0..1). Uses the
+ *  same LUT the GPU vertices get, so the 3-D mesh and the 2-D field inset are
+ *  always showing the same scale. */
+function valueToRamp(v) {
+  if (!calInit) return 0.5;
+  const sc = HIST_BINS / Math.max(1e-9, MET.smax - MET.smin);
+  let b = ((v - MET.smin) * sc) | 0;
+  if (b < 0) b = 0; else if (b >= HIST_BINS) b = HIST_BINS - 1;
+  return LUT[b];
+}
+
+const RAMP_GLSL = STOPS.map((c, i) =>
+  `const vec3 S${i} = vec3(${c[0].toFixed(4)}, ${c[1].toFixed(4)}, ${c[2].toFixed(4)});`).join('\n  ')
+  + `
+vec3 ramp(float t){
+  t = clamp(t, 0.0, 1.0) * ${NSTOP}.0;
+  vec3 c;
+  if      (t < 1.0) c = mix(S0, S1, smoothstep(0.0, 1.0, t));
+  else if (t < 2.0) c = mix(S1, S2, smoothstep(0.0, 1.0, t - 1.0));
+  else if (t < 3.0) c = mix(S2, S3, smoothstep(0.0, 1.0, t - 2.0));
+  else              c = mix(S3, S4, smoothstep(0.0, 1.0, t - 3.0));
+  return c;
+}`;
+
+/* ------------------------------ field types ------------------------------ */
+const FIELDS = {
+  metaballs: { label: 'metaballs', iso: 0.50,
+               note: '7 gaussian metaballs on Lissajous orbits' },
+  fbm:       { label: 'fbm',       iso: 0.52,
+               note: 'animated fractal value noise, 3 + 2 octaves' },
+  gyroid:    { label: 'gyroid',    iso: 0.60,
+               note: 'triply-periodic minimal surface' },
+  blobs:     { label: 'blobs',     iso: 0.58,
+               note: 'union of noise-perturbed spheres' },
+  bubble:    { label: 'bubble',    iso: 0.46,
+               note: 'noise-displaced hollow shell' },
+};
+const FIELD_ORDER = ['metaballs', 'fbm', 'gyroid', 'blobs', 'bubble'];
+
+/* ------------------------- deterministic scene seeds ---------------------- */
+const BALLS = (function () {
+  const r = mulberry32(SEED ^ 0x9e37), out = [];
+  for (let i = 0; i < 7; i++) {
+    out.push({
+      ax: 0.20 + 0.42 * r(), ay: 0.18 + 0.40 * r(), az: 0.20 + 0.40 * r(),
+      cx: (r() * 2 - 1) * 0.26, cy: (r() * 2 - 1) * 0.26, cz: (r() * 2 - 1) * 0.26,
+      w: 0.55 + 0.85 * r(),
+      p1: r() * 6.2831853, p2: r() * 6.2831853, p3: r() * 6.2831853,
+      r0: 0.27 + 0.22 * r(),
+      a:  0.60 + 0.55 * r(),
+    });
+  }
+  return out;
+})();
+const SPHERES = (function () {
+  const r = mulberry32(SEED ^ 0x1d3b), out = [];
+  for (let i = 0; i < 8; i++) {
+    out.push({
+      ax: 0.20 + 0.40 * r(), ay: 0.20 + 0.36 * r(), az: 0.16 + 0.32 * r(),
+      cx: (r() * 2 - 1) * 0.26, cy: (r() * 2 - 1) * 0.26, cz: (r() * 2 - 1) * 0.26,
+      w: 0.45 + 0.80 * r(),
+      p1: r() * 6.2831853, p2: r() * 6.2831853, p3: r() * 6.2831853,
+      r0: 0.24 + 0.20 * r(),
+    });
+  }
+  return out;
+})();
+
+/* ------------------------------ value noise ------------------------------ */
+function hash3(i, j, k) {
+  let h = Math.imul(i | 0, 0x27d4eb2d) ^ Math.imul(j | 0, 0x165667b1) ^ Math.imul(k | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return ((h ^ (h >>> 16)) >>> 0) * 2.3283064365386963e-10;
+}
+const fade5 = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+function vnoise3(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = x - xi, yf = y - yi, zf = z - zi;
+  const u = fade5(xf), v = fade5(yf), w = fade5(zf);
+  const c000 = hash3(xi, yi, zi),         c100 = hash3(xi + 1, yi, zi);
+  const c010 = hash3(xi, yi + 1, zi),     c110 = hash3(xi + 1, yi + 1, zi);
+  const c001 = hash3(xi, yi, zi + 1),     c101 = hash3(xi + 1, yi, zi + 1);
+  const c011 = hash3(xi, yi + 1, zi + 1), c111 = hash3(xi + 1, yi + 1, zi + 1);
+  const a0 = c000 + (c100 - c000) * u, a1 = c010 + (c110 - c010) * u;
+  const a2 = c001 + (c101 - c001) * u, a3 = c011 + (c111 - c011) * u;
+  const b0 = a0 + (a1 - a0) * v, b1 = a2 + (a3 - a2) * v;
+  return b0 + (b1 - b0) * w;
+}
+function fbm3(x, y, z, oct) {
+  let a = 0.5, f = 1, sum = 0, norm = 0;
+  for (let i = 0; i < oct; i++) {
+    sum += a * vnoise3(x * f, y * f, z * f);
+    norm += a; a *= 0.5; f *= 2.02;
+  }
+  return sum / norm;
+}
+
+/* ----------------------------- the five fields --------------------------- */
+/* Convention: the solid is wherever f > iso, so the outward normal is -grad(f).
+   Each field ends in a call to sdf01(), which turns a signed distance into a
+   bounded [0,1] value with a soft knee.  That is what makes the isovalue
+   behave consistently: it is a distance to the surface, not an arbitrary
+   point in a field's raw numeric range, so no field can saturate to solid or
+   vanish as the scale knob moves. */
+const SDF_GAIN = 1.55;        // value units per world unit
+const SDF_MID  = 0.55;        // value of the surface itself
+function sdf01(d) {
+  const u = d * SDF_GAIN + SDF_MID;
+  return u < 0 ? 0 : u > 1 ? 1 : u;
+}
+/* Same map with a per-field gain, for the fields whose natural distance range
+   is much wider or narrower than SDF_GAIN assumes. */
+function sdf01g(d, gain) {
+  const u = d * gain + SDF_MID;
+  return u < 0 ? 0 : u > 1 ? 1 : u;
+}
+
+function fieldMetaballs(x, y, z, t) {
+  const s = CFG.scale, k = 0.60 / s, rk = s, qs = s * s;
+  let v = 0.30 * Math.exp(-(x * x + y * y + z * z) * 2.0 * qs);
+  for (let i = 0; i < 7; i++) {
+    const b = BALLS[i], ph = t * b.w;
+    const dx = x - b.cx - Math.sin(ph + b.p1) * b.ax * k;
+    const dy = y - b.cy - Math.sin(ph * 1.31 + b.p2) * b.ay * k;
+    const dz = z - b.cz - Math.sin(ph * 0.83 + b.p3) * b.az * k;
+    const rr = b.r0 * rk, ir = 1 / (rr * rr);
+    const d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 > 4.6 * rr * rr) continue;           // exp(-4.6)=0.010, dropped safely
+    v += b.a * Math.exp(-d2 * ir);
+  }
+  return v;                                    // raw: its own iso scale is used
+}
+function fieldFbm(x, y, z, t) {
+  const s = CFG.scale * 1.45, d = 0.62 * t;
+  const a = fbm3(x * s + d, y * s - d * 0.7, z * s + d * 0.4, 3);
+  const b = fbm3(x * s * 2.2 + Math.sin(t * 0.5) * d, y * s * 2.2 + Math.cos(t * 0.42) * d,
+                 z * s * 2.2 - d * 0.9, 2);
+  return clamp(a * 0.82 + b * 0.30, 0, 1);
+}
+function fieldGyroid(x, y, z, t) {
+  const s = CFG.scale * 4.4;
+  const gx = x * s + t * 0.30, gy = y * s - t * 0.24, gz = z * s + t * 0.18;
+  return clamp(0.5 - (Math.sin(gx) * Math.cos(gy) + Math.sin(gy) * Math.cos(gz)
+                      + Math.sin(gz) * Math.cos(gx)) / 3, 0, 1);
+}
+function fieldBlobs(x, y, z, t) {
+  const s = CFG.scale, k = 0.60 / s;
+  let best = -1e9;
+  for (let i = 0; i < 8; i++) {
+    const b = SPHERES[i], ph = t * b.w;
+    const dx = x - b.cx - Math.sin(ph + b.p1) * b.ax * k;
+    const dy = y - b.cy - Math.sin(ph * 1.27 + b.p2) * b.ay * k;
+    const dz = z - b.cz - Math.sin(ph * 0.79 + b.p3) * b.az * k;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const wob = 0.26 * (fbm3(x * 1.8 * s + i * 7.3, y * 1.8 * s + t * 0.22,
+                              z * 1.8 * s - i * 3.1, 2) - 0.5) * 2;
+    const v = b.r0 * s + wob - d;
+    if (v > best) best = v;
+  }
+  // 1 / (1 + e^-v) maps +-0.35 of the signed distance onto ~0.12..0.88, so the
+  // whole 0.2..0.9 isovalue range cuts a real surface instead of saturating.
+  return sdf01g(best, 2.30);
+}
+function fieldBubble(x, y, z, t) {
+  const s = CFG.scale;
+  const d = Math.sqrt(x * x + y * y + z * z);
+  const R = 0.70 * (1 + 0.30 * (fbm3(x * 1.6 * s, y * 1.6 * s + t * 0.18,
+                                 z * 1.6 * s - t * 0.11, 3) - 0.5) * 2);
+  const th = 0.16;
+  // signed distance to the wall's mid-surface: positive inside the wall
+  const wall = th - Math.abs(d - R);
+  return sdf01(wall);
+}
+const FIELD_FN = {
+  metaballs: fieldMetaballs, fbm: fieldFbm, gyroid: fieldGyroid,
+  blobs: fieldBlobs, bubble: fieldBubble,
+};
+
+/* --------------------- isovalue range calibration ------------------------- */
+/* The isovalue slider is remapped per field onto that field's own 3rd-97th
+   percentile of values, measured on a coarse sample of the lattice.  A fixed
+   0..1 slider would put most positions outside the field's actual range - the
+   surface would be either absent or the whole box - so the control instead
+   always spans values that cut a real surface. */
+const ISO_LO = new Float32Array(8), ISO_HI = new Float32Array(8);
+const ISO_Q  = new Float32Array(4096);
+function measureIsoRange(field) {
+  const f = FIELD_FN[field];
+  const M = 20, inv = 2 / M;
+  let n = 0;
+  for (let z = 0; z <= M; z += 2) for (let y = 0; y <= M; y += 2) for (let x = 0; x <= M; x += 2) {
+    ISO_Q[n++] = f(x * inv - 1, y * inv - 1, z * inv - 1, CFG.time);
+  }
+  const s = ISO_Q.subarray(0, n).slice().sort();
+  // Inset both ends slightly: the very edge of a field's range is where the
+  // solid occupies the whole box (or nothing at all), so a level set taken
+  // exactly at the minimum has no surface to extract.
+  const pad = Math.max(1e-3, Math.abs(s[n - 1] - s[0]) * 0.02);
+  const lo = s[Math.floor(n * 0.03)] + pad;
+  const hi = s[Math.floor(n * 0.97)] - pad;
+  return hi > lo + 1e-5 ? [lo, hi] : [lo, lo + Math.abs(lo) * 0.25 + 1e-3];
+}
+
+/* -------------------------- marching cubes: state ------------------------ */
+let N = 48, S1 = 49, S2 = 49 * 49;
+let LATTICE = new Float32Array(S1 * S1 * S1);
+let VTX = new Float32Array(MAX_TRIS * 12);
+let HIST = new Int32Array(HIST_BINS);
+let hmin = 0, hmax = 1;
+let RLO = 0, RHI = 1;                      // legend axis (surface value range)
+let calLo = 0, calHi = 1, calInit = false;
+
+const CV  = new Float32Array(8);
+const ESX = new Float32Array(12), ESY = new Float32Array(12), ESZ = new Float32Array(12);
+const EDX = new Float32Array(12), EDY = new Float32Array(12), EDZ = new Float32Array(12);
+const slot = new Int8Array(12);
+const epx = new Float32Array(36), epy = new Float32Array(36), epz = new Float32Array(36);
+(function initEdgeGeom() {
+  // Corner i has offset (i&1, (i>>1)&1, (i>>2)&1) in the standard Lorensen
+  // corner order, so the corner index packs the offset in binary.
+  for (let e = 0; e < 12; e++) {
+    const a = EDGE_AX[e], b = EDGE_BX[e];
+    const ax = a & 1, ay = (a >> 1) & 1, az = (a >> 2) & 1;
+    const bx = b & 1, by = (b >> 1) & 1, bz = (b >> 2) & 1;
+    ESX[e] = ax; ESY[e] = ay; ESZ[e] = az;
+    EDX[e] = bx - ax; EDY[e] = by - ay; EDZ[e] = bz - az;
+  }
+})();
+
+function alloc(n) {
+  N = n; S1 = n + 1; S2 = S1 * S1;
+  LATTICE = new Float32Array(S1 * S1 * S1);
+  calInit = false;
+}
+
+/* Step 1 - fill the lattice. */
+function sampleLattice() {
+  const f = FIELD_FN[CFG.field], t = CFG.time, inv = 2 / N;
+  let mn = Infinity, mx = -Infinity, k = 0;
+  for (let z = 0; z < S1; z++) {
+    const wz = z * inv - 1, zo = z * S2;
+    for (let y = 0; y < S1; y++) {
+      const wy = y * inv - 1, yo = zo + y * S1;
+      for (let x = 0; x < S1; x++, k++) {
+        const v = f(x * inv - 1, wy, wz, t);
+        LATTICE[k] = v;
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      }
+    }
+  }
+  hmin = mn; hmax = mx;
+}
+
+/* Steps 2-4 - the algorithm proper. Writes raw inward values into slot 3 of
+   each vertex; the colour pass afterwards remaps them onto the ramp. */
+const MET = { tris: 0, cells: 0, samples: 0, full: false, us: 0, un: 0,
+              rampMean: 0, rampStd: 0, clipLo: 0, clipHi: 0, smin: 0, smax: 1 };
+
+function extract() {
+  const iso = CFG.isoRaw, v = VTX;
+  HIST.fill(0);
+  let o = 0, nt = 0, nc = 0, full = false, us = 0, un = 0;
+  let smin = Infinity, smax = -Infinity;
+
+  outer:
+  for (let z = 0; z < N; z++) {
+    const zo = z * S2, zo1 = zo + S2;
+    for (let y = 0; y < N; y++) {
+      const b0 = zo + y * S1, b1 = b0 + S1, b2 = zo1 + y * S1, b3 = b2 + S1;
+      for (let x = 0; x < N; x++) {
+        CV[0] = LATTICE[b0 + x];      CV[1] = LATTICE[b0 + x + 1];
+        CV[2] = LATTICE[b1 + x + 1];  CV[3] = LATTICE[b1 + x];
+        CV[4] = LATTICE[b2 + x];      CV[5] = LATTICE[b2 + x + 1];
+        CV[6] = LATTICE[b3 + x + 1];  CV[7] = LATTICE[b3 + x];
+        let ci = 0;
+        if (CV[0] < iso) ci |= 1;   if (CV[1] < iso) ci |= 2;
+        if (CV[2] < iso) ci |= 4;   if (CV[3] < iso) ci |= 8;
+        if (CV[4] < iso) ci |= 16;  if (CV[5] < iso) ci |= 32;
+        if (CV[6] < iso) ci |= 64;  if (CV[7] < iso) ci |= 128;
+        if (ci === 0 || ci === 255) continue;         // 70-80% of cells, skipped
+        nc++;
+
+        // interpolate every edge the table says straddles the isosurface
+        let mask = EDGE_TABLE[ci], k = 0;
+        slot[0] = -1; slot[1] = -1; slot[2] = -1; slot[3] = -1;
+        slot[4] = -1; slot[5] = -1; slot[6] = -1; slot[7] = -1;
+        slot[8] = -1; slot[9] = -1; slot[10] = -1; slot[11] = -1;
+        while (mask) {
+          const e = 31 - Math.clz32(mask & -mask);
+          mask &= mask - 1;
+          const va = CV[EDGE_AX[e]], vb = CV[EDGE_BX[e]];
+          let u = (iso - va) / (vb - va);
+          if (!(u >= 0)) u = 0; else if (u > 1) u = 1;
+          const p = k * 3;
+          epx[p] = x + ESX[e] + EDX[e] * u;
+          epy[p] = y + ESY[e] + EDY[e] * u;
+          epz[p] = z + ESZ[e] + EDZ[e] * u;
+          slot[e] = k++;
+        }
+
+        const row = ci * 16;
+        for (let i = 0; ; i += 3) {
+          const e0 = TRI_TABLE[row + i];
+          if (e0 < 0) break;
+          const s0 = slot[e0] * 3;
+          const s1 = slot[TRI_TABLE[row + i + 1]] * 3;
+          const s2 = slot[TRI_TABLE[row + i + 2]] * 3;
+          const ax0 = epx[s0], ay0 = epy[s0], az0 = epz[s0];
+          const ax1 = epx[s1], ay1 = epy[s1], az1 = epz[s1];
+          const ax2 = epx[s2], ay2 = epy[s2], az2 = epz[s2];
+
+          // face normal, oriented outward by comparing it with -grad(f)
+          let nx = (ay1 - ay0) * (az2 - az0) - (az1 - az0) * (ay2 - ay0);
+          let ny = (az1 - az0) * (ax2 - ax0) - (ax1 - ax0) * (az2 - az0);
+          let nz = (ax1 - ax0) * (ay2 - ay0) - (ay1 - ay0) * (ax2 - ax0);
+          const gx = (ax0 + ax1 + ax2) * 0.3333333;
+          const gy = (ay0 + ay1 + ay2) * 0.3333333;
+          const gz = (az0 + az1 + az2) * 0.3333333;
+          let cx = gx | 0, cy = gy | 0, cz = gz | 0;
+          if (cx < 1) cx = 1; else if (cx > N - 1) cx = N - 1;
+          if (cy < 1) cy = 1; else if (cy > N - 1) cy = N - 1;
+          if (cz < 1) cz = 1; else if (cz > N - 1) cz = N - 1;
+          const go = cz * S2 + cy * S1 + cx;
+          const flip = (nx * (LATTICE[go + 1] - LATTICE[go - 1])
+                      + ny * (LATTICE[go + S1] - LATTICE[go - S1])
+                      + nz * (LATTICE[go + S2] - LATTICE[go - S2])) > 0;
+          if (flip) { nx = -nx; ny = -ny; nz = -nz; }
+          const nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+          const ux = nx / nl, uy = ny / nl, uz = nz / nl;
+
+          // trilinear sample of the same lattice, stepped inside the surface
+          const s = STEP_IN, sg = 2 / N;
+          const lx0 = ax0 - ux * s, ly0 = ay0 - uy * s, lz0 = az0 - uz * s;
+          const lx1 = ax1 - ux * s, ly1 = ay1 - uy * s, lz1 = az1 - uz * s;
+          const lx2 = ax2 - ux * s, ly2 = ay2 - uy * s, lz2 = az2 - uz * s;
+          const w0 = triSample(lx0, ly0, lz0);
+          const w1 = triSample(lx1, ly1, lz1);
+          const w2 = triSample(lx2, ly2, lz2);
+          if (o + 12 > v.length) { full = true; break outer; }
+
+          // lattice index -> world: [0..N] maps onto the [-1..1] sampling box
+          const wx0 = ax0 * sg - 1, wy0 = ay0 * sg - 1, wz0 = az0 * sg - 1;
+          const wx1 = ax1 * sg - 1, wy1 = ay1 * sg - 1, wz1 = az1 * sg - 1;
+          const wx2 = ax2 * sg - 1, wy2 = ay2 * sg - 1, wz2 = az2 * sg - 1;
+          if (flip) {
+            v[o] = wx0; v[o+1] = wy0; v[o+2] = wz0; v[o+3] = w0;
+            v[o+4] = wx2; v[o+5] = wy2; v[o+6] = wz2; v[o+7] = w2;
+            v[o+8] = wx1; v[o+9] = wy1; v[o+10] = wz1; v[o+11] = w1;
+          } else {
+            v[o] = wx0; v[o+1] = wy0; v[o+2] = wz0; v[o+3] = w0;
+            v[o+4] = wx1; v[o+5] = wy1; v[o+6] = wz1; v[o+7] = w1;
+            v[o+8] = wx2; v[o+9] = wy2; v[o+10] = wz2; v[o+11] = w2;
+          }
+          o += 12; nt++;
+          un += 3; us += w0 + w1 + w2;
+          if (w0 < smin) smin = w0; if (w0 > smax) smax = w0;
+          if (w1 < smin) smin = w1; if (w1 > smax) smax = w1;
+          if (w2 < smin) smin = w2; if (w2 > smax) smax = w2;
+        }
+      }
+    }
+  }
+
+  // histogram of the inward values, binned across the range actually seen on
+  // the surface (not the whole lattice, which would waste most of the bins)
+  const scale = HIST_BINS / Math.max(1e-6, smax - smin);
+  for (let i = 3; i < o; i += 12) {
+    let b = ((v[i] - smin) * scale) | 0;
+    if (b < 0) b = 0; else if (b >= HIST_BINS) b = HIST_BINS - 1;
+    HIST[b]++;
+  }
+  if (!(smax > smin)) { smin = hmin; smax = hmax; }
+  MET.smin = smin; MET.smax = smax;
+  MET.tris = nt; MET.cells = nc; MET.samples = S1 * S1 * S1;
+  MET.full = full; MET.us = us; MET.un = un;
+  return o;
+}
+
+/* Trilinear interpolation of the lattice at lattice coordinates. */
+function triSample(x, y, z) {
+  if (x < 0) x = 0; else if (x > N) x = N;
+  if (y < 0) y = 0; else if (y > N) y = N;
+  if (z < 0) z = 0; else if (z > N) z = N;
+  const xi = x | 0, yi = y | 0, zi = z | 0;
+  const x1 = xi < N ? xi + 1 : xi, y1 = yi < N ? yi + 1 : yi, z1 = zi < N ? zi + 1 : zi;
+  const u = x - xi, v = y - yi, w = z - zi;
+  const r0 = zi * S2, r1 = z1 * S2, q0 = yi * S1, q1 = y1 * S1;
+  const a = LATTICE[r0 + q0 + xi], b = LATTICE[r0 + q0 + x1];
+  const c = LATTICE[r0 + q1 + xi], d = LATTICE[r0 + q1 + x1];
+  const e = LATTICE[r1 + q0 + xi], g = LATTICE[r1 + q0 + x1];
+  const h = LATTICE[r1 + q1 + xi], i = LATTICE[r1 + q1 + x1];
+  const ab = a + (b - a) * u, cd = c + (d - c) * u, ef = e + (g - e) * u, hh = h + (i - h) * u;
+  const abcd = ab + (cd - ab) * v, efgh = ef + (hh - ef) * v;
+  return abcd + (efgh - abcd) * w;
+}
+
+/* Step 5a - build a value -> ramp-position lookup from the surface histogram.
+   LUT[b] holds the ramp position of the middle of histogram bin b: a linear
+   percentile stretch at the ends blended with the cumulative (rank) fraction.
+   That is histogram equalisation, which is what stops the skewed distribution
+   from piling every vertex into the top of the palette. */
+const LUT = new Float32Array(HIST_BINS);
+let linLo = 0, linHi = 1;
+
+function buildLUT() {
+  let tot = 0;
+  for (let i = 0; i < HIST_BINS; i++) tot += HIST[i];
+  if (!tot) { linLo = 0; linHi = 1; return; }
+
+  // linear endpoints: 1% / 99% of the values actually present on the surface
+  const loT = tot * 0.01, hiT = tot * 0.99;
+  let acc = 0, b0 = 0, b1 = HIST_BINS - 1, got0 = false;
+  for (let i = 0; i < HIST_BINS; i++) {
+    acc += HIST[i];
+    if (!got0 && acc >= loT) { b0 = i; got0 = true; }
+    if (acc >= hiT) { b1 = i; break; }
+  }
+  if (b1 <= b0) b1 = Math.min(HIST_BINS - 1, b0 + 1);
+  const sc = (MET.smax - MET.smin) / HIST_BINS;
+  const lo = MET.smin + b0 * sc, hi = MET.smin + (b1 + 1) * sc;
+
+  if (!calInit) { calLo = lo; calHi = hi; linLo = lo; linHi = hi; calInit = true; }
+  else {
+    const a = 0.10;
+    calLo += (lo - calLo) * a; calHi += (hi - calHi) * a;
+    linLo += (calLo - linLo) * a; linHi += (calHi - linHi) * a;
+  }
+  if (linHi - linLo < 1e-5) linHi = linLo + 1e-5;
+
+  // rank curve, lightly smoothed so the mapping stays monotonic-ish and does
+  // not step in visible quanta at low triangle counts
+  const raw = new Float32Array(HIST_BINS);
+  let a2 = 0;
+  for (let i = 0; i < HIST_BINS; i++) { a2 += HIST[i]; raw[i] = a2 / tot; }
+  const sm = new Float32Array(HIST_BINS);
+  for (let i = 0; i < HIST_BINS; i++) {
+    let s = 0, w = 0;
+    for (let d = -1; d <= 1; d++) {
+      const j = i + d;
+      if (j < 0 || j >= HIST_BINS) continue;
+      s += raw[j] * (2 - Math.abs(d)); w += 2 - Math.abs(d);
+    }
+    sm[i] = s / w;
+  }
+  for (let i = 0; i < HIST_BINS; i++) {
+    // both terms live in the same bin-index space, so they blend directly
+    const linT = clamp((i - b0) / Math.max(1, b1 - b0), 0, 1);
+    LUT[i] = clamp(RANK_BLEND * sm[i] + (1 - RANK_BLEND) * linT, 0, 1);
+  }
+  LUT[0] = 0; LUT[HIST_BINS - 1] = 1;
+  RLO = linLo; RHI = linHi;
+}
+
+/* Step 5b - apply the LUT to every vertex in the buffer. */
+function applyRamp(count) {
+  const lo = MET.smin, span = Math.max(1e-9, MET.smax - MET.smin);
+  const sc = HIST_BINS / span;
+  let s = 0, s2 = 0, n = 0, below = 0, above = 0;
+  for (let i = 3; i < count; i += 4) {
+    let b = ((VTX[i] - lo) * sc) | 0;
+    if (b < 0) b = 0; else if (b >= HIST_BINS) b = HIST_BINS - 1; else below++;
+    if (b === HIST_BINS - 1 && VTX[i] > MET.smax) above++;
+    const t = LUT[b];
+    VTX[i] = t; s += t; s2 += t * t; n++;
+  }
+  MET.rampMean = n ? s / n : 0;
+  MET.rampStd = n ? Math.sqrt(Math.max(0, s2 / n - MET.rampMean * MET.rampMean)) : 0;
+  MET.clipLo = below; MET.clipHi = above;
+}
+
+/* -------------------------------- WebGL ---------------------------------- */
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', {
+  alpha: false, depth: true, stencil: false, antialias: false,
+  preserveDrawingBuffer: true, powerPreference: 'high-performance'
+});
+if (!gl) {
+  document.body.innerHTML = '<div style="padding:40px;color:#ff9f9f;font:13px monospace">' +
+    'WebGL2 is required and is unavailable in this browser.</div>';
+  throw new Error('no webgl2');
+}
+gl.getExtension('EXT_color_buffer_float');   // requested up front per the harness notes
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+const U = (p, n) => gl.getUniformLocation(p, n);
+
+/* ------------------------------- shaders --------------------------------- */
+const KEY_DIR = [-0.44, 0.70, 0.56];        // world-space key light
+
+const MESH_VS = `#version 300 es
+  layout(location=0) in vec3 aPos;
+  layout(location=1) in float aVal;
+  uniform mat4 uMVP;
+  out vec3 vWorld;
+  out float vVal;
+  void main(){
+    vWorld = aPos;
+    vVal = aVal;
+    gl_Position = uMVP * vec4(aPos, 1.0);
+  }`;
+
+const MESH_FS = `#version 300 es
+  precision highp float;
+  in vec3 vWorld;
+  in float vVal;
+  uniform vec3 uEye;
+  uniform float uBands;
+  out vec4 outColor;
+  ${RAMP_GLSL}
+  void main(){
+    // exact per-face normal from the derivatives of the interpolated position
+    vec3 N = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+    vec3 V = normalize(uEye - vWorld);
+    float t = vVal;
+
+    // compress toward the mid-tone: adjacent faces then differ in ramp position
+    // by a visible but not violent step, which keeps the facets readable
+    vec3 base = ramp(mix(0.5, t, 0.82));
+    if (uBands > 0.5) {                       // quantised contour bands
+      float f = fract(t * 8.0);
+      float e = min(f, 1.0 - f);
+      base *= mix(0.66, 1.10, smoothstep(0.0, 0.10, e));
+    }
+
+    const vec3 KEY = normalize(vec3(${KEY_DIR[0]}, ${KEY_DIR[1]}, ${KEY_DIR[2]}));
+    const vec3 RIM = normalize(vec3(0.72, 0.10, -0.68));
+    float ndl  = max(dot(N, KEY), 0.0);
+    float wrap = dot(N, KEY) * 0.5 + 0.5;     // soft wrapped fill
+    float ndr  = max(dot(N, RIM), 0.0);
+    float fres = pow(1.0 - max(dot(N, V), 0.0), 3.2);
+    float sky  = 0.5 + 0.5 * N.y;
+
+    vec3 col = base * (vec3(0.30, 0.38, 0.56) * (0.55 + 0.45 * sky)          // hemisphere ambient
+                    + vec3(1.00, 0.93, 0.82) * ndl * 0.80                    // key
+                    + vec3(1.00, 0.80, 0.60) * wrap * wrap * 0.30            // wrapped key
+                    + vec3(0.24, 0.48, 0.94) * ndr * 0.34);                  // cool rim
+    vec3 H = normalize(KEY + V);
+    col += vec3(1.0, 0.96, 0.90) * pow(max(dot(N, H), 0.0), 38.0) * 0.38; // spec
+    col += vec3(0.40, 0.62, 1.00) * fres * 0.30;                            // fresnel
+    col = col / (1.0 + col * 0.30);                                          // soft shoulder
+    col = pow(col, vec3(0.95));
+    outColor = vec4(col, 1.0);
+  }`;
+
+// Flattened copy of the mesh, projected onto the floor along the key light.
+// One extra draw of the same buffer - no extra geometry, no shadow pass cost.
+const SHADOW_VS = `#version 300 es
+  layout(location=0) in vec3 aPos;
+  uniform mat4 uVP;
+  uniform float uGy;
+  uniform vec2 uShift;
+  out float vA;
+  void main(){
+    float h = clamp(aPos.y - uGy, 0.0, 1.30);
+    vA = 1.0 - h / 1.30;
+    vec3 w = vec3(aPos.x + uShift.x * h, uGy + 0.004, aPos.z + uShift.y * h);
+    gl_Position = uVP * vec4(w, 1.0);
+  }`;
+const SHADOW_FS = `#version 300 es
+  precision highp float;
+  in float vA;
+  out vec4 outColor;
+  void main(){
+    outColor = vec4(0.004, 0.010, 0.026, clamp(vA, 0.0, 1.0) * 0.72);
+  }`;
+
+const BG_VS = `#version 300 es
+  out vec2 vUv;
+  void main(){
+    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    vUv = p;
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  }`;
+const BG_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  void main(){
+    vec3 top = vec3(0.026, 0.052, 0.112);
+    vec3 bot = vec3(0.006, 0.013, 0.033);
+    vec3 c = mix(bot, top, pow(vUv.y, 1.15));
+    vec2 d = (vUv - vec2(0.585, 0.560)) * vec2(1.0, 1.60);   // pool of light, off-centre
+    c += vec3(0.060, 0.092, 0.145) * exp(-dot(d, d) * 4.4);
+    vec2 q = vUv - vec2(0.52, 0.48);
+    c *= 1.0 - 0.62 * dot(q, q);
+    outColor = vec4(c, 1.0);
+  }`;
+
+const FLOOR_VS = `#version 300 es
+  layout(location=0) in vec2 aXZ;
+  uniform mat4 uVP;
+  uniform float uGy;
+  out vec3 vWorld;
+  void main(){
+    vWorld = vec3(aXZ.x, uGy, aXZ.y);
+    gl_Position = uVP * vec4(vWorld, 1.0);
+  }`;
+const FLOOR_FS = `#version 300 es
+  precision highp float;
+  in vec3 vWorld;
+  out vec4 outColor;
+  void main(){
+    vec2 g = abs(fract(vWorld.xz + 0.5) - 0.5);
+    float line = max(1.0 - smoothstep(0.0, 0.014, g.x), 1.0 - smoothstep(0.0, 0.014, g.y));
+    vec2 g4 = abs(fract(vWorld.xz * 0.25 + 0.5) - 0.5);
+    float maj = max(1.0 - smoothstep(0.0, 0.010, g4.x), 1.0 - smoothstep(0.0, 0.010, g4.y));
+    float r = length(vWorld.xz);
+    float fade = exp(-r * 0.62);
+    float a = clamp((line * 0.26 + maj * 0.40) * fade, 0.0, 1.0);
+    vec3 c = vec3(0.13, 0.27, 0.44) * (line * 0.55 + maj * 0.85);
+    outColor = vec4(c, a);
+  }`;
+
+/* ------------------------------ matrix maths ------------------------------ */
+function m4persp(out, fovy, asp, near, far, sx, sy) {
+  const f = 1 / Math.tan(fovy / 2);
+  out.fill(0);
+  out[0] = f / asp; out[5] = f; out[11] = -1;
+  out[8] = -sx; out[9] = -sy;                    // off-centre lens shift
+  out[10] = (far + near) / (near - far);
+  out[14] = 2 * far * near / (near - far);
+  return out;
+}
+function m4look(out, eye, ctr, up) {
+  let zx = eye[0] - ctr[0], zy = eye[1] - ctr[1], zz = eye[2] - ctr[2];
+  let l = Math.hypot(zx, zy, zz) || 1; zx /= l; zy /= l; zz /= l;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  l = Math.hypot(xx, xy, xz) || 1; xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+  out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+  out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+  out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+  out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+  out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+  out[15] = 1;
+  return out;
+}
+function m4mul(out, a, b) {
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c*4], b1 = b[c*4+1], b2 = b[c*4+2], b3 = b[c*4+3];
+    out[c*4]   = a[0]*b0 + a[4]*b1 + a[8]*b2  + a[12]*b3;
+    out[c*4+1] = a[1]*b0 + a[5]*b1 + a[9]*b2  + a[13]*b3;
+    out[c*4+2] = a[2]*b0 + a[6]*b1 + a[10]*b2 + a[14]*b3;
+    out[c*4+3] = a[3]*b0 + a[7]*b1 + a[11]*b2 + a[15]*b3;
+  }
+  return out;
+}
+function m4rotY(out, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  out.set([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+  return out;
+}
+
+/* ------------------------------ GPU resources ---------------------------- */
+const pMesh   = program(MESH_VS, MESH_FS);
+const pShadow = program(SHADOW_VS, SHADOW_FS);
+const pBG     = program(BG_VS, BG_FS);
+const pFloor  = program(FLOOR_VS, FLOOR_FS);
+
+const uMeshMVP = U(pMesh, 'uMVP'), uMeshEye = U(pMesh, 'uEye'), uMeshBands = U(pMesh, 'uBands');
+const uShVP = U(pShadow, 'uVP'), uShGy = U(pShadow, 'uGy'), uShShift = U(pShadow, 'uShift');
+const uFlVP = U(pFloor, 'uVP'), uFlGy = U(pFloor, 'uGy');
+
+const vao = gl.createVertexArray();
+const vbo = gl.createBuffer();
+gl.bindVertexArray(vao);
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, VTX.byteLength, gl.DYNAMIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 16, 0);
+gl.enableVertexAttribArray(1);
+gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 16, 12);
+gl.bindVertexArray(null);
+
+const bgVao = gl.createVertexArray();
+
+// floor quad
+const FL = 5.0;
+const floorVao = gl.createVertexArray();
+const floorVbo = gl.createBuffer();
+gl.bindVertexArray(floorVao);
+gl.bindBuffer(gl.ARRAY_BUFFER, floorVbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -FL,-FL,  FL,-FL,  FL,FL,  -FL,-FL,  FL,FL,  -FL,FL]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+gl.bindVertexArray(null);
+
+function resize() {
+  const asp = Math.max(0.5, window.innerWidth / Math.max(1, window.innerHeight));
+  const h = clamp(Math.round(RENDER_W / asp), RENDER_H_MIN, RENDER_H_MAX);
+  if (canvas.width !== RENDER_W || canvas.height !== h) {
+    canvas.width = RENDER_W; canvas.height = h;
+  }
+  return h;
+}
+window.addEventListener('resize', resize);
+
+/* -------------------------------- camera --------------------------------- */
+const CAM = { yaw: 0.66, pitch: 0.26, dist: 4.55, fov: 0.62 };
+const TARGET = [0.03, 0.05, 0.0];
+let dragging = false, lastX = 0, lastY = 0;
+canvas.addEventListener('pointerdown', (e) => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY;
+  canvas.setPointerCapture(e.pointerId); $('#ctlHint').textContent = 'orbiting';
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  CAM.yaw -= (e.clientX - lastX) * 0.008;
+  CAM.pitch = clamp(CAM.pitch + (e.clientY - lastY) * 0.006, -0.85, 1.25);
+  lastX = e.clientX; lastY = e.clientY;
+});
+const endDrag = () => { dragging = false; $('#ctlHint').textContent = 'drag to orbit'; };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  CAM.dist = clamp(CAM.dist * (1 + Math.sign(e.deltaY) * 0.08), 2.1, 6.0);
+}, { passive: false });
+
+/* --------------------------------- UI ------------------------------------ */
+function $(id) { return document.getElementById(id); }
+const PIPE = ['scalar field', '→', 'lattice', '→', 'cube index', '→', 'edge interp',
+              '→', 'tri soup', '→', 'flat shading'];
+$('pipe').innerHTML = PIPE.map(s => s === '→' ? '<i>→</i>' : '<span>' + s + '</span>').join('');
+
+const segField = $('segField');
+FIELD_ORDER.forEach((k, i) => {
+  const b = document.createElement('button');
+  b.textContent = FIELDS[k].label;
+  b.title = FIELDS[k].note + '  (key ' + (i + 1) + ')';
+  b.dataset.k = k;
+  if (k === CFG.field) b.classList.add('on');
+  b.addEventListener('click', () => setField(k));
+  segField.appendChild(b);
+});
+
+let isoLo = 0, isoHi = 1;
+function setField(k) {
+  CFG.field = k;
+  const r = measureIsoRange(k);
+  isoLo = r[0]; isoHi = r[1];
+  CFG.iso = FIELDS[k].iso;              // slider position, per-field default
+  CFG.isoRaw = isoLo + (isoHi - isoLo) * CFG.iso;
+  $('sIso').value = String(CFG.iso);
+  $('vIso').textContent = fmt(CFG.iso, 3);
+  [...segField.children].forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  $('fldName').textContent = FIELDS[k].label;
+  $('sliceCap').textContent = FIELDS[k].note;
+  calInit = false;
+}
+
+function bindSlider(id, valId, get, set, digits) {
+  const el = $(id);
+  el.addEventListener('input', () => {
+    set(parseFloat(el.value));
+    $(valId).textContent = fmt(get(), digits);
+  });
+  return el;
+}
+bindSlider('sIso', 'vIso', () => CFG.iso, v => {
+  CFG.iso = v;
+  CFG.isoRaw = isoLo + (isoHi - isoLo) * v;
+}, 3);
+bindSlider('sScale', 'vScale', () => CFG.scale, v => {
+  CFG.scale = v;
+  // scale changes the field's value range, so the isovalue range must follow
+  const r = measureIsoRange(CFG.field);
+  isoLo = r[0]; isoHi = r[1];
+  CFG.isoRaw = isoLo + (isoHi - isoLo) * CFG.iso;
+}, 2);
+bindSlider('sSpeed', 'vSpeed', () => CFG.speed, v => CFG.speed = v, 2);
+bindSlider('sGrid', 'vGrid', () => CFG.grid, v => {
+  const n = GRID_OPTS[v | 0];
+  if (n !== CFG.grid) { CFG.grid = n; alloc(n); }
+}, 0);
+$('vGrid').textContent = CFG.grid + '³';
+$('sGrid').addEventListener('input', () => {
+  $('vGrid').textContent = CFG.grid + '³';
+});
+$('tSpin').addEventListener('change', e => { spin = e.target.checked; });
+$('tBand').addEventListener('change', e => CFG.bands = e.target.checked);
+$('tGrid').addEventListener('change', e => CFG.floor = e.target.checked);
+let spin = true;
+
+window.addEventListener('keydown', (e) => {
+  if (e.key >= '1' && e.key <= '5') setField(FIELD_ORDER[+e.key - 1]);
+  else if (e.code === 'Space') { CFG.paused = !CFG.paused; e.preventDefault(); }
+  else if (e.key === 'r' || e.key === 'R') { spin = !spin; $('tSpin').checked = spin; }
+});
+window.addEventListener('resize', () => { resize(); drawSlice(); });
+
+/* ------------------------- field inset + legend -------------------------- */
+const sliceCv = $('slice'), sctx = sliceCv.getContext('2d');
+const sImg = sctx.createImageData(sliceCv.width, sliceCv.height);
+const legCv = $('leg'), lctx = legCv.getContext('2d');
+
+function drawLegend() {
+  const w = legCv.width, h = legCv.height;
+  const im = lctx.createImageData(w, h);
+  for (let x = 0; x < w; x++) {
+    const c = rampJS(x / (w - 1));
+    for (let y = 0; y < h; y++) {
+      const o = (y * w + x) * 4;
+      im.data[o] = c[0] * 255; im.data[o+1] = c[1] * 255; im.data[o+2] = c[2] * 255;
+      im.data[o+3] = 255;
+    }
+  }
+  lctx.putImageData(im, 0, 0);
+  $('legIso').style.left = (clamp(valueToRamp(CFG.isoRaw), 0, 1) * w) + 'px';
+  $('legL').style.left = '0px';
+  $('legR').style.left = w + 'px';
+  $('legL').textContent = fmt(RLO, 2);
+  $('legR').textContent = fmt(RHI, 2);
+}
+
+let sliceTick = 0;
+function drawSlice() {
+  const f = FIELD_FN[CFG.field], t = CFG.time;
+  const W = sliceCv.width, H = sliceCv.height, d = sImg.data;
+  const iso = CFG.isoRaw;
+  const iw = Math.abs(iso) * 0.05 + 1e-4;
+  for (let py = 0; py < H; py++) {
+    // image row 0 is -z; the slab is x in [-1,1], z in [-1,1] at y = 0
+    const z = (0.5 - (py + 0.5) / H) * 2;
+    for (let px = 0; px < W; px++) {
+      const x = ((px + 0.5) / W - 0.5) * 2;
+      const v = f(x, 0, z, t);
+      const o = (py * W + px) * 4;
+      const c = rampJS(valueToRamp(v));
+      const onSurf = Math.abs(v - iso) < iw;
+      d[o]   = onSurf ? 255 : c[0] * 255;
+      d[o+1] = onSurf ? 255 : c[1] * 255;
+      d[o+2] = onSurf ? 255 : c[2] * 255;
+      d[o+3] = 255;
+    }
+  }
+  sctx.putImageData(sImg, 0, 0);
+}
+
+/* -------------------------------- render --------------------------------- */
+const mProj = new Float32Array(16), mView = new Float32Array(16);
+const mModel = new Float32Array(16), mVP = new Float32Array(16), mMVP = new Float32Array(16);
+let vCount = 0, noSurface = false, drawCalls = 0;
+
+function draw() {
+  const h = canvas.height;
+  const asp = RENDER_W / h;
+  const cp = Math.cos(CAM.pitch), sp = Math.sin(CAM.pitch);
+  const cy = Math.cos(CAM.yaw),   sy = Math.sin(CAM.yaw);
+  const eye = [
+    TARGET[0] + CAM.dist * cp * sy,
+    TARGET[1] + CAM.dist * sp,
+    TARGET[2] + CAM.dist * cp * cy,
+  ];
+  // off-centre lens: the subject sits right of centre and a little high,
+  // leaving the negative space under the title panel
+  m4persp(mProj, CAM.fov, asp, 0.1, 40, 0.205, 0.105);
+  m4look(mView, eye, TARGET, [0, 1, 0]);
+  m4rotY(mModel, CFG.rot);
+  m4mul(mVP, mProj, mView);
+  m4mul(mMVP, mVP, mModel);
+
+  gl.viewport(0, 0, RENDER_W, h);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.disable(gl.CULL_FACE);
+  gl.clearColor(0.004, 0.008, 0.020, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // background
+  gl.useProgram(pBG);
+  gl.bindVertexArray(bgVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.depthMask(true);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  // floor grid
+  if (CFG.floor) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+    gl.useProgram(pFloor);
+    gl.uniformMatrix4fv(uFlVP, false, mVP);
+    gl.uniform1f(uFlGy, GY);
+    gl.bindVertexArray(floorVao);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // flattened shadow copy of the same mesh, projected along the key light
+  if (CFG.floor && vCount > 0) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.useProgram(pShadow);
+    gl.uniformMatrix4fv(uShVP, false, mVP);
+    gl.uniform1f(uShGy, GY);
+    gl.uniform2f(uShShift, -KEY_DIR[0] / KEY_DIR[1], -KEY_DIR[2] / KEY_DIR[1]);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, vCount);
+  }
+
+  // the mesh
+  if (vCount > 0) {
+    gl.disable(gl.BLEND);
+    gl.depthMask(true);
+    gl.useProgram(pMesh);
+    gl.uniformMatrix4fv(uMeshMVP, false, mMVP);
+    gl.uniform3f(uMeshEye, eye[0], eye[1], eye[2]);
+    gl.uniform1f(uMeshBands, CFG.bands ? 1 : 0);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, vCount);
+  }
+  gl.bindVertexArray(null);
+  gl.disable(gl.CULL_FACE);
+  drawCalls = 1 + (CFG.floor ? 2 : 0) + (vCount > 0 ? 1 : 0);
+}
+
+/* --------------------------------- loop ---------------------------------- */
+let frame = 0, extMs = 0, cellMs = 0, lutMs = 0, lastT = performance.now(), fpsAvg = 0;
+let ready = false, warm = 0;
+
+function tick() {
+  const now = performance.now();
+  const dt = now - lastT; lastT = now;
+  if (dt > 0 && dt < 4000) fpsAvg += (1000 / dt - fpsAvg) * 0.12;
+
+  if (!CFG.paused) CFG.time += FIXED_DT * CFG.speed;
+  if (spin) CFG.rot += FIXED_DT * 0.34;
+  if (CFG.rot > 1e6) CFG.rot -= 1e6;
+
+  const t0 = performance.now();
+  sampleLattice();
+  const t1 = performance.now();
+  const count = extract();
+  const t2 = performance.now();
+  buildLUT();
+  applyRamp(count);
+  const t3 = performance.now();
+  extMs  += (t1 - t0 - extMs) * 0.1;        // field sampling
+  cellMs += (t2 - t1 - cellMs) * 0.1;       // the march itself
+  lutMs  += (t3 - t2 - lutMs) * 0.1;        // calibration + colour pass
+
+  if (count > 0) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, VTX, 0, count);
+    vCount = count / 4;
+  } else vCount = 0;
+  noSurface = count === 0;
+
+  draw();
+
+  frame++;
+  if ((frame & 3) === 0) drawSlice();
+  drawLegend();
+  updateStats();
+
+  if (!ready) { warm++; if (warm >= 2) { ready = true; window.__ready = true; } }
+  requestAnimationFrame(tick);
+}
+window.addEventListener('error', (e) => { window.__lastError = e.message + ' @' + e.lineno; });
+
+function updateStats() {
+  $('noSurf').classList.toggle('on', noSurface);
+  const triEl = $('mTri');
+  triEl.textContent = MET.tris.toLocaleString('en-US');
+  triEl.style.color = MET.full ? '#ff9f6b' : '';
+  triEl.title = MET.full ? 'vertex budget reached - raise the isovalue' : '';
+  $('mCell').textContent = MET.cells.toLocaleString('en-US');
+  $('mSamp').textContent = MET.samples.toLocaleString('en-US');
+  $('mRange').textContent = fmt(RLO, 2) + ' – ' + fmt(RHI, 2);
+  $('mExt').textContent = (extMs + cellMs + lutMs).toFixed(1) + ' ms';
+  $('mFps').textContent = fpsAvg.toFixed(1) + ' fps';
+  $('mBar').style.width = clamp(MET.tris / 45000 * 100, 2, 100) + '%';
+}
+
+/* ------------------------------ seek / reset ------------------------------ */
+/* Rewind the simulation to frame 0 and advance it by exactly `n` fixed steps.
+   Everything is frame-counted, so seek(n) always lands on the same state - which
+   is what makes a cold-load comparison meaningful. */
+function seek(n) {
+  CFG.time = 0; CFG.rot = 0;
+  for (let i = 0; i < n; i++) {
+    if (!CFG.paused) CFG.time += FIXED_DT * CFG.speed;
+    if (spin) CFG.rot += FIXED_DT * 0.34;
+    if (CFG.rot > 1e6) CFG.rot -= 1e6;
+    sampleLattice();
+    const count = extract();
+    buildLUT();
+    applyRamp(count);
+    if (count > 0) vCount = count / 4; else vCount = 0;
+    noSurface = count === 0;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, VTX, 0, Math.max(0, vCount * 4));
+  draw();
+  return { time: CFG.time, rot: CFG.rot, tris: MET.tris };
+}
+window.__seek = seek;
+
+/* -------------------------------- probe ---------------------------------- */
+window.__probe = {
+  get ready() { return ready; },
+  get field() { return CFG.field; },
+  get iso() { return CFG.iso; },
+  get isoRaw() { return CFG.isoRaw; },
+  get scale() { return CFG.scale; },
+  get speed() { return CFG.speed; },
+  get grid() { return CFG.grid; },
+  get triangles() { return MET.tris; },
+  get cells() { return MET.cells; },
+  get samples() { return MET.samples; },
+  get rampLo() { return RLO; },
+  get rampHi() { return RHI; },
+  get extractMs() { return extMs + cellMs + lutMs; },
+  get fieldMs() { return extMs; },
+  get marchMs() { return cellMs; },
+  get colourMs() { return lutMs; },
+  get rampMean() { return MET.rampMean; },
+  get rampStd() { return MET.rampStd; },
+  get clipLo() { return MET.clipLo; },
+  get clipHi() { return MET.clipHi; },
+  get fps() { return fpsAvg; },
+  get frames() { return frame; },
+  get vertexBufferFull() { return MET.full; },
+  get clipped() { return MET.full ? 1 : 0; },
+  get noSurface() { return noSurface; },
+  get spin() { return spin; },
+  get rot() { return CFG.rot; },
+  get time() { return CFG.time; },
+  get drawCalls() { return drawCalls; },
+  get cullWindingFixed() { return true; },
+};
+
+/* -------------------------------- start ---------------------------------- */
+resize();
+setField('metaballs');
+$('tSpin').checked = true;
+window.__ready = false;
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

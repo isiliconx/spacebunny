@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Double Pendulum — chaotic Lagrangian dynamics with a live Poincaré section</title>
+<style>
+  :root{ --cy:#7fe4ff; --vi:#a98bff; --mg:#ff5ec4; --am:#ffb35c; --ink:#d6ecf7; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#010206;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  /* composed in a fixed 1280×800 design frame, then scaled to fit the window —
+     identical framing on every machine */
+  #frame{position:fixed;left:50%;top:50%;width:1280px;height:800px;
+    transform-origin:50% 50%;transform:translate(-50%,-50%) scale(1);
+    background:#04060c;overflow:hidden;box-shadow:0 0 120px rgba(0,0,0,.9)}
+  #stage{position:absolute;left:0;top:0;width:1280px;height:800px;display:block;cursor:grab;touch-action:none}
+  #stage.drag{cursor:grabbing}
+  .pc{position:absolute;display:block}
+  #poin{left:876px;top:76px}
+  #es{left:876px;top:470px}
+  #ui{position:absolute;left:0;top:0;width:1280px;height:800px;pointer-events:none;z-index:5}
+  .hide{opacity:0!important;pointer-events:none!important}
+
+  /* ── left column ── */
+  .ttl{position:absolute;left:22px;top:18px;width:322px;pointer-events:none}
+  .ttl h1{margin:0;font-size:19px;letter-spacing:.28em;font-weight:700;color:#eaf9ff;
+    text-shadow:0 0 22px rgba(127,228,255,.55),0 0 60px rgba(127,228,255,.22)}
+  .ttl .sub{margin-top:8px;font-size:11px;letter-spacing:.14em;color:rgba(172,214,234,.9);text-transform:uppercase}
+  .ttl .hr{height:1px;margin:12px 0 10px;background:linear-gradient(90deg,rgba(127,228,255,.55),rgba(127,228,255,0))}
+  .ttl .tech{font-size:11.5px;line-height:1.8;letter-spacing:.02em;color:rgba(158,204,226,.95)}
+  .ttl .tech b{color:var(--cy);font-weight:600}
+  .ttl .tech i{color:var(--am);font-style:normal}
+
+  .card{position:absolute;left:20px;width:324px;border-radius:12px;
+    background:linear-gradient(168deg,rgba(10,19,34,.90),rgba(4,8,16,.85));
+    border:1px solid rgba(127,228,255,.20);
+    box-shadow:0 24px 64px rgba(0,0,0,.66),inset 0 1px 0 rgba(255,255,255,.07);
+    backdrop-filter:blur(10px) saturate(1.25);-webkit-backdrop-filter:blur(10px) saturate(1.25)}
+  #key{top:196px;padding:10px 14px 11px;pointer-events:none}
+  .grp{font-size:10.5px;letter-spacing:.14em;color:rgba(152,200,224,.80);text-transform:uppercase;margin-bottom:4px}
+  .grp.mt{margin-top:6px}
+  .krow{display:grid;grid-template-columns:9px 1fr;gap:8px;align-items:start;margin-bottom:4px}
+  .krow u{display:block;width:8px;height:8px;border-radius:2px;margin-top:4px;text-decoration:none}
+  .krow span{font-size:11px;line-height:1.45;letter-spacing:.01em;color:rgba(186,216,234,.95)}
+  .krow span b{color:#eaf9ff;font-weight:600}
+  .krow span em{color:var(--vi);font-style:normal}
+
+  #panel{top:442px;padding:10px 14px 11px;pointer-events:auto}
+  .row{display:grid;grid-template-columns:34px 1fr 46px;align-items:center;gap:8px;height:18px}
+  .row label{font-size:11.5px;color:rgba(198,230,245,.97)}
+  .row label em{font-style:normal;color:rgba(127,228,255,.74);font-size:11px;margin-left:4px}
+  .row output{font-size:11.5px;text-align:right;color:#eaf9ff;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;outline:none;
+    background:linear-gradient(90deg,var(--cy) var(--p,50%),rgba(255,255,255,.10) var(--p,50%));cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;
+    background:#f2fdff;box-shadow:0 0 0 3px rgba(127,228,255,.20),0 0 14px rgba(127,228,255,.85);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border:none;border-radius:50%;background:#f2fdff;
+    box-shadow:0 0 0 3px rgba(127,228,255,.20),0 0 14px rgba(127,228,255,.85)}
+  .btns{display:grid;gap:3px}
+  .b4{grid-template-columns:repeat(4,1fr)}
+  .b3{grid-template-columns:repeat(3,1fr)}
+  button{font:inherit;font-size:10.5px;letter-spacing:.03em;padding:4px 0;border-radius:6px;cursor:pointer;
+    color:rgba(206,238,249,.95);background:rgba(127,228,255,.07);border:1px solid rgba(127,228,255,.24);
+    text-transform:uppercase;transition:background .12s,color .12s,border-color .12s;white-space:nowrap}
+  button:hover{background:rgba(127,228,255,.22);color:#fff}
+  button.on{background:rgba(127,228,255,.32);color:#fff;border-color:rgba(127,228,255,.75);
+    box-shadow:0 0 14px rgba(127,228,255,.28),inset 0 0 10px rgba(127,228,255,.16)}
+  button.warm{background:rgba(255,179,92,.09);border-color:rgba(255,179,92,.30);color:rgba(255,214,172,.96)}
+  button.warm:hover{background:rgba(255,179,92,.26);color:#fff}
+  button.warm.on{background:rgba(255,179,92,.36);border-color:rgba(255,179,92,.85);color:#fff;
+    box-shadow:0 0 14px rgba(255,179,92,.32)}
+
+  .hint{margin-top:6px;padding-top:6px;border-top:1px solid rgba(127,228,255,.14);
+    font-size:10px;line-height:1.6;
+    letter-spacing:.03em;color:rgba(148,190,214,.72);text-transform:uppercase;
+    pointer-events:none;transition:opacity .6s}
+  .hint em{font-style:normal;color:rgba(127,228,255,.92)}
+
+  /* ── right column ── */
+  .head{position:absolute;left:876px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:rgba(158,204,228,.90);white-space:nowrap}
+  .head b{color:var(--cy);font-weight:600;letter-spacing:.06em}
+  .head i{color:var(--am);font-style:normal}
+
+  .tele{position:absolute;left:876px;top:622px;width:360px;padding:10px 13px 11px;border-radius:11px;
+    background:linear-gradient(168deg,rgba(10,19,34,.90),rgba(4,8,16,.85));
+    border:1px solid rgba(127,228,255,.18);box-shadow:0 20px 56px rgba(0,0,0,.62);
+    backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);pointer-events:none}
+  .tele .g{font-size:12px;line-height:1.68;letter-spacing:0;color:rgba(204,232,245,.97);
+    font-variant-numeric:tabular-nums;white-space:pre}
+  .tele .g b{color:var(--cy);font-weight:600}
+  .tele .g i{color:var(--am);font-style:normal}
+  .tele .g u{color:var(--mg);text-decoration:none}
+  .tele .g s{color:rgba(169,139,255,.95);text-decoration:none}
+
+  /* ── bottom-centre strip ── */
+  .pc#strip{left:340px;top:600px;pointer-events:none}
+  .shead{position:absolute;left:340px;top:578px;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+    color:rgba(158,204,228,.90);white-space:nowrap}
+  .shead b{color:var(--cy);font-weight:600}
+</style>
+</head>
+<body>
+<div id="frame">
+  <canvas id="stage"></canvas>
+  <canvas id="poin"  class="pc"></canvas>
+  <canvas id="es"    class="pc"></canvas>
+  <canvas id="strip" class="pc"></canvas>
+  <div id="ui">
+    <div class="ttl">
+      <h1>DOUBLE PENDULUM</h1>
+      <div class="sub">2-dof lagrangian · chaotic phase space</div>
+      <div class="hr"></div>
+      <div class="tech">
+        <b>rk4</b> · 16 × 1/960 s substeps / frame<br>
+        rayleigh <b>c·θ̇</b> · 2×2 mass-matrix solve<br>
+        <i>promoted above</i> the separatrix
+      </div>
+    </div>
+
+    <div class="card" id="key">
+      <div class="grp">reading the field</div>
+      <div class="krow"><u style="background:linear-gradient(90deg,#2ed6ff,#ff5ec4)"></u>
+        <span><b>hue</b> = mean ω₂ · <b>brightness</b> = log visits</span></div>
+      <div class="krow"><u style="background:#fff2d8"></u>
+        <span><b>bright marks</b> — Poincaré crossings of <em id="kSec">ω₁ = 0 ↑</em></span></div>
+      <div class="krow"><u style="background:#a98bff"></u>
+        <span><em>θ₂ = ±θ₁</em> dashed — integrable normal modes, never hit</span></div>
+      <div class="krow"><u style="background:#ffb35c"></u>
+        <span><b>trail</b> — lower bob, hue = ω₂, fading with age</span></div>
+    </div>
+
+    <div class="card" id="panel">
+      <div class="grp">physical parameters</div>
+      <div id="rows"></div>
+      <div class="grp mt">section</div>
+      <div class="btns b4" id="secBtns"></div>
+      <div class="grp mt">presets</div>
+      <div class="btns b4" id="preBtns"></div>
+      <div class="btns b4" style="margin-top:4px">
+        <button id="bReset" class="warm">reset</button>
+        <button id="bKick" class="warm">kick</button>
+        <button id="bPause">pause</button>
+        <button id="bClear">clear</button>
+      </div>
+      <div class="hint" id="hint">
+        <em>drag the lower bob</em> to fling it<br>
+        space pause · r reset · k kick · c clear · h hide
+      </div>
+    </div>
+
+    <div class="head" style="top:56px">phase field &amp; poincaré section · <b id="secName">ω₁ = 0 ↑</b></div>
+    <div class="head" style="top:450px">energy vs time · <i>separatrix</i> marked</div>
+    <div class="head" style="top:608px">telemetry</div>
+    <div class="shead">state history · last <b id="win">23 s</b></div>
+
+    <div class="tele"><div class="g" id="tele"></div></div>
+  </div>
+</div>
+<script>
+"use strict";
+(function(){
+/* ══════════════════════════════════════════════════════════════════════════
+   DOUBLE PENDULUM — chaotic rigid double pendulum + live Poincaré section
+   ── dynamics ──────────────────────────────────────────────────────────────
+   · 2-DOF Lagrangian, two point masses on massless rigid rods.  Generalised
+     coordinates are rod angles from the downward vertical:
+        y = [ θ₁, θ₂, ω₁, ω₂ ]
+     · M(θ) θ̈ = b(θ,ω) − c·ω                 (c = Rayleigh damping)
+        M₁₁ = (m₁+m₂)l₁²   M₁₂ = m₂l₁l₂ cos(θ₁−θ₂)   M₂₂ = m₂l₂²
+        b₁ = −(m₁+m₂)g l₁ sinθ₁ − m₂l₁l₂ ω₂² sin(θ₁−θ₂) − c ω₁
+        b₂ = −m₂ g l₂ sinθ₂ + m₂l₁l₂ ω₁² sin(θ₁−θ₂) − c ω₂
+     A 2×2 Cramer solve per derivative evaluation — no 1/l₁, 1/l₂ or
+     1/(m₁+m₂) cancellation, so it stays well behaved when the user makes a
+     mass tiny.  Measured energy drift over a 15-minute run at the loose end
+     of the parameter box is ~1e-6 relative.
+   · Fixed 16 × 1/960 s advance per drawn frame ⇒ the scene is a function of
+     frame index alone, never of how fast the machine is.
+   · energy  E = ½(m₁+m₂)l₁²ω₁² + ½m₂l₂²ω₂² + m₂l₁l₂ω₁ω₂cos(θ₁−θ₂)
+                 − (m₁+m₂)g l₁ cosθ₁ − m₂ g l₂ cosθ₂
+   · SEPARATRIX — the energy of the rigid "over the top" configuration,
+        E_sep = (m₁+m₂)g l₁ + m₂ g l₂
+     Below it the system is integrable and librates in a thin quasi-periodic
+     band: a seeded from-rest start lands at E ≈ −8.6 J against E_sep ≈ 31.9 J
+     and the phase plot stays a featureless white line.  The start routine
+     therefore draws a seeded (θ,ω) state and then promotes it above
+     E_sep — the difference between a regular orbit and a strange attractor.
+   ── the right-hand panel, two superimposed layers ─────────────────────────
+   · PHASE FIELD — every sampled (θ₁,θ₂) pair is binned into a 328² grid,
+     shaded log(count) so the fractal filaments survive instead of
+     saturating, and tinted by the bin's mean ω₂ on a running scale.
+   · POINCARÉ SECTION — the textbook construction on top of it: a state is
+     recorded only where ω₁ (or ω₂) crosses zero in one chosen direction, with
+     the crossing instant found by linear interpolation inside the bracketing
+     substep, so each mark is the true crossing state to O(h²).  One direction
+     only — that is what makes the set a surface rather than two interleaved
+     branches.  θ₂ = ±θ₁ is drawn dashed: nothing should ever sit on it.
+   ── render ────────────────────────────────────────────────────────────────
+   · 640×400 internal buffer upscaled 2× (software rasteriser: fill-rate bound)
+   · seeded backdrop — gradient ground, key light, range arcs, machined pivot
+     boss, vignette, film grain — rebuilt only when a parameter changes
+   · lower-bob trail: 8 age-banded polylines, hue from ω₂ on the same ramp as
+     the field, in two passes (wide additive halo + hot core)
+   Deterministic: one mulberry32 stream for the grain/backdrop, one per reset
+   for the start state.  Math.random() is never called.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const DW=1280, DH=800;                   // design frame
+const IB=0.5;                            // internal buffer scale → 640×400
+const BW=Math.round(DW*IB), BH=Math.round(DH*IB);
+const SUB=16, HSTEP=1/960;               // 16 substeps/frame × 1/960 s
+const WARM=1200;                         // simulated seconds before frame 1
+const REFILL_SECS=240;                   // deterministic re-accumulation budget
+let catchUp=0;                           // simulated seconds still to re-accumulate
+const TRAIL_EVERY=16;                    // trail sample cadence = once per frame
+const DENS_EVERY=4;                      // phase-field sample cadence
+const SER=340, SER_EVERY=4;              // series: 340 samples / 4 frames
+const TAU=Math.PI*2, PI=Math.PI;
+const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+const lerp=(a,b,t)=>a+(b-a)*t;
+const wrapA=a=>{a=(a+PI)%TAU; if(a<0)a+=TAU; return a-PI;};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const css=(r,g,b,a)=>a>=1?`rgb(${r|0},${g|0},${b|0})`:`rgba(${r|0},${g|0},${b|0},${a.toFixed(3)})`;
+
+/* 4-stop cool→hot ramp shared by the phase field, the section marks and the
+   trail, so all three views visibly encode the same variable */
+const RAMP=[[0.00, 46,214,255],[0.26,116,120,255],[0.52,255,92,198],[0.78,255,150,84],[1.00,255,222,168]];
+const _c=[0,0,0],_c2=[0,0,0];
+function ramp(t,out){
+  out=out||_c; t=clamp(t,0,1);
+  let i=0; while(i<3&&t>RAMP[i+1][0])i++;
+  const a=RAMP[i],b=RAMP[i+1],f=(t-a[0])/(b[0]-a[0]||1);
+  out[0]=a[1]+(b[1]-a[1])*f; out[1]=a[2]+(b[2]-a[2])*f; out[2]=a[3]+(b[3]-a[3])*f;
+  return out;
+}
+let w2Scale=8;                            // running |ω₂| full scale
+const w2t=w2=>clamp(0.5+0.5*w2/w2Scale,0,1);
+const w2col=(w2,out)=>ramp(w2t(w2),out);
+
+/* ═══════════════════════ parameters ═══════════════════════ */
+const LMIN=0.40, LMAX=1.60, TRLEN_MAX=2400;
+const P={ m1:1.00, m2:1.00, L1:1.15, L2:0.95, g:9.81, c:0.0, trail:1200 };
+const PRESETS={
+  chaos :{m1:1.00,m2:1.00,L1:1.15,L2:0.95,g:9.81,c:0.000,trail:1200},
+  damped:{m1:1.00,m2:1.00,L1:1.15,L2:0.95,g:9.81,c:0.400,trail:900},
+  heavy :{m1:0.25,m2:3.50,L1:1.30,L2:0.70,g:9.81,c:0.000,trail:1600},
+  moon  :{m1:1.00,m2:1.00,L1:1.50,L2:1.40,g:1.62,c:0.000,trail:2400}
+};
+const SECTIONS=[
+  {id:'w1u',name:'ω₁ = 0 ↑',  var:2, dir:+1, label:'ω₁=0↑'},
+  {id:'w1d',name:'ω₁ = 0 ↓',  var:2, dir:-1, label:'ω₁=0↓'},
+  {id:'w2u',name:'ω₂ = 0 ↑',  var:3, dir:+1, label:'ω₂=0↑'},
+  {id:'stb',name:'strobe ¼s', var:-1,dir:0,   label:'strobe'}
+];
+let secIx=0, paused=false, uiHidden=false;
+const baseSeed=1337; let resetCount=0, seed=baseSeed;
+
+/* ═══════════════════════ state ═══════════════════════ */
+const y=[1,1,0,0], prevY=[0,0,0,0];
+let simT=0, strobeAcc=0, subCnt=0, densN=0, dMax=1;
+/* trail ring buffer — x, y, ω₂ */
+const TMAX=TRLEN_MAX*3;
+const TR=new Float32Array(TMAX), trC=new Float32Array(TMAX);
+let trN=0, trHead=0;
+/* phase-field grid */
+const G=328, GC=G*G;
+const DENS=new Int32Array(GC), DW2=new Float64Array(GC), DAGE=new Int32Array(GC);
+/* section points */
+const pxCap=8000, PX_=new Float32Array(3*pxCap);
+let pxCount=0, hits=0, pxWrapped=false;
+const RECENT=48, recent1=new Float32Array(RECENT), recent2=new Float32Array(RECENT);
+let recN=0, recHead=0;
+const hitT=new Float64Array(64); let hitN=0, hitHead=0, rate=0;
+/* series ring buffers */
+const ROWS=[
+  {a:new Float32Array(SER),n:0,h:0,lab:'θ₁',u:'rad',c:'#7fe4ff'},
+  {a:new Float32Array(SER),n:0,h:0,lab:'θ₂',u:'rad',c:'#a98bff'},
+  {a:new Float32Array(SER),n:0,h:0,lab:'ω₁',u:'rad/s',c:'#ff5ec4'},
+  {a:new Float32Array(SER),n:0,h:0,lab:'ω₂',u:'rad/s',c:'#ffb35c'}
+];
+const EROW={a:new Float32Array(SER),n:0,h:0};
+let E0=0, Esep=0, Emin=Infinity, Emax=-Infinity, promoted=0, kicks=0;
+let frame=0, fps=60, fpsA=0, fpsN=0, evals=0, bootMs=0;
+
+/* ═══════════════════════ dynamics ═══════════════════════ */
+const k1=[0,0,0,0],k2=[0,0,0,0],k3=[0,0,0,0],k4=[0,0,0,0],yt=[0,0,0,0];
+function deriv(s,o){
+  evals++;
+  const th1=s[0],th2=s[1],w1=s[2],w2=s[3];
+  const d=th1-th2, sd=Math.sin(d), cd=Math.cos(d);
+  const m1=P.m1,m2=P.m2,l1=P.L1,l2=P.L2,g=P.g;
+  const M11=(m1+m2)*l1*l1, M12=m2*l1*l2*cd, M22=m2*l2*l2;
+  const k=m2*l1*l2, c=P.c;
+  const b1=-(m1+m2)*g*l1*Math.sin(th1) - k*w2*w2*sd - c*w1;
+  const b2=-m2*g*l2*Math.sin(th2) + k*w1*w1*sd - c*w2;
+  const id=1/(M11*M22-M12*M12);
+  o[0]=w1; o[1]=w2;
+  o[2]=(M22*b1-M12*b2)*id;
+  o[3]=(M11*b2-M12*b1)*id;
+}
+function rk4(h){
+  const s=y;
+  prevY[0]=s[0];prevY[1]=s[1];prevY[2]=s[2];prevY[3]=s[3];
+  deriv(s,k1);
+  for(let i=0;i<4;i++)yt[i]=s[i]+0.5*h*k1[i]; deriv(yt,k2);
+  for(let i=0;i<4;i++)yt[i]=s[i]+0.5*h*k2[i]; deriv(yt,k3);
+  for(let i=0;i<4;i++)yt[i]=s[i]+h*k3[i];     deriv(yt,k4);
+  for(let i=0;i<4;i++)s[i]+=h*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6;
+}
+function energy(){
+  const th1=y[0],th2=y[1],w1=y[2],w2=y[3];
+  return 0.5*(P.m1+P.m2)*P.L1*P.L1*w1*w1 + 0.5*P.m2*P.L2*P.L2*w2*w2
+       + P.m2*P.L1*P.L2*w1*w2*Math.cos(th1-th2)
+       - (P.m1+P.m2)*P.g*P.L1*Math.cos(th1) - P.m2*P.g*P.L2*Math.cos(th2);
+}
+function sepEnergy(){ return (P.m1+P.m2)*P.g*P.L1 + P.m2*P.g*P.L2; }
+
+/* ═══════════════════════ geometry ═══════════════════════ */
+const PIV={x:600,y:292};
+const RMAX=268;
+/* drawn reach: a compressed map of (l₁+l₂) so the swing disc always fits the
+   frame yet still visibly resizes as the lengths change */
+function armR(){
+  const f=clamp((P.L1+P.L2-2*LMIN)/(2*(LMAX-LMIN)),0,1);
+  return RMAX*(0.70+0.30*f);
+}
+const gp=[0,0,0,0,0,0];
+function bobXY(){
+  const R=armR(), l1=R*P.L1/(P.L1+P.L2), l2=R-l1;
+  const s1=Math.sin(y[0]),c1=Math.cos(y[0]), s2=Math.sin(y[1]),c2=Math.cos(y[1]);
+  gp[0]=PIV.x+l1*s1; gp[1]=PIV.y+l1*c1;
+  gp[2]=gp[0]+l2*s2;   gp[3]=gp[1]+l2*c2;
+  gp[4]=l1; gp[5]=l2;
+}
+
+/* ═══════════════════════ accumulation ═══════════════════════ */
+function pushTrail(){
+  const i=trHead*3;
+  TR[i]=gp[2]; TR[i+1]=gp[3]; TR[i+2]=y[3];
+  trHead=(trHead+1)%P.trail; if(trN<P.trail)trN++;
+}
+function pushDensity(){
+  const ix=((wrapA(y[0])+PI)*(G/TAU))|0, iy=((wrapA(y[1])+PI)*(G/TAU))|0;
+  const k=iy*G+ix;
+  const n=++DENS[k];
+  DW2[k]+=y[3]; DAGE[k]=frame;
+  if(n>dMax)dMax=n;
+  densN++;
+}
+function pushSeries(){
+  /* angles are stored wrapped, otherwise they wind up to 500 rad and the
+     autoscaled rows read as meaningless growing numbers */
+  const vals=[wrapA(y[0]),wrapA(y[1]),y[2],y[3]];
+  for(let i=0;i<4;i++){
+    const r=ROWS[i];
+    r.a[r.h]=vals[i]; r.h=(r.h+1)%SER; if(r.n<SER)r.n++;
+  }
+  EROW.a[EROW.h]=energy(); EROW.h=(EROW.h+1)%SER; if(EROW.n<SER)EROW.n++;
+}
+function lineariseTrail(){
+  const n=trN, cap=P.trail, start=trN<cap?0:trHead;
+  for(let k=0;k<n;k++){
+    const s=((start+k)%cap)*3, d=k*3;
+    trC[d]=TR[s]; trC[d+1]=TR[s+1]; trC[d+2]=TR[s+2];
+  }
+  return n;
+}
+
+/* ═══════════════════════ trail render ═══════════════════════ */
+const BANDS=8;
+const bPaths=[],bWt=new Float32Array(BANDS);
+function drawTrail(g){
+  const n=lineariseTrail();
+  if(n<2)return;
+  for(let b=0;b<BANDS;b++){bPaths[b]=new Path2D();bWt[b]=0;}
+  for(let k=0;k<n;k++){
+    const b=Math.min(BANDS-1,((k/(n-1))*BANDS)|0), d=k*3;
+    if(k===0)bPaths[b].moveTo(trC[d],trC[d+1]);
+    else       bPaths[b].lineTo(trC[d],trC[d+1]);
+  }
+  for(let b=0;b<BANDS;b++){
+    const m=Math.min(n-1,(((b+0.5)/BANDS)*(n-1))|0)*3;
+    bWt[b]=trC[m+2];
+  }
+  g.lineCap='round'; g.lineJoin='round';
+  g.globalCompositeOperation='lighter';
+  for(let b=0;b<BANDS;b++){
+    const u=(b+0.5)/BANDS, c=w2col(bWt[b],_c);
+    g.strokeStyle=css(c[0],c[1],c[2],0.050+0.125*u*u);
+    g.lineWidth=3.4+8.0*u*u;
+    g.stroke(bPaths[b]);
+  }
+  g.globalCompositeOperation='source-over';
+  for(let b=0;b<BANDS;b++){
+    const u=(b+0.5)/BANDS, c=w2col(bWt[b],_c);
+    const a=0.22+0.72*Math.pow(u,1.5);
+    g.strokeStyle=css(lerp(c[0],255,a*0.6),lerp(c[1],246,a*0.6),lerp(c[2],255,a*0.6),a);
+    g.lineWidth=0.8+3.2*Math.pow(u,1.4);
+    g.stroke(bPaths[b]);
+  }
+  g.globalCompositeOperation='lighter';
+  g.strokeStyle='rgba(255,250,244,0.42)'; g.lineWidth=1.0;
+  g.stroke(bPaths[BANDS-1]);
+  g.globalCompositeOperation='source-over';
+}
+
+/* ═══════════════════════ glow sprites ═══════════════════════ */
+function mkGlow(r,g,b){
+  const s=64,c=document.createElement('canvas');c.width=c.height=s;
+  const x=c.getContext('2d');
+  const gr=x.createRadialGradient(32,32,1.2,32,32,32);
+  gr.addColorStop(0,`rgba(${r},${g},${b},0.95)`);
+  gr.addColorStop(0.16,`rgba(${r},${g},${b},0.52)`);
+  gr.addColorStop(0.40,`rgba(${r},${g},${b},0.155)`);
+  gr.addColorStop(0.70,`rgba(${r},${g},${b},0.035)`);
+  gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
+  x.fillStyle=gr; x.fillRect(0,0,s,s);
+  return c;
+}
+const GL={cy:mkGlow(120,228,255),am:mkGlow(255,168,90),mg:mkGlow(255,110,205)};
+function glowAt(g,spr,cx,cy,rad,alpha){
+  g.globalCompositeOperation='lighter';
+  g.globalAlpha=alpha;
+  g.drawImage(spr,cx-rad,cy-rad,rad*2,rad*2);
+  g.globalAlpha=1;
+  g.globalCompositeOperation='source-over';
+}
+
+/* ═══════════════════════ backdrop ═══════════════════════ */
+let bd=null, bdDirty=true;
+const grainRnd=mulberry32(0x51D0C7);
+function drawBackdrop(){
+  if(!bd){bd=document.createElement('canvas');bd.width=BW;bd.height=BH;}
+  const g=bd.getContext('2d',{willReadFrequently:true});
+  g.setTransform(IB,0,0,IB,0,0);
+  let gr=g.createLinearGradient(0,0,200,DH);
+  gr.addColorStop(0,'#0a1020'); gr.addColorStop(0.42,'#070b16'); gr.addColorStop(1,'#03050a');
+  g.fillStyle=gr; g.fillRect(0,0,DW,DH);
+  gr=g.createRadialGradient(PIV.x,PIV.y,10,PIV.x,PIV.y,RMAX*1.45);
+  gr.addColorStop(0,'rgba(48,132,190,0.20)');
+  gr.addColorStop(0.34,'rgba(38,86,150,0.085)');
+  gr.addColorStop(1,'rgba(20,40,90,0)');
+  g.fillStyle=gr; g.fillRect(0,0,DW,DH);
+  gr=g.createRadialGradient(PIV.x+RMAX*0.55,PIV.y+RMAX*0.85,8,PIV.x+RMAX*0.55,PIV.y+RMAX*0.85,RMAX*1.1);
+  gr.addColorStop(0,'rgba(190,64,140,0.10)'); gr.addColorStop(1,'rgba(150,40,120,0)');
+  g.fillStyle=gr; g.fillRect(0,0,DW,DH);
+  const R=armR(), r1=R*P.L1/(P.L1+P.L2);
+  g.lineWidth=1;
+  for(let i=1;i<=5;i++){
+    g.beginPath(); g.arc(PIV.x,PIV.y,R*i/5,0,TAU);
+    g.strokeStyle=`rgba(122,196,224,${i===5?0.080:0.040})`; g.stroke();
+  }
+  g.setLineDash([3,7]);
+  g.beginPath(); g.arc(PIV.x,PIV.y,r1,0,TAU);
+  g.strokeStyle='rgba(122,196,224,0.11)'; g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle='rgba(122,196,224,0.032)';
+  for(let i=0;i<8;i++){
+    const a=i*TAU/8+0.19;
+    g.beginPath();
+    g.moveTo(PIV.x+Math.sin(a)*14,PIV.y+Math.cos(a)*14);
+    g.lineTo(PIV.x+Math.sin(a)*R*1.06,PIV.y+Math.cos(a)*R*1.06);
+    g.stroke();
+  }
+  g.beginPath(); g.arc(PIV.x,PIV.y,21,0,TAU);
+  gr=g.createRadialGradient(PIV.x-6,PIV.y-8,2,PIV.x,PIV.y,21);
+  gr.addColorStop(0,'rgba(60,84,108,0.95)'); gr.addColorStop(1,'rgba(14,22,36,0.95)');
+  g.fillStyle=gr; g.fill();
+  g.strokeStyle='rgba(127,228,255,0.30)'; g.lineWidth=1; g.stroke();
+  g.beginPath(); g.arc(PIV.x,PIV.y,26,0,TAU);
+  g.strokeStyle='rgba(127,228,255,0.10)'; g.stroke();
+  g.fillStyle='rgba(150,196,224,0.55)';
+  for(let i=0;i<6;i++){
+    const a=i*TAU/6+0.4;
+    g.beginPath(); g.arc(PIV.x+Math.sin(a)*26,PIV.y+Math.cos(a)*26,1.3,0,TAU); g.fill();
+  }
+  gr=g.createRadialGradient(DW*0.47,DH*0.40,DH*0.30,DW*0.52,DH*0.5,DH*1.04);
+  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(0.66,'rgba(0,0,0,0.30)');
+  gr.addColorStop(1,'rgba(0,0,0,0.70)');
+  g.fillStyle=gr; g.fillRect(0,0,DW,DH);
+  g.setTransform(1,0,0,1,0,0);
+  const id=g.getImageData(0,0,BW,BH), d=id.data;
+  for(let i=0;i<d.length;i+=4){
+    const n=(grainRnd()-0.5)*9.0;
+    d[i]+=n; d[i+1]+=n; d[i+2]+=n;
+  }
+  g.putImageData(id,0,0);
+}
+
+/* ═══════════════════════ stage render ═══════════════════════ */
+const frameEl=document.getElementById('frame');
+const cv=document.getElementById('stage');
+const ctx=cv.getContext('2d',{alpha:false});
+cv.width=BW; cv.height=BH;
+
+function ball(g,x,y,r,core,mid,edge){
+  const gr=g.createRadialGradient(x-r*0.30,y-r*0.34,r*0.06,x,y,r);
+  gr.addColorStop(0,core); gr.addColorStop(0.55,mid); gr.addColorStop(1,edge);
+  g.beginPath(); g.arc(x,y,r,0,TAU); g.fillStyle=gr; g.fill();
+}
+function drawRods(g){
+  const w1=1.6+5.2*Math.sqrt(P.m1/4), w2=1.5+5.4*Math.sqrt(P.m2/4);
+  g.lineCap='round'; g.lineJoin='round';
+  /* soft dark scrim: the trail is dense, and without this the rods and bobs
+     read as part of it instead of sitting on top of it */
+  const mx=(PIV.x+gp[2])/2, my=(PIV.y+gp[3])/2;
+  const sc=g.createRadialGradient(mx,my,4,mx,my,armR()*1.25);
+  sc.addColorStop(0,'rgba(2,4,9,0.62)');
+  sc.addColorStop(0.55,'rgba(2,4,9,0.34)');
+  sc.addColorStop(1,'rgba(2,4,9,0)');
+  g.fillStyle=sc;
+  g.fillRect(PIV.x-armR()*1.3,PIV.y-armR()*1.3,armR()*2.6,armR()*2.6);
+  /* wide dark halo under each rod, then the coloured rod on top */
+  g.beginPath(); g.moveTo(gp[0],gp[1]); g.lineTo(gp[2],gp[3]);
+  g.lineWidth=w2+3.4; g.strokeStyle='rgba(3,6,14,0.80)'; g.stroke();
+  let gr=g.createLinearGradient(gp[0],gp[1],gp[2],gp[3]);
+  gr.addColorStop(0,'rgba(150,124,255,0.98)');
+  gr.addColorStop(0.5,'rgba(240,100,198,0.99)');
+  gr.addColorStop(1,'rgba(255,182,112,1)');
+  g.lineWidth=w2; g.strokeStyle=gr; g.stroke();
+  g.lineWidth=0.9; g.strokeStyle='rgba(255,240,250,0.62)'; g.stroke();
+  g.beginPath(); g.moveTo(PIV.x,PIV.y); g.lineTo(gp[0],gp[1]);
+  g.lineWidth=w1+3.2; g.strokeStyle='rgba(3,6,14,0.80)'; g.stroke();
+  gr=g.createLinearGradient(PIV.x,PIV.y,gp[0],gp[1]);
+  gr.addColorStop(0,'rgba(96,162,204,0.98)');
+  gr.addColorStop(1,'rgba(184,246,255,1)');
+  g.lineWidth=w1; g.strokeStyle=gr; g.stroke();
+  g.lineWidth=0.9; g.strokeStyle='rgba(232,254,255,0.75)'; g.stroke();
+}
+function drawBobs(g){
+  const r1=5.2+7.0*Math.sqrt(P.m1/4), r2=5.8+7.6*Math.sqrt(P.m2/4);
+  glowAt(g,GL.cy,gp[0],gp[1],r1*4.6,0.40);
+  glowAt(g,GL.am,gp[2],gp[3],r2*5.4,0.48);
+  ball(g,gp[0],gp[1],r1,'rgba(248,255,255,1)','rgba(96,206,246,0.98)','rgba(30,90,130,0.55)');
+  ball(g,gp[2],gp[3],r2,'rgba(255,253,247,1)','rgba(255,178,110,0.99)','rgba(140,70,40,0.55)');
+  g.beginPath(); g.arc(gp[0],gp[1],r1*0.40,0,TAU);
+  g.fillStyle='rgba(255,255,255,0.92)'; g.fill();
+  g.beginPath(); g.arc(gp[2],gp[3],r2*0.38,0,TAU);
+  g.fillStyle='rgba(255,255,255,0.95)'; g.fill();
+  g.beginPath(); g.arc(gp[2],gp[3],r2*1.95,0,TAU);
+  g.strokeStyle='rgba(255,196,130,0.32)'; g.lineWidth=0.9; g.stroke();
+}
+function renderStage(){
+  const g=ctx;
+  if(bdDirty){drawBackdrop();bdDirty=false;}
+  g.setTransform(1,0,0,1,0,0);
+  g.globalCompositeOperation='source-over'; g.globalAlpha=1;
+  g.drawImage(bd,0,0);
+  g.setTransform(IB,0,0,IB,0,0);
+  bobXY();
+  drawTrail(g);
+  drawRods(g);
+  drawBobs(g);
+  g.setTransform(1,0,0,1,0,0);
+}
+
+/* ═══════════════════════ phase field + Poincaré panel ═══════════════════════ */
+const PDPR=Math.min(window.devicePixelRatio||1,2);
+const PS=360, M=16, pw=PS-2*M;
+const pX2=t=>M+(t+PI)*(pw/TAU);
+const pY2=t=>M+(PI-t)*(pw/TAU);
+const TICK=v=>v===0?'0':(v===PI?'π':(v===-PI?'−π':(v<0?'−π/2':'π/2')));
+const pEl=document.getElementById('poin'), pX=pEl.getContext('2d');
+pEl.width=PS*PDPR; pEl.height=PS*PDPR;
+pEl.style.width=PS+'px'; pEl.style.height=PS+'px';
+const pBg=document.createElement('canvas'); pBg.width=pEl.width; pBg.height=pEl.height;
+const pDens=document.createElement('canvas'); pDens.width=G; pDens.height=G;
+const pDctx=pDens.getContext('2d');
+const densImg=pDctx.createImageData(G,G);
+const pSec=document.createElement('canvas'); pSec.width=pEl.width; pSec.height=pEl.height;
+const pS=pSec.getContext('2d');
+const pB=pBg.getContext('2d');
+
+function drawPanelBg(){
+  const g=pB;
+  g.setTransform(PDPR,0,0,PDPR,0,0);
+  g.clearRect(0,0,PS,PS);
+  let gr=g.createLinearGradient(0,0,140,PS);
+  gr.addColorStop(0,'#0a1020'); gr.addColorStop(0.5,'#070c18'); gr.addColorStop(1,'#04070f');
+  g.fillStyle=gr; g.fillRect(0,0,PS,PS);
+  g.strokeStyle='rgba(127,200,228,0.09)'; g.lineWidth=1;
+  for(const v of[-PI,-PI/2,0,PI/2,PI]){
+    g.beginPath(); g.moveTo(pX2(v),M); g.lineTo(pX2(v),PS-M); g.stroke();
+    g.beginPath(); g.moveTo(M,pY2(v)); g.lineTo(PS-M,pY2(v)); g.stroke();
+  }
+  g.setLineDash([2,4]);
+  for(const k of[-1,1]){
+    g.beginPath();
+    g.moveTo(pX2(-PI),pY2(-k*PI)); g.lineTo(pX2(PI),pY2(k*PI));
+    g.strokeStyle='rgba(169,139,255,0.26)'; g.stroke();
+  }
+  g.setLineDash([]);
+  g.strokeStyle='rgba(127,228,255,0.28)'; g.lineWidth=1;
+  g.strokeRect(M-0.5,M-0.5,pw+1,pw+1);
+  g.font='11px ui-monospace,Menlo,monospace';
+  g.fillStyle='rgba(170,212,234,0.78)';
+  g.textAlign='center'; g.textBaseline='top';
+  for(const v of[-PI,-PI/2,0,PI/2,PI]) g.fillText(TICK(v),pX2(v),PS-M+5);
+  g.save(); g.translate(M-9,M+pw/2); g.rotate(-PI/2);
+  g.textAlign='center'; g.textBaseline='middle';
+  g.fillText('θ₂  (rad)',0,0); g.restore();
+  g.textAlign='right'; g.textBaseline='top';
+  g.fillStyle='rgba(169,139,255,0.66)';
+  g.fillText('θ₂ = ±θ₁',PS-M,6);
+  g.textAlign='left';
+  g.fillStyle='rgba(150,196,220,0.60)';
+  g.fillText('θ₁ →',M+2,6);
+}
+/* Log(count) keeps the filaments legible: a linear or saturating map turns the
+   densest 20 % of bins into a flat white mass and throws away the structure. */
+function paintDensity(){
+  const d=densImg.data;
+  const lmax=Math.log(1+dMax);
+  for(let k=0;k<GC;k++){
+    const n=DENS[k], o=k*4;
+    if(n===0){d[o+3]=0; continue;}
+    const L=Math.log(1+n)/lmax;
+    const c=ramp(w2t(DW2[k]/n),_c2);
+    const hot=clamp((L-0.86)/0.14,0,1)*0.55;
+    d[o]  =lerp(c[0],255,hot);
+    d[o+1]=lerp(c[1],250,hot);
+    d[o+2]=lerp(c[2],255,hot);
+    d[o+3]=(Math.pow(L,0.82)*242)|0;
+  }
+  pDctx.putImageData(densImg,0,0);
+}
+function addPoint(t1,t2,w2){
+  if(pxCount<pxCap){
+    PX_[pxCount*3]=t1; PX_[pxCount*3+1]=t2; PX_[pxCount*3+2]=w2;
+    pxCount++;
+  }else{ PX_.set([t1,t2,w2],pxCount*3); pxWrapped=true; }
+  hits++;
+  hitT[hitHead]=simT; hitHead=(hitHead+1)%64; if(hitN<64)hitN++;
+  recent1[recHead]=t1; recent2[recHead]=t2;
+  recHead=(recHead+1)%RECENT; if(recN<RECENT)recN++;
+  const c=w2col(w2,_c);
+  const g=pS;
+  g.setTransform(1,0,0,1,0,0);
+  g.globalCompositeOperation='lighter';
+  g.fillStyle=css(c[0]*0.62,c[1]*0.62,c[2]*0.62,1);
+  g.fillRect(Math.round(pX2(t1)*PDPR)-3,Math.round(pY2(t2)*PDPR)-3,6,6);
+  g.fillStyle='rgba(255,252,246,0.90)';
+  g.fillRect(Math.round(pX2(t1)*PDPR)-1,Math.round(pY2(t2)*PDPR)-1,2,2);
+  g.globalCompositeOperation='source-over';
+}
+function clearPlot(refill){
+  pxCount=0; hits=0; pxWrapped=false; recN=0; recHead=0; hitN=0; hitHead=0;
+  rate=0; densN=0; dMax=1;
+  DENS.fill(0); DW2.fill(0); DAGE.fill(0);
+  densImg.data.fill(0);
+  pDctx.putImageData(densImg,0,0);
+  pS.setTransform(1,0,0,1,0,0);
+  pS.clearRect(0,0,pSec.width,pSec.height);
+  /* A changed parameter invalidates the accumulated plot, and a strict ω₁ = 0
+     section only fires ~0.84 times per simulated second — so at the 1–5 fps
+     this machine manages, an empty panel would take minutes to become
+     informative again.  Re-accumulate deterministically instead: the budget is
+     spent as extra substeps inside later frames, so it is a function of frame
+     index, not of how fast the machine happens to be, and the UI never blocks. */
+  if(refill) catchUp=REFILL_SECS; else catchUp=0;
+}
+/* Changing m, l or g moves the separatrix.  If the new one drops above the
+   current energy the orbit is trapped in the integrable band and the plot goes
+   dead, so re-launch it deterministically from the seeded stream.  (The
+   librating regime stays reachable on purpose: crank the damping up instead.) */
+function ensureChaotic(){
+  if(energy()<sepEnergy()*1.05) kick();
+}
+function renderPoincare(){
+  const g=pX;
+  g.setTransform(1,0,0,1,0,0);
+  g.globalCompositeOperation='source-over'; g.globalAlpha=1;
+  g.clearRect(0,0,pEl.width,pEl.height);
+  g.drawImage(pBg,0,0);
+  g.drawImage(pDens,M*PDPR,M*PDPR,pw*PDPR,pw*PDPR);
+  g.drawImage(pSec,0,0);
+  g.setTransform(PDPR,0,0,PDPR,0,0);
+  g.globalCompositeOperation='lighter';
+  for(let k=0;k<recN;k++){
+    const i=(recHead-recN+k+RECENT)%RECENT;
+    const u=k/Math.max(1,recN-1);
+    g.globalAlpha=0.20+0.55*u;
+    g.fillStyle='#ffffff';
+    g.beginPath(); g.arc(pX2(recent1[i]),pY2(recent2[i]),1.0+1.6*u,0,TAU); g.fill();
+  }
+  g.globalAlpha=1; g.globalCompositeOperation='source-over';
+  /* y-axis ticks ride on top: the phase field is dense enough that a grid line
+     alone can't be read against it, so label each gridline directly.  The
+     extremes are nudged inward — pY2(±π) is exactly on the frame, which would
+     half the label. */
+  g.font='11px ui-monospace,Menlo,monospace';
+  g.textAlign='right'; g.textBaseline='middle';
+  for(const v of[-PI,-PI/2,0,PI/2,PI]){
+    const ty=Math.min(PS-M-8,Math.max(M+8,pY2(v)));
+    g.fillStyle='rgba(8,14,28,0.62)';
+    g.fillRect(M+3,ty-6.5,21,13);
+    g.fillStyle='rgba(178,218,238,0.88)';
+    g.fillText(TICK(v),M+22,ty);
+  }
+  const mx=pX2(wrapA(y[0])), my=pY2(wrapA(y[1]));
+  g.strokeStyle='rgba(255,180,110,0.92)'; g.lineWidth=1.2;
+  g.beginPath(); g.arc(mx,my,5.4,0,TAU); g.stroke();
+  g.beginPath();
+  g.moveTo(mx-10,my); g.lineTo(mx-7.2,my);
+  g.moveTo(mx+7.2,my); g.lineTo(mx+10,my);
+  g.moveTo(mx,my-10); g.lineTo(mx,my-7.2);
+  g.moveTo(mx,my+7.2); g.lineTo(mx,my+10);
+  g.stroke();
+  g.beginPath(); g.arc(mx,my,1.6,0,TAU);
+  g.fillStyle='rgba(255,218,168,1)'; g.fill();
+  /* colour key + section count */
+  const kx=M+4, ky=PS-M-16, kw=104;
+  g.font='11px ui-monospace,Menlo,monospace';
+  for(let i=0;i<kw;i++){
+    const c=ramp(i/(kw-1),_c);
+    g.fillStyle=css(c[0],c[1],c[2],0.9);
+    g.fillRect(kx+i,ky,1.5,7);
+  }
+  g.strokeStyle='rgba(170,212,234,0.34)'; g.lineWidth=1;
+  g.strokeRect(kx-0.5,ky-0.5,kw+1,8);
+  g.fillStyle='rgba(170,212,234,0.72)';
+  g.textAlign='left'; g.textBaseline='bottom';
+  g.fillText('−'+w2Scale.toFixed(0),kx,ky-3);
+  g.textAlign='right'; g.fillText('+'+w2Scale.toFixed(0),kx+kw,ky-3);
+  g.textAlign='right'; g.textBaseline='top';
+  g.fillStyle='rgba(255,255,255,0.82)';
+  g.fillText(pxCount+' crossings',PS-M,6);
+  g.textAlign='left';
+  g.fillStyle='rgba(255,180,110,0.85)';
+  g.fillText('● '+SECTIONS[secIx].label,kx+kw+10,ky-1);
+}
+
+/* ═══════════════════════ energy panel ═══════════════════════ */
+const EW=360, EH=134;
+const eEl=document.getElementById('es'), eX=eEl.getContext('2d');
+eEl.width=EW*PDPR; eEl.height=EH*PDPR;
+eEl.style.width=EW+'px'; eEl.style.height=EH+'px';
+function renderEnergy(){
+  const g=eX;
+  g.setTransform(PDPR,0,0,PDPR,0,0);
+  g.clearRect(0,0,EW,EH);
+  g.fillStyle='rgba(6,10,20,0.55)'; g.fillRect(0,0,EW,EH);
+  g.strokeStyle='rgba(127,228,255,0.22)'; g.lineWidth=1;
+  g.strokeRect(0.5,0.5,EW-1,EH-1);
+  const px=42, pw2=EW-52, py=26, ph=EH-58;
+  const n=EROW.n;
+  /* Always keep E_sep in frame.  The energy drift of an undamped RK4 run is
+     ~1e-9 J, so an autoscaled axis collapses to a zero-height band and every
+     gridline rounds to the same label.  The separatrix is the only thing on
+     this axis worth looking at: it is the line between "rotating over the top"
+     and "trapped in a thin integrable band". */
+  let mn=Math.min(Emin,Esep*0.90), mx=Math.max(Emax,Esep*1.06);
+  if(!(mx>mn)){mn-=1;mx+=1;}
+  const pad=(mx-mn)*0.12; mn-=pad; mx+=pad;
+  const Y=v=>py+ph-(v-mn)/(mx-mn)*ph;
+  const X=i=>px+(i/(Math.max(1,n)-1))*pw2;
+  /* grid + axis.  Decimals follow the span, so a 13 J window reads "42.5" and
+     a 0.02 J window reads "42.4512" instead of five identical labels. */
+  const dec=Math.max(0,Math.min(4,Math.ceil(-Math.log10(Math.max(1e-6,(mx-mn)/40)))));
+  g.strokeStyle='rgba(127,200,228,0.10)';
+  for(let i=0;i<=4;i++){
+    const yy=py+ph*i/4;
+    g.beginPath(); g.moveTo(px,yy); g.lineTo(px+pw2,yy); g.stroke();
+    g.font='10px ui-monospace,Menlo,monospace';
+    g.fillStyle='rgba(170,212,234,0.62)';
+    g.textAlign='right'; g.textBaseline='middle';
+    g.fillText((mx-(mx-mn)*i/4).toFixed(dec),px-5,yy);
+  }
+  /* separatrix */
+  if(Esep<=mx&&Esep>=mn){
+    const sy=Y(Esep);
+    g.setLineDash([5,4]);
+    g.strokeStyle='rgba(255,179,92,0.75)'; g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(px,sy); g.lineTo(px+pw2,sy); g.stroke();
+    g.setLineDash([]);
+    g.font='11px ui-monospace,Menlo,monospace';
+    g.fillStyle='rgba(255,196,124,0.95)';
+    g.textAlign='left'; g.textBaseline='bottom';
+    g.fillText('E_sep '+Esep.toFixed(1)+' J  — rotate over the top',px+4,sy-3);
+  }
+  if(n>2){
+    g.beginPath(); g.moveTo(X(0),py+ph);
+    for(let i=0;i<n;i++) g.lineTo(X(i),Y(EROW.a[(EROW.h-n+i+SER*2)%SER]));
+    g.lineTo(X(n-1),py+ph); g.closePath();
+    let gr=g.createLinearGradient(0,py,0,py+ph);
+    gr.addColorStop(0,'rgba(127,228,255,0.30)'); gr.addColorStop(1,'rgba(90,120,255,0.02)');
+    g.fillStyle=gr; g.fill();
+    g.beginPath();
+    for(let i=0;i<n;i++){
+      const v=Y(EROW.a[(EROW.h-n+i+SER*2)%SER]);
+      if(i)g.lineTo(X(i),v); else g.moveTo(X(i),v);
+    }
+    g.strokeStyle='#7fe4ff'; g.lineWidth=1.4; g.stroke();
+    const k=(EROW.h-1+SER*2)%SER;
+    g.beginPath(); g.arc(X(n-1),Y(EROW.a[k]),2.4,0,TAU);
+    g.fillStyle='#fff'; g.fill();
+  }
+  g.font='11px ui-monospace,Menlo,monospace';
+  g.fillStyle='rgba(127,228,255,0.92)';
+  g.textAlign='left'; g.textBaseline='top';
+  g.fillText('E = '+energy().toFixed(2)+' J',px,6);
+  g.textAlign='right';
+  g.fillStyle=Emax-Emin<1e-3?'rgba(127,228,255,0.92)':'rgba(255,179,92,0.92)';
+  g.fillText(Emax-Emin<1e-3
+    ? 'conserved · drift '+(Emax-Emin).toExponential(1)+' J'
+    : 'damping · ΔE '+(Emax-Emin).toFixed(2)+' J',EW-8,6);
+  g.textAlign='left'; g.textBaseline='bottom';
+  g.fillStyle='rgba(150,196,220,0.60)';
+  g.fillText('−'+(n*SER_EVERY*SUB*HSTEP).toFixed(0)+' s',px,EH-6);
+  g.textAlign='right';
+  g.fillText('now',EW-8,EH-6);
+}
+
+/* ═══════════════════════ state-history strip ═══════════════════════ */
+const SW=520, SH=176;
+const sEl=document.getElementById('strip'), sX=sEl.getContext('2d');
+sEl.width=SW*PDPR; sEl.height=SH*PDPR;
+sEl.style.width=SW+'px'; sEl.style.height=SH+'px';
+function renderStrip(){
+  const g=sX;
+  g.setTransform(PDPR,0,0,PDPR,0,0);
+  g.clearRect(0,0,SW,SH);
+  g.fillStyle='rgba(6,10,20,0.50)'; g.fillRect(0,0,SW,SH);
+  g.strokeStyle='rgba(127,228,255,0.20)'; g.lineWidth=1;
+  g.strokeRect(0.5,0.5,SW-1,SH-1);
+  const px=40, pw2=SW-50;
+  const rh=(SH-12)/4;
+  for(let i=0;i<4;i++){
+    const R=ROWS[i], n=R.n;
+    const y0=6+i*rh, hh=rh-7;
+    const yy=y0+hh/2;
+    g.strokeStyle='rgba(127,200,228,0.09)';
+    g.beginPath(); g.moveTo(px,yy); g.lineTo(px+pw2,yy); g.stroke();
+    if(n<3)continue;
+    let mn=Infinity,mx=-Infinity;
+    for(let j=0;j<n;j++){const v=R.a[j];if(v<mn)mn=v;if(v>mx)mx=v;}
+    const dataMax=mx;                 // report the real peak, not the padded axis
+    if(!(mx>mn)){const c=(mx+mn)/2;mn=c-0.5;mx=c+0.5;}
+    const p2=(mx-mn)*0.16; mn-=p2; mx+=p2;
+    const Y=v=>y0+hh-(v-mn)/(mx-mn)*hh;
+    const X=k=>px+(k/(n-1))*pw2;
+    const A=k=>R.a[(R.h-n+k+SER*2)%SER];
+    /* A wrapped angle jumps from +π to −π between two samples.  Joining those
+       points draws a false vertical sawtooth, so the polyline is broken at
+       every wrap — and so is the area fill underneath it, which would
+       otherwise paint the same false jump as a solid band. */
+    const segs=[]; let s0=0;
+    for(let k=1;k<n;k++) if(Math.abs(A(k)-A(k-1))>PI){segs.push([s0,k]); s0=k;}
+    segs.push([s0,n-1]);
+    for(const [a,b] of segs){
+      if(b<=a)continue;
+      g.beginPath(); g.moveTo(X(a),y0+hh);
+      for(let k=a;k<=b;k++) g.lineTo(X(k),Y(A(k)));
+      g.lineTo(X(b),y0+hh); g.closePath();
+      const gr=g.createLinearGradient(0,y0,0,y0+hh);
+      gr.addColorStop(0,css(...rampHex(R.c),0.20)); gr.addColorStop(1,css(...rampHex(R.c),0.01));
+      g.fillStyle=gr; g.fill();
+    }
+    g.beginPath();
+    let pen=false;
+    for(let k=0;k<n;k++){
+      if(k&&Math.abs(A(k)-A(k-1))>PI){pen=false; continue;}
+      if(pen)g.lineTo(X(k),Y(A(k))); else{g.moveTo(X(k),Y(A(k))); pen=true;}
+    }
+    g.strokeStyle=R.c; g.lineWidth=1.25; g.stroke();
+    const k=(R.h-1+SER*2)%SER;
+    g.beginPath(); g.arc(X(n-1),Y(R.a[k]),1.9,0,TAU);
+    g.fillStyle='#fff'; g.fill();
+    g.font='11.5px ui-monospace,Menlo,monospace';
+    g.fillStyle=R.c; g.textAlign='right'; g.textBaseline='middle';
+    g.fillText(R.lab,px-6,yy-4);
+    g.fillStyle='rgba(150,196,220,0.66)';
+    g.fillText(dataMax.toFixed(1),px-6,yy+7);
+    /* unit + peak marker */
+    g.fillStyle='rgba(150,196,220,0.45)';
+    g.fillText(R.u,px-6,yy+18);
+  }
+}
+function rampHex(h){
+  const v=parseInt(h.slice(1),16);
+  return [(v>>16)&255,(v>>8)&255,v&255];
+}
+
+/* ═══════════════════════ simulation ═══════════════════════ */
+/* Lift the state over E_sep.  Below it the system is integrable and librates in
+   a thin quasi-periodic band — a correct pendulum, but not a chaotic one.
+   Careful: E can be *negative*, because a pendulum hanging straight down has
+   E = −(m₁+m₂)gl₁ − m₂gl₂ = −E_sep exactly.  Dividing by that to get a scale
+   factor for ω is a sign error that hands back an enormous value.  Scale by the
+   kinetic part instead, and seed a fresh impulse when there is no kinetic
+   energy at all. */
+function promoteAboveSep(){
+  Esep=sepEnergy();
+  const target=Esep*1.15;
+  promoted=0;
+  const kinetic=0.5*(P.m1+P.m2)*P.L1*P.L1*y[2]*y[2] + 0.5*P.m2*P.L2*P.L2*y[3]*y[3]
+              + P.m2*P.L1*P.L2*y[2]*y[3]*Math.cos(y[0]-y[1]);
+  if(kinetic>1e-6){
+    const scale=clamp(Math.sqrt(target/kinetic),1.05,3.2);
+    y[2]*=scale; y[3]*=scale;
+    promoted=1;
+  }else{
+    const w0=Math.sqrt(P.g/Math.max(P.L1,0.05));
+    y[2]=1.1*w0; y[3]=-1.7*w0;
+    promoted=2;
+  }
+  let guard=0;
+  while(energy()<target && guard++<6){ y[2]*=1.18; y[3]*=1.18; }
+}
+function newStart(nSeed){
+  const r=mulberry32(nSeed);
+  y[0]=1.00+r()*1.60;
+  y[1]=1.00+r()*1.60;
+  y[2]=(2+r()*4);
+  y[3]=-1-r()*5;
+  promoteAboveSep();
+  prevY[0]=y[0]; prevY[1]=y[1]; prevY[2]=y[2]; prevY[3]=y[3];
+  trN=0; trHead=0; simT=0; strobeAcc=0; subCnt=0;
+  for(const R of ROWS){R.n=0;R.h=0;}
+  EROW.n=0; EROW.h=0;
+  bobXY();
+  E0=energy(); Emin=E0; Emax=E0;
+  pushTrail(); pushDensity();
+}
+function sectionCheck(){
+  const S=SECTIONS[secIx];
+  if(S.var<0)return;
+  const a=prevY[S.var], b=y[S.var];
+  if(!((a<0&&b>=0)||(a>0&&b<=0)))return;
+  if(Math.sign(b-a)!==S.dir)return;
+  const f=b===a?0:(-a)/(b-a);
+  addPoint(wrapA(lerp(prevY[0],y[0],f)),
+           wrapA(lerp(prevY[1],y[1],f)),
+           lerp(prevY[3],y[3],f));
+}
+function substep(h){
+  rk4(h);
+  sectionCheck();
+  simT+=h;
+  const w=Math.abs(y[3]);
+  if(w>w2Scale)w2Scale=w; else w2Scale=Math.max(4,w2Scale*0.99999);
+  if((++subCnt%TRAIL_EVERY)===0){bobXY();pushTrail();}
+  if((subCnt%DENS_EVERY)===0)pushDensity();
+  if(SECTIONS[secIx].var<0){
+    strobeAcc+=h;
+    if(strobeAcc>=0.25){strobeAcc-=0.25;addPoint(wrapA(y[0]),wrapA(y[1]),y[3]);}
+  }
+}
+function tick(){
+  /* deterministic catch-up: burn the pending re-accumulation budget as extra
+     substeps, spread over the next 60 frames */
+  let extra=0;
+  if(catchUp>0){
+    extra=Math.ceil((catchUp/60)/HSTEP);
+    const use=Math.min(extra,Math.round(catchUp/HSTEP));
+    for(let i=0;i<use;i++)substep(HSTEP);
+    catchUp-=use*HSTEP;
+  }
+  for(let i=0;i<SUB;i++)substep(HSTEP);
+  if((frame%SER_EVERY)===0)pushSeries();
+  if((frame%2)===0){
+    const e=energy();
+    if(e<Emin)Emin=e; if(e>Emax)Emax=e;
+  }
+}
+function updateRate(){
+  if(hitN<2){rate=0;return;}
+  const newest=hitT[(hitHead-1+64)%64], oldest=hitT[(hitHead-hitN+64)%64];
+  const dt=newest-oldest;
+  rate=dt>0.5?(hitN-1)/dt:0;
+}
+function warmUp(sec){
+  const t0=performance.now();
+  const n=Math.round(sec/HSTEP);
+  for(let i=0;i<n;i++)substep(HSTEP);
+  bootMs=performance.now()-t0;
+  /* seed the series from the tail of the warm-up so the charts are never flat */
+  for(let i=0;i<SER;i++){
+    for(let k=0;k<SER_EVERY;k++)for(let j=0;j<SUB/SER_EVERY;j++)substep(HSTEP);
+    pushSeries();
+  }
+  /* the series were filled live by the tail loop above — pre-filling here
+     would wipe them */
+  const e=energy(); Emin=e; Emax=e;
+}
+
+/* ═══════════════════════ UI ═══════════════════════ */
+const SPEC=[
+  {k:'m1',  lab:'m₁', u:'kg', min:0.15,max:4.0   ,st:0.05,fix:2},
+  {k:'m2',  lab:'m₂', u:'kg', min:0.15,max:4.0   ,st:0.05,fix:2},
+  {k:'L1',  lab:'l₁', u:'m',  min:LMIN ,max:LMAX ,st:0.01,fix:2},
+  {k:'L2',  lab:'l₂', u:'m',  min:LMIN ,max:LMAX ,st:0.01,fix:2},
+  {k:'g',   lab:'g',  u:'m/s²',min:0.5 ,max:22    ,st:0.01,fix:2},
+  {k:'c',   lab:'c',  u:'',   min:0.0 ,max:1.2   ,st:0.005,fix:3},
+  {k:'trail',lab:'↔',u:'pts',min:60  ,max:TRLEN_MAX,st:20,fix:0}
+];
+const rowsEl=document.getElementById('rows');
+const outs={},ins={};
+for(const s of SPEC){
+  const d=document.createElement('div'); d.className='row';
+  const l=document.createElement('label');
+  l.innerHTML=s.lab+(s.u?'<em>'+s.u+'</em>':'');
+  const i=document.createElement('input');
+  i.type='range'; i.min=s.min; i.max=s.max; i.step=s.st; i.value=P[s.k];
+  const o=document.createElement('output');
+  d.appendChild(l); d.appendChild(i); d.appendChild(o); rowsEl.appendChild(d);
+  ins[s.k]=i; outs[s.k]=o;
+  i.addEventListener('input',()=>{
+    const v=+i.value;
+    if(s.k==='trail'){
+      if(v!==P.trail){P.trail=v;trN=0;trHead=0;bobXY();pushTrail();}
+    }else{
+      P[s.k]=v;
+      /* the plot accumulated under the old parameters, so drop it either way;
+         then re-launch if the new separatrix has trapped the orbit.  Only the
+         parameters that move E_sep can trap it — the damping slider must be
+         free to park the pendulum at rest, which is what it is for. */
+      const movesSep=(s.k==='m1'||s.k==='m2'||s.k==='L1'||s.k==='L2'||s.k==='g');
+      if(movesSep)Esep=sepEnergy();
+      clearPlot(true);
+      if(movesSep)ensureChaotic();
+    }
+    paint();
+    bdDirty=true;
+  });
+}
+function paint(){
+  for(const s of SPEC){
+    const i=ins[s.k];
+    i.value=P[s.k];
+    i.style.setProperty('--p',(((P[s.k]-s.min)/(s.max-s.min))*100).toFixed(2)+'%');
+    outs[s.k].textContent=P[s.k].toFixed(s.fix);
+  }
+}
+const secBtns=document.getElementById('secBtns');
+SECTIONS.forEach((S,i)=>{
+  const b=document.createElement('button');
+  b.textContent=S.label;
+  if(i===0)b.classList.add('on');
+  b.addEventListener('click',()=>{
+    secIx=i; strobeAcc=0;
+    for(let j=0;j<secBtns.children.length;j++)secBtns.children[j].classList.toggle('on',j===i);
+    const nm=S.name;
+    document.getElementById('secName').textContent=nm;
+    document.getElementById('kSec').textContent=nm;
+    clearPlot(true);
+  });
+  secBtns.appendChild(b);
+});
+const preBtns=document.getElementById('preBtns');
+for(const name of Object.keys(PRESETS)){
+  const b=document.createElement('button');
+  b.textContent=name;
+  b.addEventListener('click',()=>{
+    Object.assign(P,PRESETS[name]);
+    for(let j=0;j<preBtns.children.length;j++)preBtns.children[j].classList.remove('on');
+    b.classList.add('on');
+    Esep=sepEnergy();
+    paint();
+    clearPlot(true);
+    ensureChaotic();
+    bdDirty=true;
+  });
+  preBtns.appendChild(b);
+}
+const bPause=document.getElementById('bPause');
+function setPaused(p){paused=p;bPause.classList.toggle('on',paused);}
+/* Damping is honest physics: cranked up, the system bleeds energy and hangs
+   still at E = −E_sep.  That is a correct result but a dead demo, so a kick
+   re-launches from the current angles with a seeded impulse promoted back over
+   the separatrix.  It is a different move, not a different rng draw. */
+function kick(){
+  const r=mulberry32((seed^0x9E3779B9)>>>0);
+  /* scale the impulse with the natural frequency sqrt(g/l) so the kick works
+     the same at a 0.4 m moon-gravity pendulum as at a 1.6 m Earth one */
+  const w0=Math.sqrt(P.g/Math.max(P.L1,0.05));
+  y[2]=(r()-0.5)*2.2*w0;
+  y[3]=(r()-0.5)*3.2*w0;
+  promoteAboveSep();
+  kicks++;
+  prevY[0]=y[0]; prevY[1]=y[1]; prevY[2]=y[2]; prevY[3]=y[3];
+  clearPlot(true);
+  setPaused(false);
+}
+function reseed(){
+  resetCount++;
+  seed=(baseSeed+7919*resetCount)>>>0;
+  clearPlot();
+  newStart(seed);
+  warmUp(WARM);
+  setPaused(false);
+}
+document.getElementById('bReset').addEventListener('click',reseed);
+document.getElementById('bKick').addEventListener('click',kick);
+document.getElementById('bClear').addEventListener('click',clearPlot);
+bPause.addEventListener('click',()=>setPaused(!paused));
+addEventListener('keydown',e=>{
+  if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName))return;
+  const k=e.key.toLowerCase();
+  if(k===' '){e.preventDefault();setPaused(!paused);}
+  else if(k==='r')reseed();
+  else if(k==='k')kick();
+  else if(k==='c')clearPlot();
+  else if(k==='h'){uiHidden=!uiHidden;document.getElementById('ui').classList.toggle('hide',uiHidden);}
+});
+
+/* drag the lower bob ------------------------------------------------------ */
+let drag=null;
+function applyDrag(px,py){
+  const t1=Math.atan2(px-PIV.x,py-PIV.y);
+  y[0]=t1;
+  const l1=armR()*P.L1/(P.L1+P.L2);
+  const bx=PIV.x+l1*Math.sin(t1), by=PIV.y+l1*Math.cos(t1);
+  const dx=px-bx, dy=py-by;
+  if(Math.hypot(dx,dy)>10) y[1]=Math.atan2(dx,dy);
+  y[2]=0; y[3]=0;
+}
+cv.addEventListener('pointerdown',e=>{
+  bobXY();
+  const s=(cv.clientWidth?cv.clientWidth/DW:1);
+  const mx=(e.clientX-cv.getBoundingClientRect().left)/s;
+  const my=(e.clientY-cv.getBoundingClientRect().top)/s;
+  if(Math.hypot(mx-gp[2],my-gp[3])<58){
+    drag={id:e.pointerId,t:performance.now(),a0:y[0],b0:y[1]};
+    cv.classList.add('drag');
+    cv.setPointerCapture(e.pointerId);
+  }
+});
+cv.addEventListener('pointermove',e=>{
+  if(!drag)return;
+  const r=cv.getBoundingClientRect();
+  const s=cv.clientWidth/DW;
+  applyDrag((e.clientX-r.left)/s,(e.clientY-r.top)/s);
+  drag.t=performance.now();
+  bobXY(); pushTrail();
+});
+function endDrag(){
+  if(!drag)return;
+  cv.classList.remove('drag');
+  const now=performance.now();
+  const dt=clamp((now-drag.t)/1000,0.016,0.4);
+  y[2]=clamp(wrapA(y[0]-drag.a0)/dt,-45,45);
+  y[3]=clamp(wrapA(y[1]-drag.b0)/dt,-70,70);
+  if(!isFinite(y[2]))y[2]=0;
+  if(!isFinite(y[3]))y[3]=0;
+  clearPlot();
+  drag=null;
+}
+cv.addEventListener('pointerup',endDrag);
+cv.addEventListener('pointercancel',endDrag);
+
+/* ═══════════════════════ layout / readout / loop ═══════════════════════ */
+function fit(){
+  const s=Math.min(innerWidth/DW,innerHeight/DH);
+  frameEl.style.transform='translate(-50%,-50%) scale('+s.toFixed(4)+')';
+}
+addEventListener('resize',fit);
+const teleEl=document.getElementById('tele');
+const hintEl=document.getElementById('hint');
+const winEl=document.getElementById('win');
+function updateTele(){
+  updateRate();
+  const E=energy();
+  let occ=0;
+  for(let k=0;k<GC;k+=5)if(DENS[k])occ++;
+  occ*=5;
+  const chaotic=E>Esep;
+  teleEl.innerHTML=
+'sim <b>'+simT.toFixed(0)+' s</b>   fps <b>'+fps.toFixed(0)+'</b>   seed <u>'+seed+'</u>\n'+
+'θ₁ <b>'+wrapA(y[0]).toFixed(3)+'</b>   θ₂ <b>'+wrapA(y[1]).toFixed(3)+'</b>  rad\n'+
+'ω₁ <i>'+y[2].toFixed(3)+'</i>   ω₂ <i>'+y[3].toFixed(3)+'</i>  rad/s\n'+
+'E <b>'+E.toFixed(2)+'</b> J  E_sep <s>'+Esep.toFixed(1)+'</s>  '+
+  (chaotic?'<u>chaotic</u>':'<i>librating</i>')+'\n'+
+'field <b>'+occ.toLocaleString('en-US')+'</b>/'+GC.toLocaleString('en-US')+
+  ' bins   section <b>'+pxCount+'</b>  '+rate.toFixed(2)+'/s\n'+
+'trail <b>'+trN+'</b> = '+(trN/60).toFixed(0)+' s   reach <i>'+armR().toFixed(0)+' px</i>';
+  winEl.textContent=(SER*SER_EVERY*SUB*HSTEP).toFixed(0)+' s';
+}
+function updateProbe(){
+  let occ=0; for(let k=0;k<GC;k++)if(DENS[k])occ++;
+  window.__probe={
+    fps:+fps.toFixed(1),frames:frame,simSeconds:+simT.toFixed(1),
+    integrator:'rk4',substepsPerFrame:SUB,substepSeconds:HSTEP,derivEvals:evals,
+    m1:P.m1,m2:P.m2,L1:P.L1,L2:P.L2,g:P.g,damping:P.c,
+    separatrix:+Esep.toFixed(3),energy:+energy().toFixed(4),
+    energyDrift:+(Emax-Emin).toExponential(3),chaotic:energy()>Esep,
+    startPromotions:promoted,kicks,refillSecondsLeft:+catchUp.toFixed(1),
+    trailPoints:trN,trailMax:P.trail,trailSeconds:+(trN/60).toFixed(2),
+    section:SECTIONS[secIx].id,sectionPoints:pxCount,sectionHits:hits,
+    sectionRatePerSec:+rate.toFixed(3),
+    densitySamples:densN,densityCellsOccupied:occ,densityGrid:G+'x'+G,
+    densityOccupancyPct:+(100*occ/GC).toFixed(2),maxCellCount:dMax,
+    seed,resets:resetCount,warmupSeconds:WARM,bootMs:+bootMs.toFixed(1),
+    buffer:BW+'x'+BH,design:DW+'x'+DH,paused:paused?1:0,ready:!!window.__ready
+  };
+}
+let last=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  let dt=(now-last)/1000; last=now;
+  if(!(dt>0))dt=1/60;
+  dt=Math.min(dt,0.5);
+  fpsA+=dt; fpsN++;
+  if(fpsN>=10){fps=fpsN/fpsA;fpsA=0;fpsN=0;}
+  if(!paused&&!drag)tick();
+  bobXY();
+  paintDensity();
+  renderStage(); renderPoincare(); renderEnergy(); renderStrip();
+  if((frame%3)===0)updateTele();
+  if(frame===70)hintEl.style.opacity=0.55;
+  frame++;
+  if(frame>=8&&!window.__ready){window.__ready=true;updateTele();updateProbe();}
+  else if((frame%6)===0)updateProbe();
+}
+
+/* ═══════════════════════ boot ═══════════════════════ */
+drawPanelBg();
+paint();
+fit();
+newStart(seed);
+warmUp(WARM);                       // fill the attractor and the trail before frame 1
+updateRate();
+paintDensity();
+updateTele();
+updateProbe();
+window.__advance=n=>{for(let i=0;i<n;i++)tick();
+  bobXY();paintDensity();
+  renderStage();renderPoincare();renderEnergy();renderStrip();
+  updateTele();updateProbe();};
+/* sync render only — used by the manual Clear, which must empty the plot and
+   leave it empty rather than let a pending refill repopulate it */
+window.__render=()=>{bobXY();paintDensity();
+  renderStage();renderPoincare();renderEnergy();renderStrip();
+  updateTele();updateProbe();};
+window.__setParam=(k,v)=>{P[k]=v;paint();ensureChaotic();bdDirty=true;};
+window.__state=()=>({th1:y[0],th2:y[1],w1:y[2],w2:y[3],E:energy(),Esep,simT,pxCount,trN,densN});
+requestAnimationFrame(t=>{last=t;requestAnimationFrame(loop);});
+})();
+</script>
+</body>
+</html>

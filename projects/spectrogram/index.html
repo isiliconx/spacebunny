@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spectrogram · Log-Frequency Audio Waterfall</title>
+<style>
+  :root{
+    --ink:#e4eef8; --dim:#7389a0; --acc:#ffb45c; --acc2:#57d7ea; --hot:#fff3dc;
+    --panel:rgba(9,13,21,.82); --edge:rgba(120,190,225,.19);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:#05070c; overflow:hidden;
+    font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace; color:var(--ink); }
+  #c{ position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; }
+  .hud{ position:fixed; z-index:3; }
+  .panel{ background:var(--panel); border:1px solid var(--edge); border-radius:10px;
+    padding:10px 12px; backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
+    box-shadow:0 12px 40px rgba(0,0,0,.6); }
+  .panel.wide{ pointer-events:auto; }
+
+  h1{ margin:0 0 3px; font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:#fff; font-weight:600; }
+  h1 b{ color:var(--acc); font-weight:600; }
+  h2{ margin:0 0 6px; font-size:9.5px; letter-spacing:.19em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .rule{ color:var(--acc2); font-size:10.5px; letter-spacing:.015em; margin:0 0 6px; }
+  p{ margin:0; color:var(--dim); font-size:11px; line-height:1.5; }
+  p b{ color:#a9c6d8; font-weight:600; }
+  .kv{ display:flex; gap:14px; margin-top:7px; padding-top:6px; border-top:1px solid var(--edge); }
+  .kv div{ font-size:10.5px; }
+  .kv .k{ color:var(--dim); } .kv .v{ color:var(--acc2); }
+
+  #scope canvas{ display:block; border-radius:5px; background:rgba(0,0,0,.34); border:1px solid rgba(120,190,225,.13); }
+  .sclab{ display:flex; justify-content:space-between; font-size:9.5px; color:var(--dim);
+    letter-spacing:.1em; margin-top:5px; text-transform:uppercase; }
+  .sclab b{ color:var(--acc2); font-weight:600; }
+
+  #rail{ display:flex; flex-direction:column; gap:11px; }
+  .sec{ margin-bottom:9px; } .sec:last-child{ margin-bottom:0; }
+  .chips{ display:flex; flex-wrap:wrap; gap:4px; }
+  .chip{ cursor:pointer; font:inherit; font-size:10.5px; padding:3px 7px; border-radius:5px;
+    color:var(--dim); background:rgba(255,255,255,.05); border:1px solid var(--edge); transition:.12s; }
+  .chip:hover{ color:#fff; background:rgba(255,255,255,.12); }
+  .chip.on{ color:#0a0f16; background:linear-gradient(180deg,#ffd08a,#ffa544); border-color:transparent; font-weight:600; }
+  .chip.on.c2{ background:linear-gradient(180deg,#a9eefb,#4bc7de); }
+
+  .sl{ display:grid; grid-template-columns:66px 1fr 44px; align-items:center; gap:6px; margin:3px 0; }
+  .sl label{ font-size:10.5px; color:var(--dim); }
+  .sl output{ font-size:10.5px; text-align:right; color:var(--acc); }
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:13px; background:transparent; cursor:ew-resize; }
+  input[type=range]::-webkit-slider-runnable-track{ height:3px; border-radius:2px;
+    background:linear-gradient(90deg,rgba(255,180,92,.9) var(--p,50%),rgba(255,255,255,.13) var(--p,50%)); }
+  input[type=range]::-moz-range-track{ height:3px; border-radius:2px; background:rgba(255,255,255,.13); }
+  input[type=range]::-moz-range-progress{ height:3px; border-radius:2px; background:rgba(255,180,92,.9); }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:10px; height:10px; border-radius:50%;
+    background:#fff6e6; margin-top:-3.5px; box-shadow:0 0 0 3px rgba(255,180,92,.2),0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-moz-range-thumb{ width:10px; height:10px; border:0; border-radius:50%;
+    background:#fff6e6; box-shadow:0 0 0 3px rgba(255,180,92,.2); }
+
+  .btnrow{ display:flex; gap:4px; margin-top:8px; }
+  .btn{ cursor:pointer; flex:1; font:inherit; font-size:10.5px; padding:4px 0; border-radius:6px;
+    color:var(--ink); background:rgba(255,255,255,.05); border:1px solid var(--edge); transition:.12s; }
+  .btn:hover{ background:rgba(255,255,255,.13); color:#fff; }
+  .btn.on{ color:var(--acc); border-color:rgba(255,180,92,.5); background:rgba(255,180,92,.1); }
+  .btn.live{ color:#ffdada; border-color:rgba(255,90,90,.55); background:rgba(255,60,60,.14); }
+
+  #legend canvas{ display:block; width:100%; height:15px; border-radius:4px; border:1px solid var(--edge); }
+  .ticks{ display:flex; justify-content:space-between; font-size:9.5px; color:var(--dim); margin-top:3px; letter-spacing:.05em; }
+  #legend .note{ font-size:10.5px; color:var(--dim); line-height:1.55; margin-top:7px; padding-top:7px; border-top:1px solid var(--edge); }
+  #legend .note b{ color:var(--acc2); font-weight:600; }
+
+  table{ width:100%; border-collapse:collapse; }
+  td{ padding:1px 0; font-size:10.5px; }
+  td:first-child{ color:var(--dim); } td:last-child{ text-align:right; color:var(--ink); }
+  td.hot{ color:var(--acc); }
+  .micmsg{ font-size:10px; color:#ff9a9a; line-height:1.4; margin-top:6px; display:none; }
+
+  #nowbar{ display:flex; align-items:center; gap:11px; }
+  #nowbar .lbl{ font-size:9.5px; letter-spacing:.16em; color:var(--dim); text-transform:uppercase; white-space:nowrap; }
+  #evts{ font-size:10.5px; color:var(--acc); white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; flex:1; min-width:0; }
+  #evts em{ color:var(--dim); font-style:normal; }
+  #loopwrap{ width:150px; height:5px; border-radius:3px; background:rgba(255,255,255,.1); overflow:hidden; flex:none; }
+  #loopf{ display:block; height:100%; width:0%; border-radius:3px; background:linear-gradient(90deg,#2b6f8f,var(--acc2)); }
+  #phrase{ font-size:10.5px; color:var(--ink); white-space:nowrap; }
+  @media (max-width:1040px){ #rail, #nowbar{ display:none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud panel wide" id="title">
+  <h1>Spectrogram <b>log-f waterfall</b></h1>
+  <div class="rule">RADIX-2 FFT · 2-FOR-1 REAL TRANSFORM · HANN · |X| → dBFS · LOG-F BIN MAPPING</div>
+  <p>A seeded <b>12 s score</b> — sweeps, chords, plucks, noise bursts — is synthesised
+     at <b>22.05 kHz</b> and pushed through a real STFT. Every frame writes new columns
+     into a <b>ring buffer</b>; the plot shows the last 480, one full pass of the track.
+     A live <b>mic</b> can take over the same analyser.</p>
+  <div class="kv">
+    <div><span class="k">window</span> <span class="v" id="k-win">—</span></div>
+    <div><span class="k">Δf</span> <span class="v" id="k-df">—</span></div>
+    <div><span class="k">span</span> <span class="v" id="k-span">—</span></div>
+  </div>
+</div>
+
+<div class="hud panel wide" id="scope">
+  <canvas id="scopec" width="472" height="78"></canvas>
+  <div class="sclab"><span>source waveform · 1 window</span><b id="sc-lr">—</b><span>instantaneous spectrum</span></div>
+</div>
+
+<div class="hud" id="rail">
+  <div class="panel wide" id="ctl">
+    <h2>Analysis</h2>
+    <div class="sec">
+      <h2>FFT size</h2>
+      <div class="chips" id="fftchips"></div>
+    </div>
+    <div class="sec">
+      <h2>Frequency scale</h2>
+      <div class="chips" id="scalechips"></div>
+    </div>
+    <div class="sec">
+      <div class="sl"><label>range</label><input type="range" id="s-dr" min="30" max="90" step="1" value="66"><output id="o-dr">66 dB</output></div>
+      <div class="sl"><label>time scale</label><input type="range" id="s-hop" min="10" max="150" step="1" value="25"><output id="o-hop">25 ms</output></div>
+    </div>
+    <h2 style="margin-top:11px">Colour map</h2>
+    <div class="chips" id="mapchips"></div>
+    <div class="btnrow">
+      <button class="btn" id="b-pause">Pause</button>
+      <button class="btn" id="b-restart">Restart</button>
+      <button class="btn" id="b-mic">Mic</button>
+    </div>
+    <div class="micmsg" id="micmsg"></div>
+  </div>
+
+  <div class="panel wide" id="legend">
+    <h2>Magnitude</h2>
+    <canvas id="legc" width="500" height="30"></canvas>
+    <div class="ticks" id="legticks"></div>
+    <div class="note" id="mapnote"></div>
+  </div>
+
+  <div class="panel wide" id="readout">
+    <h2>Readout</h2>
+    <table>
+      <tr><td>fps</td><td class="hot" id="r-fps">—</td></tr>
+      <tr><td>frames</td><td id="r-frames">—</td></tr>
+      <tr><td>columns / frame</td><td id="r-cpf">—</td></tr>
+      <tr><td>overlap</td><td id="r-ov">—</td></tr>
+      <tr><td>track time</td><td id="r-time">—</td></tr>
+      <tr><td>peak bin</td><td id="r-peak">—</td></tr>
+      <tr><td>peak level</td><td id="r-pk">—</td></tr>
+      <tr><td>frame dBFS</td><td id="r-db">—</td></tr>
+      <tr><td>bins lit</td><td id="r-lit">—</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="hud panel wide" id="nowwrap">
+  <div id="nowbar">
+    <span class="lbl">Now</span>
+    <span id="phrase">—</span>
+    <span id="evts"></span>
+    <div id="loopwrap"><i id="loopf"></i></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ *  0. constants
+ * ------------------------------------------------------------------ */
+const SR        = 22050;          // synthesis sample rate (Hz)
+const TRACK_DUR = 12.0;           // seconds, one full loop
+const TRACK_LEN = Math.round(TRACK_DUR * SR);
+const PHRASE_DUR= 2.0;
+const PHRASES   = Math.round(TRACK_DUR / PHRASE_DUR);   // 6
+const HIST      = 480;            // waterfall columns (history depth)
+const ROWS      = 192;            // frequency rows
+const DT        = 0.05;           // FIXED simulated seconds per frame
+const FMIN      = 40, FMAX = 11000;
+const FFT_SIZES = [256, 512, 1024, 2048, 4096];
+const START_FFT = 1024;
+
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp  = (a, b, t) => a + (b - a) * t;
+
+/* seeded PRNG — the only source of randomness in the render path */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+/* triangular dither, fixed seed, static table — kills 8-bit banding */
+const DITHER = (() => {
+  const r = mulberry32(0x9E3779B9), t = new Float32Array(2048);
+  for (let i = 0; i < t.length; i++) t[i] = (r() + r() - 1);   // triangular pdf, ~[-1,1]
+  return t;
+})();
+let dphase = 0;
+const nextDither = () => { dphase = (dphase + 37) & 2047; return DITHER[dphase]; };
+
+/* ------------------------------------------------------------------ *
+ *  1. FFT — half-length real transform, one radix-2 complex FFT
+ * ------------------------------------------------------------------ */
+function makeTables(M){
+  const levels = Math.round(Math.log2(M));
+  const cos = new Float64Array(M / 2), sin = new Float64Array(M / 2);
+  for (let i = 0; i < M / 2; i++){ cos[i] = Math.cos(2*Math.PI*i/M); sin[i] = Math.sin(2*Math.PI*i/M); }
+  const rev = new Uint32Array(M);
+  for (let i = 0; i < M; i++){ let x = i, r = 0; for (let j = 0; j < levels; j++){ r = (r<<1)|(x&1); x >>= 1; } rev[i] = r >>> 0; }
+  return { re:new Float64Array(M), im:new Float64Array(M), cos, sin, rev, M };
+}
+function fftInPlace(f){
+  const { re, im, cos, sin, rev, M } = f;
+  for (let i = 0; i < M; i++){ const j = rev[i]; if (j > i){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+  for (let size = 2; size <= M; size *= 2){
+    const half = size >> 1, step = M / size;
+    for (let i = 0; i < M; i += size){
+      for (let j = i, k = 0; j < i + half; j++, k += step){
+        const l = j + half;
+        const tre =  re[l]*cos[k] + im[l]*sin[k];
+        const tim = -re[l]*sin[k] + im[l]*cos[k];
+        re[l] = re[j] - tre; im[l] = im[j] - tim;
+        re[j] += tre;      im[j] += tim;
+      }
+    }
+  }
+}
+const TABLES = new Map();
+function tablesFor(N){ let t = TABLES.get(N); if (!t){ t = makeTables(N >> 1); TABLES.set(N, t); } return t; }
+
+/* One FFT size. run() consumes the last N source samples and returns M+1 magnitudes.
+   Hann window, real input, two-for-one unpack with W = exp(-i*2*pi*k/N). */
+function makeAnalyser(N){
+  const f = tablesFor(N), M = N >> 1;
+  const win = new Float64Array(N);
+  for (let n = 0; n < N; n++) win[n] = 0.5 - 0.5 * Math.cos(2 * Math.PI * n / N);
+  const x = new Float64Array(N);
+  const mag = new Float64Array(M + 1);
+  return {
+    N, M, win, x, mag,
+    run(ring, cursor){                       // ring: Float32Array, cursor: absolute sample index
+      for (let n = 0; n < N; n++) x[n] = ring[(cursor - N + n + ring.length * 2) % ring.length] * win[n];
+      for (let m = 0; m < M; m++){ f.re[m] = x[2*m]; f.im[m] = x[2*m+1]; }
+      fftInPlace(f);
+      for (let k = 0; k <= M; k++){
+        const kk = k % M, mk = (M - k) % M;
+        const ar = f.re[kk], ai = f.im[kk], br = f.re[mk], bi = -f.im[mk];
+        const Er = 0.5*(ar+br), Ei = 0.5*(ai+bi);
+        const Or = 0.5*(ai-bi), Oi = -0.5*(ar-br);
+        const th = 2*Math.PI*k/N, c = Math.cos(th), s = Math.sin(th);
+        mag[k] = Math.hypot(Er + (c*Or + s*Oi), Ei + (c*Oi - s*Or));
+      }
+      return mag;
+    }
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ *  2. colour maps — dark ground, luminous subject
+ * ------------------------------------------------------------------ */
+const MAPS = {
+  ember:  { stops:[['#04060e',0],['#180f42',.14],['#48196b',.32],['#8c2263',.52],['#cf4030',.70],['#f78f27',.85],['#ffd98a',.95],['#fffaf0',1]],
+            note:'<b>ember</b> — indigo → magenta → amber → white-hot. Luminous top end, near-black floor.' },
+  ice:    { stops:[['#03070d',0],['#05283e',.16],['#095571',.36],['#10909f',.56],['#35c6c1',.74],['#96ecd4',.88],['#f2fff8',1]],
+            note:'<b>ice</b> — abyssal navy → teal → mint. Complements the amber UI accents.' },
+  brass:  { stops:[['#0a0604',0],['#2f1508',.18],['#6d2b0b',.40],['#ac4e10',.62],['#e18b1f',.80],['#f7c85a',.92],['#fff8e2',1]],
+            note:'<b>brass</b> — near-black → oxblood → gold. A single warm hue ramp.' },
+  aurora: { stops:[['#04080a',0],['#052b28',.18],['#0a5c3e',.40],['#23a35a',.60],['#86d96a',.78],['#d6f58a',.92],['#f4ffe0',1]],
+            note:'<b>aurora</b> — abyssal teal → emerald → chartreuse. High legibility on the floor.' },
+  bone:   { stops:[['#05070a',0],['#39424f',.35],['#93a1b3',.70],['#ffffff',1]],
+            note:'<b>bone</b> — achromatic. No colour cues, so the harmonic structure reads purely.' }
+};
+const MAP_ORDER = ['ember','ice','brass','aurora','bone'];
+function hex2rgb(h){ return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]; }
+function makeLUT(name){
+  const stops = MAPS[name].stops.map(s => [hex2rgb(s[0]), s[1]]);
+  const lut = new Uint8Array(256 * 3);
+  let seg = 0;
+  for (let i = 0; i < 256; i++){
+    const t = i / 255;
+    while (seg < stops.length - 2 && t > stops[seg + 1][1]) seg++;
+    const [c0, t0] = stops[seg], [c1, t1] = stops[seg + 1];
+    const u = t1 > t0 ? clamp((t - t0) / (t1 - t0), 0, 1) : 0;
+    lut[i*3]   = Math.round(lerp(c0[0], c1[0], u));
+    lut[i*3+1] = Math.round(lerp(c0[1], c1[1], u));
+    lut[i*3+2] = Math.round(lerp(c0[2], c1[2], u));
+  }
+  return lut;
+}
+const LUTS = {}; MAP_ORDER.forEach(n => LUTS[n] = makeLUT(n));
+
+/* ------------------------------------------------------------------ *
+ *  3. the score — a deterministic 12 s arrangement
+ * ------------------------------------------------------------------ */
+const N = (semitonesFromA4) => 440 * Math.pow(2, semitonesFromA4 / 12);
+const NOTE = { C2:N(-33), E2:N(-28), G2:N(-26), A2:N(-31), C3:N(-21), D3:N(-19), E3:N(-17),
+  F3:N(-16), G3:N(-14), A3:N(-12), B3:N(-10), C4:N(-9), D4:N(-7), E4:N(-5), F4:N(-4),
+  G4:N(-2), A4:440, B4:N(2), C5:N(3), D5:N(5), E5:N(7), F5:N(8), G5:N(10), A5:N(12), C6:N(15) };
+
+const EVENTS = [];
+function ev(ph, at, dur, kind, label, p){
+  EVENTS.push(Object.assign({ t0: ph*PHRASE_DUR + at, dur, kind, label }, p));
+}
+const ARPS = [NOTE.G4, NOTE.C5, NOTE.E5, NOTE.G5, NOTE.C6, NOTE.E5, NOTE.C5, NOTE.G5];
+for (let i = 0; i < 8; i++) ev(1, 0.125*i, 0.9, 'pluck', 'pluck ' + ['G4','C5','E5','G5','C6','E5','C5','G5'][i],
+                             { f: ARPS[i], amp: 0.30, ratio: 2.0, idx: 3.2, tau: 0.16 });
+
+/* P0 — brief lead-in rest, then pad + long rise. The rest is at the HEAD of the
+   loop, not the tail: the waterfall's right edge is "now", so the score has to be
+   at full energy exactly where the track wraps, or the presented frame is black. */
+ev(0, 0.00, 0.30, 'rest', 'rest', { amp: 0 });
+ev(0, 0.30, 1.70, 'pad',  'pad Cmaj7', { notes:[NOTE.C3,NOTE.E3,NOTE.G3,NOTE.C4], amp:0.30, atk:0.30 });
+ev(0, 0.30, 0.55, 'thump','thump 110→46 Hz', { f0:110, f1:46, amp:0.72, tau:0.075 });
+ev(0, 0.36, 1.58, 'sweep','sweep 220 → 4.2k ↑', { f0:220, f1:4200, amp:0.26, harm:5 });
+/* P1 — pluck arpeggio + hats + fall */
+for (let i = 0; i < 8; i++) ev(1, 0.125*i, 0.13, 'hat', i % 2 ? 'hat (off)' : 'hat',
+                               { amp: 0.16, fc: 7000 + i*260 });
+ev(1, 1.00, 0.55, 'thump','thump 98→44 Hz', { f0:98, f1:44, amp:0.66, tau:0.070 });
+ev(1, 1.22, 0.76, 'sweep','sweep 3.1k → 300 ↓', { f0:3100, f1:300, amp:0.22, harm:4 });
+/* P2 — resonant noise sweep */
+ev(2, 0.00, 1.94, 'burst','noise burst 320 → 9k', { f0:320, f1:9000, q:5.5, amp:0.40 });
+ev(2, 0.00, 0.55, 'thump','thump 120→48 Hz', { f0:120, f1:48, amp:0.70, tau:0.072 });
+ev(2, 0.30, 1.60, 'pad',  'pad Am (quiet)', { notes:[NOTE.A2,NOTE.C3,NOTE.E3], amp:0.16, atk:0.5 });
+/* P3 — chord stabs + high plucks */
+const STABS = [[NOTE.C4,NOTE.E4,NOTE.G4],[NOTE.D4,NOTE.F4,NOTE.A4],[NOTE.C4,NOTE.E4,NOTE.G5]];
+for (let i = 0; i < 3; i++) ev(3, 0.10 + 0.56*i, 0.44, 'chord', 'stab ' + ['C','F','C/G'][i],
+                              { notes: STABS[i], amp: 0.40, atk: 0.012, tau: 0.16 });
+for (let i = 0; i < 3; i++) ev(3, 0.32 + 0.56*i, 0.5, 'pluck', 'bell ' + ['D6','E6','C6'][i],
+                              { f: [N(17),N(19),N(15)][i], amp:0.22, ratio:1.41, idx:5.0, tau:0.09 });
+ev(3, 0.10, 0.50, 'thump','thump 105→45 Hz', { f0:105, f1:45, amp:0.68, tau:0.070 });
+ev(3, 1.22, 0.50, 'thump','thump 88→42 Hz', { f0:88, f1:42, amp:0.62, tau:0.066 });
+/* P4 — long descent */
+ev(4, 0.00, 1.96, 'sweep','sweep 8.4k → 140 ↓', { f0:8400, f1:140, amp:0.34, harm:6 });
+ev(4, 0.00, 1.96, 'pad',  'pad C2 low', { notes:[NOTE.C2,NOTE.G2,NOTE.C3], amp:0.24, atk:0.30 });
+ev(4, 0.00, 0.60, 'thump','thump 95→43 Hz', { f0:95, f1:43, amp:0.70, tau:0.075 });
+/* P5 — crest through to the loop point. No rest here: the waterfall's right edge
+   IS "now", so the final 1.4 s must still be burning, or the leading edge is black. */
+ev(5, 0.00, 1.20, 'chord', 'CREST C major', { notes:[NOTE.C3,NOTE.G3,NOTE.C4,NOTE.E4,NOTE.G4], amp:0.40, atk:0.010, tau:0.55 });
+ev(5, 0.02, 1.00, 'burst','crash 4k → 10k', { f0:4000, f1:10000, q:1.6, amp:0.26 });
+ev(5, 0.10, 1.70, 'pluck', 'bell A5', { f:NOTE.A5, amp:0.26, ratio:2.01, idx:4.4, tau:0.42 });
+ev(5, 0.00, 0.55, 'thump','thump 120→46 Hz', { f0:120, f1:46, amp:0.74, tau:0.078 });
+ev(5, 0.55, 0.50, 'thump','thump 104→45 Hz', { f0:104, f1:45, amp:0.68, tau:0.072 });
+ev(5, 1.10, 0.50, 'thump','thump 96→44 Hz',  { f0:96,  f1:44, amp:0.64, tau:0.070 });
+ev(5, 0.60, 1.30, 'sweep','sweep 6.2k → 900 ↓', { f0:6200, f1:900, amp:0.24, harm:4 });
+
+const PHRASE_NAME = ['pad + rise','plucks + hats','noise sweep','stabs + bells','descent','crest + fall'];
+
+/* --- render one voice into the track buffer ------------------------------ */
+function renderTrack(){
+  const buf = new Float32Array(TRACK_LEN);
+  const rnd = mulberry32(0xC0FFEE11);
+  const at = (t) => clamp(Math.floor(t * SR), 0, TRACK_LEN);
+
+  for (const e of EVENTS){
+    const n0 = at(e.t0), nn = Math.min(TRACK_LEN - n0, Math.ceil(e.dur * SR));
+    if (nn <= 0) continue;
+
+    if (e.kind === 'thump'){
+      let ph = 0;
+      const tau = e.tau;
+      for (let i = 0; i < nn; i++){
+        const t = i / SR, u = t / (nn / SR);
+        const f = e.f0 * Math.pow(e.f1 / e.f0, u);
+        ph += 2 * Math.PI * f / SR;
+        const env = Math.min(1, i / (0.002 * SR)) * Math.exp(-t / tau);
+        buf[n0 + i] += e.amp * env * Math.sin(ph) * (1 - 0.3 * u);
+      }
+    } else if (e.kind === 'sweep'){
+      let ph = [];
+      for (let h = 0; h <= e.harm; h++) ph.push(0);
+      for (let i = 0; i < nn; i++){
+        const t = i / SR, u = t / (nn / SR);
+        const atk = Math.min(1, t / 0.02), rel = Math.min(1, (nn - i) / (0.05 * SR));
+        const env = atk * rel * rel;
+        let s = 0;
+        for (let h = 1; h <= e.harm; h++){
+          const f = e.f0 * h * Math.pow((e.f1 * h) / (e.f0 * h), u);
+          ph[h] += 2 * Math.PI * f / SR;
+          s += Math.sin(ph[h]) / h;
+        }
+        buf[n0 + i] += e.amp * env * s * 1.2;
+      }
+    } else if (e.kind === 'pad' || e.kind === 'chord'){
+      const notes = e.notes, atkN = Math.max(1, Math.floor(e.atk * SR));
+      const tau = e.tau || 0.9;
+      const ph = new Float64Array(notes.length);
+      for (let i = 0; i < nn; i++){
+        const t = i / SR;
+        let env = Math.min(1, i / atkN);
+        env *= env * (3 - 2 * env);
+        env *= Math.exp(-t / tau);
+        let s = 0;
+        for (let p = 0; p < notes.length; p++){
+          const vib = 1 + 0.0014 * Math.sin(2 * Math.PI * (4.1 + p * 0.83) * t);
+          ph[p] += 2 * Math.PI * notes[p] * vib / SR;
+          s += Math.sin(ph[p]) / (1 + 0.45 * p);
+        }
+        buf[n0 + i] += e.amp * env * s / notes.length * 2.0;
+      }
+    } else if (e.kind === 'pluck'){
+      let pc = 0, pm = 0;
+      for (let i = 0; i < nn; i++){
+        const t = i / SR;
+        pc += 2 * Math.PI * e.f / SR;
+        pm += 2 * Math.PI * e.f * e.ratio / SR;
+        const mod = e.idx * Math.exp(-t / e.tau);
+        const env = Math.min(1, t / 0.002) * Math.exp(-t / (e.tau * 1.6));
+        buf[n0 + i] += e.amp * env * Math.sin(pc + mod * Math.sin(pm));
+      }
+    } else if (e.kind === 'burst' || e.kind === 'hat'){
+      /* TPT state-variable filter (Zavalishin). Unconditionally stable, so the
+         centre frequency can be swept right up to Nyquist without the recursion
+         diverging — the naive Chamberlin form blows up above fc ~ SR/6. */
+      const span = Math.max(1, nn - 1);
+      const k = e.kind === 'hat' ? 0.85 : 1 / Math.max(0.4, e.q);
+      let ic1 = 0, ic2 = 0;
+      for (let i = 0; i < nn; i++){
+        const u = i / span;
+        const fc = e.kind === 'hat' ? e.fc : e.f0 * Math.pow(e.f1 / e.f0, u);
+        const g = Math.tan(Math.PI * clamp(fc, 20, SR * 0.49) / SR);
+        const a1 = 1 / (1 + g * (g + k)), a2 = g * a1, a3 = g * a2;
+        const v3 = rnd() * 2 - 1 - ic2;
+        const v1 = a1 * ic1 + a2 * v3;
+        const v2 = ic2 + a2 * ic1 + a3 * v3;
+        ic1 = 2 * v1 - ic1;
+        ic2 = 2 * v2 - ic2;
+        const atk = Math.min(1, i / (0.0015 * SR));
+        const env = atk * (e.kind === 'hat' ? Math.exp(-i / (0.018 * SR)) : Math.pow(1 - u, 1.3));
+        const out = e.kind === 'hat' ? (v3 - k * v1 - v2) : v1;
+        buf[n0 + i] += e.amp * env * out * 1.6;
+      }
+    }
+  }
+  // soft limit so nothing wraps
+  for (let i = 0; i < TRACK_LEN; i++) buf[i] = Math.tanh(buf[i] * 1.25) * 0.95;
+  return buf;
+}
+const TRACK = renderTrack();
+/* The ring holds the WHOLE track, and the play cursor wraps on TRACK_LEN — not on
+   the ring length. A padded ring (power of two) leaves unwritten zeros between the
+   end of the track and the ring size, which shows up as a 12 s silent stretch every
+   loop; a 65536-sample ring is worse, wrapping the 264600-sample track and stamping
+   ~9 s of digital silence into the history. */
+const RING_LEN = TRACK_LEN;
+const TRACK_RING = (() => { const r = new Float32Array(RING_LEN); r.set(TRACK); return r; })();
+const WAVE = new Float32Array(2048);
+
+/* ------------------------------------------------------------------ *
+ *  4. state
+ * ------------------------------------------------------------------ */
+const S = {
+  fftSize: START_FFT,
+  scale: 'log',
+  rangeDb: 66,
+  hopMs: 25,
+  map: 'ember',
+  paused: false,
+  peak: true,
+  cursor: 0,            // absolute sample index into TRACK_RING
+  debt: 0,
+  col: 0,               // next write column in the ring (== oldest column)
+  frame: 0,
+  trackT: 0,
+  peakDb: 90, floorDb: 90,
+  pkHold: new Float32Array(ROWS),
+  colVals: new Float32Array(ROWS),
+  litBins: 0, colPeakBin: 0, colPeakHz: 0, colPeakDb: -200, colRms: 0,
+  colsThisFrame: 0, colsTotal: 0,
+  fps: 0, lastT: 0,
+  mic: null, micErr: '', micSpec: null,
+  fmax: FMAX
+};
+let analyser = makeAnalyser(S.fftSize);
+/* The hop must stay strictly under the analysis window or consecutive frames do
+   not overlap at all (negative overlap, a gap in the history). Clamp to 1/2 N. */
+const hopSamples = () => {
+  const sr = S.mic ? S.mic.rate : SR;
+  return clamp(Math.round(S.hopMs / 1000 * sr), 8, Math.max(8, Math.floor(analyser.N / 2)));
+};
+const ringLen = () => TRACK_RING.length;
+
+/* ------------------------------------------------------------------ *
+ *  5. waterfall surface
+ * ------------------------------------------------------------------ */
+const wf = document.createElement('canvas');
+wf.width = HIST; wf.height = ROWS;
+const wfx = wf.getContext('2d', { willReadFrequently:false });
+const wfImg = wfx.createImageData(HIST, ROWS);
+let lut = LUTS[S.map];
+const clearWf = () => { const d = wfImg.data; for (let i = 0; i < d.length; i += 4){ d[i]=6; d[i+1]=8; d[i+2]=14; d[i+3]=255; } wfx.putImageData(wfImg, 0, 0); };
+
+/* row r -> inclusive FFT bin range (max over the range keeps log axes honest) */
+function binRange(r0, r1){
+  const M = analyser.M, sr = S.mic ? S.mic.rate : SR;
+  const f0 = rowToFreq(r0), f1 = rowToFreq(r1);
+  let b0 = Math.floor(f0 * analyser.N / sr), b1 = Math.floor(f1 * analyser.N / sr) - 1;
+  if (b0 < 0) b0 = 0; if (b1 > M) b1 = M;
+  if (b1 < b0) b1 = b0;
+  return [b0, b1];
+}
+function rowToFreq(r){
+  const t = r / (ROWS - 1);
+  return S.scale === 'log'
+    ? FMIN * Math.pow(S.fmax / FMIN, t)
+    : FMIN + (S.fmax - FMIN) * t;
+}
+function freqToRow(f){
+  const t = S.scale === 'log'
+    ? Math.log(clamp(f, FMIN, S.fmax) / FMIN) / Math.log(S.fmax / FMIN)
+    : (clamp(f, FMIN, S.fmax) - FMIN) / (S.fmax - FMIN);
+  return t * (ROWS - 1);
+}
+
+/* one analysis column -> ring.
+   NOTE: ImageData is ROW-major, so the pixel for (row r, column c) is at
+   (r * HIST + c) * 4. Writing at c*4 + r*4 folds the whole waterfall into the
+   first couple of rows and leaves the plot black. */
+function pushColumn(){
+  const rangeDb = S.rangeDb;
+  const inv = 1 / rangeDb;
+  const data = wfImg.data;
+  let lit = 0, pkBin = 1, pkVal = -400, sum2 = 0;
+
+  if (S.mic){
+    const m = S.micSpec;
+    for (let r = 0; r < ROWS; r++){
+      const [b0, b1] = binRange(r, r + 1);
+      let mx = -200;
+      for (let b = b0; b <= b1; b++) if (m[b] > mx) mx = m[b];
+      const v = clamp((mx + rangeDb) * inv, 0, 1);
+      S.colVals[r] = v;
+      if (mx > pkVal){ pkVal = mx; pkBin = b0; }
+      writePixel(data, (r * HIST + S.col) * 4, v);
+    }
+  } else {
+    const mag = analyser.run(TRACK_RING, S.cursor);
+    /* dBFS reference: a real sinusoid at amplitude A that is bin-centred on a
+       Hann window gives |X| = A*N/2, so divide by N/2 — NOT N/4 (a 6 dB error
+       that buries every partial under the display floor). */
+    const ref = analyser.N / 2;
+    for (let r = 0; r < ROWS; r++){
+      const [b0, b1] = binRange(r, r + 1);
+      let mx = 0;
+      for (let b = b0; b <= b1; b++) if (mag[b] > mx) mx = mag[b];
+      const db = 20 * Math.log10(mx / ref + 1e-12);
+      const v = clamp((db + rangeDb) * inv, 0, 1);
+      S.colVals[r] = v;
+      if (db > pkVal){ pkVal = db; pkBin = b0; }
+      if (b0 === 1) sum2 += mx * mx;
+      writePixel(data, (r * HIST + S.col) * 4, v);
+    }
+  }
+
+  for (let r = 0; r < ROWS; r++) if (S.colVals[r] > 0.02) lit++;
+  // peak-hold decay (fixed factor per column -> reproducible)
+  for (let r = 0; r < ROWS; r++) S.pkHold[r] = Math.max(S.colVals[r], S.pkHold[r] * 0.997);
+
+  S.litBins = lit; S.colPeakBin = pkBin;
+  S.colPeakHz = pkBin * (S.mic ? S.mic.rate : SR) / analyser.N;
+  S.colPeakDb = pkVal;                       // dBFS for the synth, AnalyserNode dB for the mic
+  S.colRms = Math.sqrt(sum2 / ROWS);
+  S.colsTotal++;
+  S.col = (S.col + 1) % HIST;
+}
+function writePixel(data, o, v){
+  // dither only above the very bottom so the floor keeps a faint texture, not a slab
+  const amp = 0.7 + 1.1 * v;
+  let idx = v * 255 + nextDither() * amp + 0.5;
+  if (idx < 0) idx = 0; else if (idx > 255) idx = 255;
+  idx = idx | 0;
+  data[o]     = lut[idx * 3];
+  data[o + 1] = lut[idx * 3 + 1];
+  data[o + 2] = lut[idx * 3 + 2];
+  data[o + 3] = 255;
+}
+
+/* ------------------------------------------------------------------ *
+ *  6. layout + drawing
+ * ------------------------------------------------------------------ */
+const cvs = document.getElementById('c');
+const ctx = cvs.getContext('2d', { alpha:false });
+let W = 1280, H = 800, DPR = 1;
+const R = { title:null, scope:null, rail:null, wf:null, now:null, sx:0, sy:0, sw:0, sh:0 };
+
+function layout(){
+  DPR = 1;
+  W = Math.max(900, window.innerWidth); H = Math.max(600, window.innerHeight);
+  cvs.width = W; cvs.height = H;
+  cvs.style.width = W + 'px'; cvs.style.height = H + 'px';
+
+  const PAD = 24, RAIL_W = 288, GAP = 14, TOP = 22;
+  const railX = W - PAD - RAIL_W;
+  const mainX = PAD, mainW = railX - GAP - mainX;
+  /* The title card is laid out by its own content, so measure it rather than
+     guessing a height that leaves the paragraph hanging outside the border. */
+  const titleW = 424;
+  const probe = document.getElementById('title');
+  probe.style.width = titleW + 'px';
+  const titleH = Math.max(118, probe.scrollHeight + 22);
+  const scopeH = titleH;
+  const wfY = TOP + scopeH + GAP;
+  const nowH = 54;
+  const wfH = H - PAD - nowH - GAP - wfY;
+
+  R.wf  = { x: mainX, y: wfY, w: mainW, h: wfH };
+  R.sx  = mainX + 58; R.sy = wfY + 20;
+  R.sw  = mainW - 58 - 6; R.sh = wfH - 20 - 16;
+  R.title = { x: mainX, y: TOP, w: titleW, h: titleH };
+  R.scope = { x: mainX + titleW + GAP, y: TOP, w: (R.sx + R.sw) - (mainX + titleW + GAP), h: scopeH };
+  R.rail  = { x: railX, y: TOP, w: RAIL_W, h: H - PAD - TOP };
+  R.now   = { x: mainX, y: H - PAD - nowH, w: mainW, h: nowH };
+
+  place('title', R.title); place('scope', R.scope); place('rail', R.rail); place('nowwrap', R.now);
+  const sc = document.getElementById('scopec');
+  sc.width  = Math.max(64, Math.round((R.scope.w - 24) * 1));
+  sc.height = Math.max(40, Math.round(R.scope.h - 24 - 18));
+  R.sc = { x: R.scope.x + 12, y: R.scope.y + 12, w: sc.width, h: sc.height };
+  const lg = document.getElementById('legc');
+  lg.width = Math.max(64, Math.round(R.rail.w - 24));
+  lg.height = 30;
+  drawLegend();
+}
+function place(id, r){
+  const el = document.getElementById(id);
+  el.style.left = r.x + 'px'; el.style.top = r.y + 'px';
+  el.style.width = r.w + 'px'; if (r.h) el.style.height = r.h + 'px';
+}
+
+function panelBG(r, a){ ctx.fillStyle = a || 'rgba(9,13,21,.80)'; ctx.fillRect(r.x, r.y, r.w, r.h); }
+function strokeRect(r, c){ ctx.strokeStyle = c || 'rgba(120,190,225,.19)'; ctx.lineWidth = 1; ctx.strokeRect(r.x + .5, r.y + .5, r.w - 1, r.h - 1); }
+
+function drawBackground(){
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#080b12'); g.addColorStop(.55, '#05070c'); g.addColorStop(1, '#04060a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // faint corner glow so the ground is not a flat slab
+  const rg = ctx.createRadialGradient(W * 0.28, H * 0.30, 0, W * 0.28, H * 0.30, W * 0.55);
+  rg.addColorStop(0, 'rgba(40,90,120,.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+}
+
+function drawWaterfall(){
+  const r = R.wf;
+  panelBG(r, 'rgba(7,11,18,.9)'); strokeRect(r);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(R.sx, R.sy, R.sw, R.sh); ctx.clip();
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
+  const n = S.col, older = HIST - n;
+  // oldest half then newest half, so the newest column sits on the right edge
+  if (older > 0) ctx.drawImage(wf, n, 0, older, ROWS, R.sx, R.sy, R.sw * older / HIST, R.sh);
+  if (n > 0)     ctx.drawImage(wf, 0, 0, n, ROWS, R.sx + R.sw * older / HIST, R.sy, R.sw * n / HIST, R.sh);
+
+  const spanSec = HIST * S.hopMs / 1000;
+  // --- horizontal frequency gridlines (labels are drawn later, outside the clip)
+  const TICKS = S.scale === 'log' ? [50,100,200,500,1000,2000,5000,10000]
+                                  : [0,1000,2000,3000,4000,5000,6000,7000,8000,9000,10000,11000];
+  ctx.font = '11px ui-monospace,Menlo,Consolas,monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const f of TICKS){
+    const y = R.sy + R.sh * (1 - freqToRow(f) / (ROWS - 1));
+    if (y < R.sy + 4 || y > R.sy + R.sh - 4) continue;
+    const major = (f === 100 || f === 1000 || f === 10000);
+    ctx.strokeStyle = major ? 'rgba(160,215,240,.20)' : 'rgba(160,215,240,.10)';
+    ctx.beginPath(); ctx.moveTo(R.sx, y + .5); ctx.lineTo(R.sx + R.sw, y + .5); ctx.stroke();
+  }
+  // --- vertical time gridlines (sixths of the visible span)
+  for (let i = 1; i <= 6; i++){
+    const x = R.sx + R.sw * i / 6;
+    ctx.strokeStyle = i % 2 ? 'rgba(160,215,240,.055)' : 'rgba(160,215,240,.10)';
+    ctx.beginPath(); ctx.moveTo(x + .5, R.sy); ctx.lineTo(x + .5, R.sy + R.sh); ctx.stroke();
+  }
+  // --- peak-hold profile: a curve just inside the leading edge, with a gap so it
+  // never paints over the newest column (which is the "now" data the eye reads first)
+  if (S.peak){
+    ctx.beginPath();
+    for (let i = 0; i < ROWS; i++){
+      const y = R.sy + R.sh * (1 - i / (ROWS - 1));
+      const x = R.sx + R.sw - 9 - S.pkHold[i] * 7;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = 'rgba(87,215,234,.92)'; ctx.lineWidth = 1.25; ctx.stroke();
+    ctx.strokeStyle = 'rgba(87,215,234,.20)'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+  // --- leading edge
+  const lg = ctx.createLinearGradient(R.sx + R.sw - 26, 0, R.sx + R.sw, 0);
+  lg.addColorStop(0, 'rgba(255,180,92,0)'); lg.addColorStop(1, 'rgba(255,190,110,.16)');
+  ctx.fillStyle = lg; ctx.fillRect(R.sx + R.sw - 26, R.sy, 26, R.sh);
+  ctx.strokeStyle = 'rgba(255,214,150,.45)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(R.sx + R.sw - .5, R.sy); ctx.lineTo(R.sx + R.sw - .5, R.sy + R.sh); ctx.stroke();
+  ctx.restore();
+
+  // --- axis gutters (drawn outside the clip so labels are not scaled or cropped)
+  ctx.font = '11px ui-monospace,Menlo,Consolas,monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const f of TICKS){
+    const y = R.sy + R.sh * (1 - freqToRow(f) / (ROWS - 1));
+    if (y < R.sy + 6 || y > R.sy + R.sh - 6) continue;
+    const major = (f === 100 || f === 1000 || f === 10000);
+    ctx.fillStyle = major ? '#c3dcec' : '#8b9fb2';
+    ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : String(f), R.sx - 8, y);
+  }
+  ctx.font = '9.5px ui-monospace,Menlo,Consolas,monospace';
+  ctx.fillStyle = '#5f7285'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('Hz', R.sx - 50, R.sy - 7);
+  // time ruler
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 6; i++){
+    const x = R.sx + R.sw * i / 6, secAgo = (1 - i / 6) * spanSec;
+    ctx.fillStyle = '#7d93a6';
+    ctx.fillText(i === 6 ? 'now' : '−' + secAgo.toFixed(1) + 's', x, R.sy + R.sh + 12);
+  }
+  // time scale note
+  ctx.textAlign = 'right'; ctx.fillStyle = '#5f7285';
+  ctx.fillText('time scale ' + S.hopMs + ' ms/column', R.sx + R.sw, R.sy - 7);
+
+  // corner tag
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(255,180,92,.85)';
+  ctx.font = '10px ui-monospace,Menlo,Consolas,monospace';
+  ctx.fillText((S.scale === 'log' ? 'LOG' : 'LIN') + ' · ' + S.fftSize + ' pt · ' + S.rangeDb + ' dB', R.sx + 7, R.sy + 6);
+  if (S.peak){
+    ctx.fillStyle = 'rgba(87,215,234,.9)';
+    ctx.fillText('peak hold', R.sx + R.sw - 58, R.sy + 6);
+  }
+}
+
+function drawScope(){
+  const sc = document.getElementById('scopec');
+  const g = sc.getContext('2d');
+  g.clearRect(0, 0, sc.width, sc.height);
+  const w = sc.width, h = sc.height, mid = h / 2;
+  const n = w * 2;
+
+  // left: raw waveform, min/max envelope
+  g.strokeStyle = 'rgba(120,190,225,.10)';
+  g.beginPath(); g.moveTo(0, mid + .5); g.lineTo(w / 2 - 8, mid + .5); g.stroke();
+  g.fillStyle = 'rgba(255,180,92,.78)';
+  const wh = w / 2 - 8;
+  for (let i = 0; i < wh; i++){
+    const a = WAVE[i], b = WAVE[i + 512];
+    g.fillRect(i, mid - Math.max(0.6, a * mid * 0.95), 1, Math.max(1.2, (a - b) * mid * 0.95));
+  }
+  g.strokeStyle = 'rgba(255,180,92,.35)';
+  g.beginPath();
+  for (let i = 0; i < wh; i += 2){
+    const y = mid - WAVE[i] * mid * 0.95;
+    i ? g.lineTo(i, y) : g.moveTo(i, y);
+  }
+  g.stroke();
+
+  // right: instantaneous spectrum over the same log-f axis
+  const x0 = w / 2 + 4, sw = w - x0;
+  g.strokeStyle = 'rgba(120,190,225,.10)';
+  for (const f of [100, 1000, 10000]){
+    const x = x0 + sw * (freqToRow(f) / (ROWS - 1));
+    g.beginPath(); g.moveTo(x + .5, 0); g.lineTo(x + .5, h); g.stroke();
+  }
+  g.beginPath();
+  g.moveTo(x0, h);
+  for (let r = 0; r < ROWS; r++) g.lineTo(x0 + sw * (r / (ROWS - 1)), h - S.colVals[r] * (h - 2));
+  g.lineTo(x0 + sw, h); g.closePath();
+  const lg = g.createLinearGradient(0, 0, 0, h);
+  lg.addColorStop(0, 'rgba(87,215,234,.42)'); lg.addColorStop(1, 'rgba(87,215,234,.03)');
+  g.fillStyle = lg; g.fill();
+  g.beginPath();
+  for (let r = 0; r < ROWS; r++){
+    const x = x0 + sw * (r / (ROWS - 1)), y = h - S.colVals[r] * (h - 2);
+    r ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.strokeStyle = '#8ee6f2'; g.lineWidth = 1.1; g.stroke();
+}
+
+function drawNowbar(){
+  const t = S.trackT % TRACK_DUR;
+  const ph = Math.floor(t / PHRASE_DUR) % PHRASES;
+  document.getElementById('phrase').textContent = 'P' + ph + ' · ' + PHRASE_NAME[ph];
+  const live = EVENTS.filter(e => e.kind !== 'rest' && t >= e.t0 && t < e.t0 + e.dur)
+                    .map(e => e.label).slice(0, 3);
+  document.getElementById('evts').innerHTML = live.length
+    ? live.map(l => '<span>' + l + '</span>').join(' <em>·</em> ')
+    : '<em>silence — analyser still running, floor only</em>';
+  document.getElementById('loopf').style.width = (t / TRACK_DUR * 100).toFixed(1) + '%';
+}
+
+function drawLegend(){
+  const lg = document.getElementById('legc');
+  const g = lg.getContext('2d');
+  const w = lg.width;
+  g.clearRect(0, 0, w, lg.height);
+  for (let x = 0; x < w; x++){
+    const i = Math.min(255, Math.round(x / (w - 1) * 255));
+    g.fillStyle = 'rgb(' + lut[i*3] + ',' + lut[i*3+1] + ',' + lut[i*3+2] + ')';
+    g.fillRect(x, 0, 1, lg.height);
+  }
+  const ticks = [];
+  for (let i = 0; i < 5; i++) ticks.push('−' + Math.round(S.rangeDb * (1 - i / 4)) + ' dB');
+  document.getElementById('legticks').innerHTML = ticks.map(t => '<span>' + t + '</span>').join('');
+  document.getElementById('mapnote').innerHTML = MAPS[S.map].note;
+}
+
+function drawFrame(){
+  drawBackground();
+  drawWaterfall();
+  drawScope();
+  drawNowbar();
+  wfx.putImageData(wfImg, 0, 0);   // publish the ring to the surface
+}
+
+/* ------------------------------------------------------------------ *
+ *  7. controls
+ * ------------------------------------------------------------------ */
+/* chip synchronisers. Declared BEFORE chipRow() runs: a const in the temporal
+   dead zone is not callable, so pushing into it from the initialiser throws and
+   every chip's click handler dies. */
+const refreshChips = [];
+function chipRow(host, items, get, set){
+  host.innerHTML = '';
+  for (const it of items){
+    const b = document.createElement('button');
+    b.className = 'chip' + (it.cool ? ' c2' : '');
+    b.textContent = it.label;
+    b.dataset.v = String(it.v);
+    b.onclick = () => { set(it.v); for (const f of refreshChips) f(); };
+    host.appendChild(b);
+  }
+  const sync = () => { for (const b of host.children) b.classList.toggle('on', get() === b.dataset.v); };
+  refreshChips.push(sync);
+  sync();
+}
+chipRow(document.getElementById('fftchips'),
+  FFT_SIZES.map(v => ({ label: String(v), v })),
+  () => S.fftSize,
+  v => { S.fftSize = v; analyser = makeAnalyser(v); if (S.mic){ S.mic.an.fftSize = v; S.micSpec = new Float32Array(v); } clearWf(); prefill(); });
+chipRow(document.getElementById('scalechips'),
+  [{ label:'log f', v:'log' }, { label:'linear', v:'lin' }],
+  () => S.scale, v => S.scale = v);
+chipRow(document.getElementById('mapchips'),
+  MAP_ORDER.map(n => ({ label: n, v: n })),
+  () => S.map, v => { S.map = v; lut = LUTS[v]; clearWf(); drawLegend(); });
+
+function bindSlider(id, oid, fmt, set){
+  const el = document.getElementById(id), out = document.getElementById(oid);
+  const upd = (rebuild) => {
+    const p = (el.value - el.min) / (el.max - el.min) * 100;
+    el.style.setProperty('--p', p + '%');
+    out.textContent = fmt(+el.value);
+    set(+el.value, rebuild);
+  };
+  el.addEventListener('input', () => upd(false));
+  upd(false);
+}
+bindSlider('s-dr', 'o-dr', v => v + ' dB', v => { S.rangeDb = v; drawLegend(); });
+bindSlider('s-hop', 'o-hop', v => v + ' ms', v => { S.hopMs = v; });
+document.getElementById('s-hop').addEventListener('change', () => prefill());
+document.getElementById('b-pause').onclick = e => { S.paused = !S.paused; e.target.classList.toggle('on', S.paused); e.target.textContent = S.paused ? 'Resume' : 'Pause'; };
+document.getElementById('b-restart').onclick = () => { S.cursor = 0; S.debt = 0; S.trackT = 0; clearWf(); S.pkHold.fill(0); prefill(); };
+document.getElementById('b-mic').onclick = toggleMic;
+
+async function toggleMic(e){
+  const btn = e.target, msg = document.getElementById('micmsg');
+  if (S.mic){
+    S.mic.stream.getTracks().forEach(t => t.stop());
+    S.mic.ac.close(); S.mic = null; S.fmax = FMAX;
+    btn.classList.remove('live'); btn.textContent = 'Mic';
+    msg.style.display = 'none';
+    clearWf(); prefill();
+    return;
+  }
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia unavailable on this origin');
+    const stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, autoGainControl:false, noiseSuppression:false } });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume();
+    const src = ac.createMediaStreamSource(stream);
+    const an = ac.createAnalyser();
+    an.fftSize = S.fftSize; an.smoothingTimeConstant = 0;
+    src.connect(an);
+    S.mic = { ac, an, src, stream, rate: ac.sampleRate };
+    S.micSpec = new Float32Array(S.fftSize);
+    S.fmax = Math.min(FMAX, ac.sampleRate * 0.5 * 0.95);
+    btn.classList.add('live'); btn.textContent = 'Live';
+    msg.style.display = 'none';
+    clearWf(); S.col = 0; S.pkHold.fill(0);
+  } catch (err){
+    S.micErr = String((err && err.message) || err);
+    msg.style.display = 'block';
+    msg.innerHTML = 'mic unavailable — staying on the synthesised score.<br>' + S.micErr.replace(/</g,'&lt;');
+    btn.classList.remove('live'); btn.textContent = 'Mic';
+  }
+}
+addEventListener('keydown', e => {
+  if (e.target && /INPUT|BUTTON/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === ' '){ e.preventDefault(); document.getElementById('b-pause').click(); }
+  else if (k === 'l'){ S.scale = S.scale === 'log' ? 'lin' : 'log'; refreshChips.forEach(f => f()); }
+  else if (k === 'p'){ S.peak = !S.peak; }
+  else if (k === 'm'){ document.getElementById('b-mic').click(); }
+});
+
+/* ------------------------------------------------------------------ *
+ *  8. simulation loop — fixed delta, never wall clock
+ * ------------------------------------------------------------------ */
+function advanceSource(){
+  const hop = hopSamples();
+  const adv = Math.round(DT * (S.mic ? S.mic.rate : SR));
+  const rl = ringLen();
+  for (let i = 0; i < adv; i++){
+    WAVE[(S.cursor + i) & 2047] = S.mic ? 0 : TRACK_RING[(S.cursor + i) % rl];
+  }
+  S.cursor = (S.cursor + adv) % TRACK_LEN;      // loop on the TRACK period, not the ring
+  S.trackT += DT;
+  S.debt += adv;
+  S.colsThisFrame = 0;
+  while (S.debt >= hop){
+    S.debt -= hop;
+    if (S.mic) S.mic.an.getFloatFrequencyData(S.micSpec);
+    pushColumn();
+    S.colsThisFrame++;
+    if (S.colsThisFrame > 64) { S.debt = 0; break; }   // safety valve
+  }
+}
+
+/* fill the whole ring before the first presented frame */
+function prefill(){
+  S.col = 0; S.cursor = 0; S.debt = 0; S.trackT = 0;
+  S.pkHold.fill(0);
+  const hop = hopSamples();
+  const rl = ringLen();
+  /* Priming is not a visible phase. HIST columns at `hop` samples is ~11.995 s of a
+     12 s track, so the presented history is the score from its opening bar up to
+     "now" — one complete pass, with the crest and the final rest both on screen. */
+  const target = HIST * hop;
+  let guard = 0;
+  while (S.cursor < target - 1 && guard++ < 4000){
+    if (!S.mic) for (let i = 0; i < hop; i++) WAVE[(S.cursor + i) & 2047] = TRACK_RING[(S.cursor + i) % rl];
+    S.cursor = (S.cursor + hop) % TRACK_LEN;
+    S.trackT += hop / (S.mic ? S.mic.rate : SR);
+    if (S.mic) S.mic.an.getFloatFrequencyData(S.micSpec);
+    pushColumn();
+  }
+  S.colsThisFrame = 0; S.debt = 0;
+}
+
+/* ------------------------------------------------------------------ *
+ *  9. boot
+ * ------------------------------------------------------------------ */
+const els = {
+  fps: document.getElementById('r-fps'), frames: document.getElementById('r-frames'),
+  cpf: document.getElementById('r-cpf'), ov: document.getElementById('r-ov'),
+  time: document.getElementById('r-time'), peak: document.getElementById('r-peak'),
+  pk: document.getElementById('r-pk'), db: document.getElementById('r-db'), lit: document.getElementById('r-lit'),
+  win: document.getElementById('k-win'), df: document.getElementById('k-df'), span: document.getElementById('k-span'),
+  lr: document.getElementById('sc-lr')
+};
+let lastReadout = 0;
+function updateReadout(){
+  const sr = S.mic ? S.mic.rate : SR;
+  els.fps.textContent    = S.fps.toFixed(1);
+  els.frames.textContent = S.frame;
+  els.cpf.textContent    = S.colsThisFrame;
+  els.ov.textContent     = Math.round((1 - hopSamples() / analyser.N) * 100) + '%';
+  els.time.textContent   = (S.trackT % TRACK_DUR).toFixed(2) + ' s';
+  els.peak.textContent   = S.colPeakBin + '  (' + (S.colPeakHz >= 1000 ? (S.colPeakHz / 1000).toFixed(2) + ' k' : S.colPeakHz.toFixed(0)) + ' Hz)';
+  els.pk.textContent     = S.colPeakDb <= -190 ? '—' : S.colPeakDb.toFixed(1) + ' dB';
+  els.db.textContent     = S.litBins + ' / ' + ROWS;
+  els.win.textContent    = analyser.N + ' pt';
+  els.df.textContent     = (sr / analyser.N).toFixed(1) + ' Hz';
+  els.span.textContent   = (HIST * S.hopMs / 1000).toFixed(1) + ' s';
+  els.lr.textContent     = S.litBins + ' rows lit';
+}
+
+function frame(){
+  if (!S.paused) advanceSource();
+  drawFrame();
+  S.frame++;
+
+  const now = performance.now();
+  if (S.lastT) { const dt = now - S.lastT; S.fps = S.fps * 0.82 + (1000 / Math.max(1, dt)) * 0.18; }
+  S.lastT = now;
+  if (now - lastReadout > 120){ lastReadout = now; updateReadout(); }
+
+  window.__probe = {
+    frames: S.frame, fps: +S.fps.toFixed(2), fftSize: analyser.N,
+    binHz: +((S.mic ? S.mic.rate : SR) / analyser.N).toFixed(2),
+    hopMs: S.hopMs, overlapPct: Math.round((1 - hopSamples() / analyser.N) * 100),
+    scale: S.scale, colormap: S.map, rangeDb: S.rangeDb,
+    columnsWritten: S.colsTotal, columnsPerFrame: S.colsThisFrame,
+    litRows: S.litBins, peakBin: S.colPeakBin, peakHz: +S.colPeakHz.toFixed(1),
+    peakDb: S.colPeakDb > -190 ? +S.colPeakDb.toFixed(1) : null,
+    trackSeconds: +(S.trackT % TRACK_DUR).toFixed(2), simDelta: DT,
+    source: S.mic ? 'microphone' : 'synthesised score (seed 0xC0FFEE11)',
+    micError: S.micErr || null
+  };
+
+  if (S.frame >= 1) window.__ready = true;
+  requestAnimationFrame(frame);
+}
+
+layout();
+addEventListener('resize', layout);
+drawLegend();
+clearWf();
+prefill();
+drawFrame();
+updateReadout();
+window.__probe = { frames: 0, boot: true, source: 'synthesised score (seed 0xC0FFEE11)' };
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Structural Spring Lattice — Verlet mass-spring truss</title>
+<style>
+  :root{
+    --ink:#c9d8ea; --dim:#70839a; --acc:#ffc14d; --cool:#4ec3ff;
+    --line:rgba(150,190,235,.17); --panel:rgba(6,10,17,.82);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:#04060b;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;background:#04060b}
+
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:3px;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:0 12px 38px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.045)}
+
+  #title{top:16px;left:16px;padding:10px 14px 11px;width:392px}
+  #title h1{font-size:15px;font-weight:600;letter-spacing:.21em;color:#eef4fb}
+  #title .sub{font-size:11px;letter-spacing:.13em;color:var(--dim);margin-top:4px}
+  #title .tech{font-size:11px;line-height:1.6;letter-spacing:.01em;color:#94a9c1;margin-top:9px;
+    padding-top:8px;border-top:1px dashed rgba(150,190,235,.18)}
+  #title .tech b{color:var(--cool);font-weight:500}
+  #title .tech i{font-style:normal;color:var(--acc)}
+
+  #ctl{top:16px;right:16px;width:272px;padding:11px 13px 12px}
+  #ctl h2,#leg h2,#read h2{font-size:10.5px;letter-spacing:.22em;color:var(--dim);
+    font-weight:600;margin-bottom:9px;display:flex;justify-content:space-between;align-items:baseline}
+  #ctl h2 span{color:var(--acc);letter-spacing:.04em;font-size:10px}
+  .row{margin-bottom:6px}
+  .row label{display:flex;justify-content:space-between;font-size:11px;color:#a2b5ca;
+    letter-spacing:.05em;margin-bottom:1px}
+  .row label var{font-style:normal;color:var(--acc);font-variant-numeric:tabular-nums}
+  .row input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:15px;
+    background:transparent;cursor:ew-resize;display:block}
+  .row input[type=range]::-webkit-slider-runnable-track{height:2px;border-radius:2px;
+    background:linear-gradient(90deg,#2a4a69,#7d97b0)}
+  .row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
+    margin-top:-4.5px;border-radius:50%;background:var(--acc);box-shadow:0 0 9px rgba(255,193,77,.7)}
+  .row input[type=range]::-moz-range-track{height:2px;border-radius:2px;background:#3d5a76}
+  .row input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--acc)}
+  .btns{display:flex;gap:6px;margin-top:10px}
+  .btns button,.toggles button{flex:1;font:inherit;font-size:10.5px;letter-spacing:.10em;padding:7px 3px;
+    cursor:pointer;color:#cfe0f2;background:rgba(120,170,225,.10);border:1px solid var(--line);
+    border-radius:2px;transition:background .15s,color .15s,border-color .15s}
+  .btns button:hover{background:rgba(255,193,77,.18);color:#fff;border-color:rgba(255,193,77,.45)}
+  .toggles{display:flex;gap:5px;margin-top:5px}
+  .toggles button{font-size:9.5px;letter-spacing:.07em;padding:5px 2px;color:#8ea2b8;
+    background:rgba(120,170,225,.055)}
+  .toggles button.on{color:#06101a;background:var(--cool);border-color:var(--cool)}
+
+  #leg{bottom:16px;left:16px;padding:10px 13px 11px;width:272px}
+  #ramp{height:11px;border-radius:2px;border:1px solid rgba(255,255,255,.11)}
+  #ticks{display:flex;justify-content:space-between;font-size:10px;color:#8295ab;margin-top:4px;
+    font-variant-numeric:tabular-nums}
+  #ticks span:nth-child(2){color:#b9cadc}
+  .keys{margin-top:9px;padding-top:8px;border-top:1px dashed rgba(150,190,235,.18);
+    font-size:10.5px;line-height:1.7;color:#8295ab}
+  .keys b{color:#bcd0e4;font-weight:500}
+
+  #read{bottom:16px;right:16px;width:272px;padding:10px 13px 11px}
+  #read table{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+  #read td{padding:2px 0;color:#96abc2;letter-spacing:.03em}
+  #read td.v{text-align:right;color:#e8f1fc}
+  #read td.v.w{color:var(--acc)}
+  #bar{height:3px;background:rgba(255,255,255,.08);border-radius:2px;margin-top:9px;overflow:hidden}
+  #bar i{display:block;height:100%;width:0%;
+    background:linear-gradient(90deg,var(--cool),#9ad86a,var(--acc),#ff5a3c);transition:width .15s linear}
+  #note{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);font-size:10px;
+    letter-spacing:.2em;color:#48566a;pointer-events:none;white-space:nowrap}
+  @media (max-width:1120px){#note{display:none}}
+  @media (max-width:820px){#title,#ctl,#leg,#read{display:none}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="title">
+  <h1>SPRING LATTICE</h1>
+  <div class="sub">3D STRUCTURAL TRUSS &nbsp;·&nbsp; PROJECT 16</div>
+  <div class="tech">
+    <b>VERLET</b> INTEGRATION &nbsp;x<sub>n+1</sub> = x<sub>n</sub> + c(x<sub>n</sub>−x<sub>n−1</sub>) + aΔt²<br>
+    <b>HOOKE</b> MEMBERS + <b>RAYLEIGH</b> AXIAL DAMPING: F = k<sub>t</sub>ΔL + 2ζ√(k m)<sub>v·û</sub><br>
+    TRUSS: 3 AXIAL + 12 SHEAR + 3 BEND / CELL &nbsp;→&nbsp; <i>ε</i> = ΔL/L₀, <i>F</i> = kΔL, 4 SUBSTEPS @ Δt = 1/240 s
+  </div>
+</div>
+
+<div class="panel" id="ctl">
+  <h2>PARAMETERS <span id="sig">—</span></h2>
+  <div class="row"><label>LATTICE N×H×W <var id="v_size">4×4×4</var></label>
+    <input id="s_size" type="range" min="0" max="4" step="1" value="1"></div>
+  <div class="row"><label>SPRING STIFFNESS k <var id="v_k">—</var></label>
+    <input id="s_k" type="range" min="80" max="3000" step="20" value="300"></div>
+  <div class="row"><label>DAMPING c <var id="v_c">—</var></label>
+    <input id="s_c" type="range" min="0.90" max="0.9995" step="0.0005" value="0.993"></div>
+  <div class="row"><label>LOAD (kg) <var id="v_m">—</var></label>
+    <input id="s_m" type="range" min="0" max="60" step="1" value="26"></div>
+  <div class="row"><label>SHAKE AMPLITUDE <var id="v_a">—</var></label>
+    <input id="s_a" type="range" min="0" max="1" step="0.01" value="0"></div>
+  <div class="btns">
+    <button id="b_shake" type="button">PUSH ▸ IMPULSE</button>
+    <button id="b_reset" type="button">RESET</button>
+  </div>
+  <div class="toggles">
+    <button id="t_nodes" class="on" type="button">NODES</button>
+    <button id="t_shear" class="on" type="button">SHEAR</button>
+    <button id="t_ghost" class="on" type="button">UNDISTORTED</button>
+  </div>
+</div>
+
+<div class="panel" id="leg">
+  <h2>MEMBER STRAIN ε = ΔL / L₀</h2>
+  <div id="ramp"></div>
+  <div id="ticks"><span>−6% COMP</span><span>0</span><span>+6% TENS</span></div>
+  <div class="keys"><b>DRAG</b> orbit &nbsp;·&nbsp; <b>WHEEL</b> dolly<br>
+    <b>SPACE</b> push &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>P</b> pause</div>
+</div>
+
+<div class="panel" id="read">
+  <h2>STRUCTURAL READOUT</h2>
+  <table>
+    <tr><td>nodes / members</td><td class="v" id="r_ns">—</td></tr>
+    <tr><td>peak member strain</td><td class="v w" id="r_st">—</td></tr>
+    <tr><td>peak member force</td><td class="v" id="r_f">—</td></tr>
+    <tr><td>base sag (vertical)</td><td class="v w" id="r_sag">—</td></tr>
+    <tr><td>base sway (lateral)</td><td class="v" id="r_swy">—</td></tr>
+    <tr><td>sag / span</td><td class="v" id="r_pct">—</td></tr>
+    <tr><td>load : self-weight</td><td class="v" id="r_r">—</td></tr>
+    <tr><td>Δt / frame</td><td class="v" id="r_dt">—</td></tr>
+  </table>
+  <div id="bar"><i id="barf"></i></div>
+</div>
+
+<div id="note">INSTANCED Z-BUFFERED GEOMETRY · PREMULIPLIED HDR BLOOM · ZERO EXTERNAL RESOURCES</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   STRUCTURAL SPRING LATTICE
+   3D mass-spring truss: Verlet integration + XPBD distance constraints,
+   strain-coloured instanced z-buffered cylinders and spheres.
+   Single file, no external resources, fully deterministic, fixed Δt.
+   ===================================================================== */
+
+/* ------------------------------------------------------------ maths */
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+
+function mat4(){ const m=new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; }
+function m4persp(m,fovy,asp,n,f){
+  const t=1/Math.tan(fovy*0.5); m.fill(0);
+  m[0]=t/asp; m[5]=t; m[11]=-1; m[10]=(f+n)/(n-f); m[14]=2*f*n/(n-f); return m;
+}
+function m4lookAt(m,e,c,up){
+  let zx=e[0]-c[0], zy=e[1]-c[1], zz=e[2]-c[2];
+  let l=Math.hypot(zx,zy,zz)||1; zx/=l; zy/=l; zz/=l;
+  let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx;
+  l=Math.hypot(xx,xy,xz)||1; xx/=l; xy/=l; xz/=l;
+  const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+  m[0]=xx; m[1]=yx; m[2]=zx; m[3]=0;
+  m[4]=xy; m[5]=yy; m[6]=zy; m[7]=0;
+  m[8]=xz; m[9]=yz; m[10]=zz; m[11]=0;
+  m[12]=-(xx*e[0]+xy*e[1]+xz*e[2]);
+  m[13]=-(yx*e[0]+yy*e[1]+yz*e[2]);
+  m[14]=-(zx*e[0]+zy*e[1]+zz*e[2]);
+  m[15]=1; return m;
+}
+function m4mul(m,a,b){
+  for(let c=0;c<4;c++){
+    const b0=b[c*4],b1=b[c*4+1],b2=b[c*4+2],b3=b[c*4+3];
+    m[c*4  ]=a[0]*b0+a[4]*b1+a[8 ]*b2+a[12]*b3;
+    m[c*4+1]=a[1]*b0+a[5]*b1+a[9 ]*b2+a[13]*b3;
+    m[c*4+2]=a[2]*b0+a[6]*b1+a[10]*b2+a[14]*b3;
+    m[c*4+3]=a[3]*b0+a[7]*b1+a[11]*b2+a[15]*b3;
+  }
+  return m;
+}
+
+/* ------------------------------------------------------------ shaders */
+const VS_GEO = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+uniform mat4 uVP;
+out vec3 vP; out vec3 vN;
+void main(){ vP=aPos; vN=aNrm; gl_Position=uVP*vec4(aPos,1.0); }`;
+
+const VS_INST = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec4 iP;    // xyz = instance origin
+layout(location=3) in vec4 iA;    // xyz = unit axis
+layout(location=4) in vec4 iS;    // x = radius, y = half-length (sphere: x = radius)
+layout(location=5) in vec4 iC;    // rgb = linear tint, a = emissive
+uniform mat4 uVP; uniform int uMode;   // 0 = sphere, 1 = tube along iA
+out vec3 vP; out vec3 vN; out vec4 vC;
+void main(){
+  vec3 lp; vec3 ln;
+  if(uMode==1){
+    vec3 Z = iA.xyz;
+    vec3 up = abs(Z.y)>0.985 ? vec3(1.0,0.0,0.0) : vec3(0.0,1.0,0.0);
+    vec3 X = normalize(cross(up,Z));
+    vec3 Y = cross(Z,X);
+    lp = iP.xyz + X*(aPos.x*iS.x) + Y*(aPos.y*iS.x) + Z*(aPos.z*iS.y);
+    ln = X*(aNrm.x) + Y*(aNrm.y) + Z*(aNrm.z*0.0);
+  } else {
+    lp = iP.xyz + aPos*iS.x;
+    ln = aNrm;
+  }
+  vP=lp; vN=ln; vC=iC;
+  gl_Position = uVP*vec4(lp,1.0);
+}`;
+
+const FS_GEO = `#version 300 es
+precision highp float;
+in vec3 vP; in vec3 vN; in vec4 vC;
+uniform vec3 uCam; uniform vec2 uFog;   // x = start, y = range
+out vec4 o;
+void main(){
+  vec3 N = normalize(vN);
+  vec3 dv = uCam - vP;
+  float dist = length(dv);
+  vec3 V = dv/max(dist,1e-5);
+  vec3 L1 = normalize(vec3( 0.48, 0.86, 0.42));
+  vec3 L2 = normalize(vec3(-0.78, 0.16,-0.52));
+  float d = max(dot(N,L1), 0.0);
+  float f = max(dot(N,L2), 0.0);
+  vec3 H = normalize(L1+V);
+  float sp = pow(max(dot(N,H),0.0), 56.0);
+  float fr = pow(1.0 - max(dot(N,V),0.0), 2.6);
+  vec3 base = vC.rgb;
+  vec3 col = base*(0.26 + 0.98*d) + base*f*0.30*vec3(0.45,0.66,1.0);
+  col += vec3(0.85,0.91,1.0)*sp*0.60;
+  col += base*fr*0.55;
+  col += base*vC.a*1.30;
+  // depth fog: far members sink toward the background so the layers separate
+  float fog = 1.0 - exp(-max(dist - uFog.x, 0.0) / max(uFog.y, 0.001));
+  col = mix(col, vec3(0.004,0.009,0.019), min(fog*1.05, 0.88));
+  col = col/(1.0+col);                 // Reinhard
+  col = pow(col, vec3(0.4545));         // to sRGB
+  o = vec4(col, 1.0);
+}`;
+
+const VS_LINE = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec4 aCol;
+uniform mat4 uVP;
+out vec4 vC;
+void main(){ vC=aCol; gl_Position=uVP*vec4(aPos,1.0); }`;
+
+const FS_LINE = `#version 300 es
+precision highp float;
+in vec4 vC; out vec4 o;
+void main(){
+  vec3 c = vC.rgb/(1.0+vC.rgb);
+  c = pow(c, vec3(0.4545));
+  o = vec4(c*vC.a, vC.a);   // premultiplied
+}`;
+
+const VS_FULL = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aP;
+out vec2 vUV;
+void main(){ vUV=aP*0.5+0.5; gl_Position=vec4(aP,0.0,1.0); }`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUV; uniform sampler2D uTex; uniform vec2 uTx; out vec4 o;
+void main(){
+  vec3 s = texture(uTex, vUV+uTx*vec2(-1.0,-1.0)).rgb
+         + texture(uTex, vUV+uTx*vec2( 1.0,-1.0)).rgb
+         + texture(uTex, vUV+uTx*vec2(-1.0, 1.0)).rgb
+         + texture(uTex, vUV+uTx*vec2( 1.0, 1.0)).rgb;
+  s *= 0.25;
+  float l = dot(s, vec3(0.2126,0.7152,0.0722));
+  s *= smoothstep(0.46, 0.96, l);
+  o = vec4(s, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUV; uniform sampler2D uTex; uniform vec2 uDir; out vec4 o;
+void main(){
+  vec3 s = texture(uTex,vUV).rgb*0.2270270;
+  s += (texture(uTex,vUV+uDir*1.3846).rgb + texture(uTex,vUV-uDir*1.3846).rgb)*0.3162162;
+  s += (texture(uTex,vUV+uDir*3.2308).rgb + texture(uTex,vUV-uDir*3.2308).rgb)*0.0702702;
+  o = vec4(s,1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uScene; uniform sampler2D uGlow;
+out vec4 o;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(41.31, 289.7)))*43758.5453); }
+void main(){
+  vec4 s = texture(uScene, vUV);
+  // background: cool vertical gradient + a warm horizon bloom under the truss
+  float h = vUV.y;
+  vec3 sky = mix(vec3(0.0135,0.0225,0.0400), vec3(0.0035,0.0060,0.0125), smoothstep(0.0,1.0,h));
+  vec2 d = (vUV-vec2(0.50,0.40))*vec2(1.55,1.0);
+  float r2 = dot(d,d);
+  sky += vec3(0.055,0.098,0.160)*exp(-r2*5.2);            // cool halo behind subject
+  sky += vec3(0.090,0.052,0.020)*exp(-r2*1.6)*0.55;       // warm ground bounce
+  float band = exp(-pow((vUV.y-0.055)*13.0, 2.0));
+  sky += vec3(0.030,0.055,0.085)*band*0.85;               // floor line
+  vec3 c = s.rgb + (1.0 - s.a)*sky;
+  c += texture(uGlow, vUV).rgb*vec3(0.62,0.82,1.10);
+  c *= 1.0 - 0.40*smoothstep(0.16, 0.80, r2);             // vignette
+  // triangular dither: kills banding, guarantees colour variety
+  float dth = (hash(gl_FragCoord.xy) - hash(gl_FragCoord.xy+17.3))*(1.6/255.0);
+  o = vec4(max(c + dth, 0.0), 1.0);
+}`;
+
+/* ------------------------------------------------------------ GL */
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2',{antialias:false,alpha:false,depth:true,stencil:false,
+  premultipliedAlpha:false,powerPreference:'high-performance'});
+if(!gl){ document.body.textContent='WebGL2 unavailable'; throw new Error('no webgl2'); }
+gl.getExtension('EXT_color_buffer_float');   // probed before any float/FBO use
+
+function compile(src,type){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    console.error('shader compile: '+gl.getShaderInfoLog(s));
+    throw new Error('shader compile failed');
+  }
+  return s;
+}
+function program(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,compile(vs,gl.VERTEX_SHADER));
+  gl.attachShader(p,compile(fs,gl.FRAGMENT_SHADER));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)){
+    console.error('link: '+gl.getProgramInfoLog(p)); throw new Error('link failed');
+  }
+  const u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){ const inf=gl.getActiveUniform(p,i);
+    u[inf.name.replace('[0]','')]=gl.getUniformLocation(p,inf.name); }
+  return {p,u};
+}
+const P_GEO  = program(VS_INST,FS_GEO);
+const P_LINE = program(VS_LINE,FS_LINE);
+const P_BRT  = program(VS_FULL,FS_BRIGHT);
+const P_BLR  = program(VS_FULL,FS_BLUR);
+const P_CMP  = program(VS_FULL,FS_COMP);
+
+/* ---- mesh data (unit radius, tube along z in [-0.5,0.5]) ---- */
+function sphereData(su,sv){
+  const pos=[],nrm=[],idx=[];
+  for(let j=0;j<=sv;j++){
+    const th=j/sv*Math.PI, sy=Math.cos(th), sr=Math.sin(th);
+    for(let i=0;i<=su;i++){
+      const ph=i/su*2*Math.PI, nx=sr*Math.cos(ph), nz=sr*Math.sin(ph);
+      pos.push(nx,sy,nz); nrm.push(nx,sy,nz);
+    }
+  }
+  for(let j=0;j<sv;j++)for(let i=0;i<su;i++){
+    const a=j*(su+1)+i, b=a+su+1;
+    idx.push(a,b,a+1, a+1,b,b+1);
+  }
+  return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
+}
+function tubeData(su){
+  const pos=[],nrm=[],idx=[];
+  for(let j=0;j<2;j++){
+    const z=j-0.5;
+    for(let i=0;i<=su;i++){
+      const ph=i/su*2*Math.PI, x=Math.cos(ph), y=Math.sin(ph);
+      pos.push(x,y,z); nrm.push(x,y,0);
+    }
+  }
+  for(let i=0;i<su;i++){
+    const a=i, b=i+su+1;
+    idx.push(a,b,a+1, a+1,b,b+1);
+  }
+  return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),idx:new Uint16Array(idx)};
+}
+const SPH = sphereData(10,7), TUB = tubeData(8);
+
+const MAXI = 4096;                 // max instances per buffer
+const ISTRIDE = 64;                // 16 floats per instance
+const IATTR = [                   // loc, size, byte offset
+  {loc:2,size:4,off:0 }, {loc:3,size:4,off:16},
+  {loc:4,size:4,off:32}, {loc:5,size:4,off:48}
+];
+
+function makeInstancedVAO(mesh, instBuf){
+  const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  const pb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,pb);
+  gl.bufferData(gl.ARRAY_BUFFER,mesh.pos,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  const nb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,nb);
+  gl.bufferData(gl.ARRAY_BUFFER,mesh.nrm,gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,instBuf);
+  for(const a of IATTR){
+    gl.enableVertexAttribArray(a.loc);
+    gl.vertexAttribPointer(a.loc,a.size,gl.FLOAT,false,ISTRIDE,a.off);
+    gl.vertexAttribDivisor(a.loc,1);
+  }
+  const ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,mesh.idx,gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return {vao,count:mesh.idx.length,pb,nb};
+}
+function newInstBuf(){
+  const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,MAXI*ISTRIDE,gl.DYNAMIC_DRAW);
+  return b;
+}
+const sphBuf=newInstBuf(), cylBuf=newInstBuf();
+const MESH_SPH=makeInstancedVAO(SPH,sphBuf);
+const MESH_TUB=makeInstancedVAO(TUB,cylBuf);
+const sphArr=new Float32Array(MAXI*16), cylArr=new Float32Array(MAXI*16);
+
+/* ---- line buffer ---- */
+const MAXL=1400;
+const lineArr=new Float32Array(MAXL*14);       // 2 verts x (3 pos + 4 col)
+let lineCount=0, gLowCount=0;                  // gLowCount: end of the no-depth range
+const lineBuf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,lineBuf);
+gl.bufferData(gl.ARRAY_BUFFER,lineArr.byteLength,gl.DYNAMIC_DRAW);
+const lineVAO=gl.createVertexArray();
+gl.bindVertexArray(lineVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER,lineBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,28,0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,28,12);
+gl.bindVertexArray(null);
+function line(ax,ay,az,bx,by,bz,r,g,b,a){
+  if(lineCount>=MAXL) return;
+  let o=lineCount*14;
+  lineArr[o]=ax; lineArr[o+1]=ay; lineArr[o+2]=az;
+  lineArr[o+3]=r; lineArr[o+4]=g; lineArr[o+5]=b; lineArr[o+6]=a;
+  o+=7;
+  lineArr[o]=bx; lineArr[o+1]=by; lineArr[o+2]=bz;
+  lineArr[o+3]=r; lineArr[o+4]=g; lineArr[o+5]=b; lineArr[o+6]=a;
+  lineCount++;
+}
+
+/* ---- fullscreen quad ---- */
+const quadVAO=gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+const qb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,qb);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 1,-1, 1,1, -1,1]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+/* ---- offscreen targets ---- */
+function makeTex(w,h,filter){
+  const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  const f=filter||gl.LINEAR;
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,f);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,f);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  return t;
+}
+function makeTarget(w,h,filter){
+  const tex=makeTex(w,h,filter);
+  const rb=gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER,rb);
+  gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
+  const fbo=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,rb);
+  const ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {fbo,tex,rb,w,h,ok};
+}
+let T_SCENE=null, T_A=null, T_B=null;
+function allocTargets(w,h){
+  for(const t of [T_SCENE,T_A,T_B]){
+    if(!t) continue;
+    gl.deleteFramebuffer(t.fbo); gl.deleteTexture(t.tex); gl.deleteRenderbuffer(t.rb);
+  }
+  T_SCENE=makeTarget(w,h,gl.LINEAR);
+  const bw=Math.max(2,w>>1), bh=Math.max(2,h>>1);
+  T_A=makeTarget(bw,bh,gl.LINEAR);
+  T_B=makeTarget(bw,bh,gl.LINEAR);
+}
+function bindTarget(t){
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t? t.fbo : null);
+  gl.viewport(0,0, t? t.w : canvas.width, t? t.h : canvas.height);
+}
+
+/* ------------------------------------------------------------ physics consts */
+const GRAV      = 9.81;
+const SUBSTEPS  = 4;           // integration substeps per rendered frame
+const FRAME_DT  = 1/60;       // fixed wall time consumed per rendered frame
+const DT        = FRAME_DT/SUBSTEPS;
+const NODE_M    = 1.0;         // kg per node
+const STRAIN_FS = 0.060;       // legend full-scale strain
+const TYPE_K    = [1.0, 0.30, 0.012];  // axial / shear / bend stiffness factors
+const TYPE_R    = [0.030, 0.019, 0.010];  // member radius in rest-length units
+const OMEGA     = 2*Math.PI*1.6;        // shake frequency (rad per sim second)
+const V_CLAMP   = 0.18;        // per-substep |Δx| ceiling, in rest-length units
+const GRAV_SCALE= 1.0;         // global gravity multiplier (tuned for pacing)
+
+/* ------------------------------------------------------------ presets */
+const PRESETS=[
+  {n:3,h:4,w:3},{n:4,h:4,w:4},{n:5,h:5,w:5},{n:5,h:6,w:4},{n:6,h:6,w:5}
+];
+const P={
+  preset:1, k:300, damp:0.993, load:26, amp:0,
+  nodes:true, shear:true, ghost:true, paused:false
+};
+
+let L=null, simTime=0, frame=0, impulse=0, fps=0, readyFlag=false;
+
+/* ------------------------------------------------------------ build */
+function buildLattice(pi){
+  const R=PRESETS[pi], nx=R.n, ny=R.h, nz=R.w, N=nx*ny*nz;
+  const ea=[], eb=[], eL0=[], et=[];
+  const at=(i,j,k)=> i + nx*(j + ny*k);
+  const push=(a,b,t)=>{ ea.push(a); eb.push(b); et.push(t);
+    const ia=a%nx, ja=Math.floor(a/nx)%ny, ka=Math.floor(a/(nx*ny));
+    const ib=b%nx, jb=Math.floor(b/nx)%ny, kb=Math.floor(b/(nx*ny));
+    eL0.push(Math.hypot(ib-ia, jb-ja, kb-ka)); };
+
+  for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const c=at(i,j,k);
+    if(i<nx-1) push(c,at(i+1,j,k),0);
+    if(j<ny-1) push(c,at(i,j+1,k),0);
+    if(k<nz-1) push(c,at(i,j,k+1),0);
+    // 12 shear members: face diagonals on all three planes
+    if(i<nx-1&&k<nz-1) push(c,at(i+1,j,k+1),1);
+    if(i>0   &&k<nz-1) push(c,at(i-1,j,k+1),1);
+    if(i<nx-1&&k>0   ) push(c,at(i+1,j,k-1),1);
+    if(i>0   &&k>0   ) push(c,at(i-1,j,k-1),1);
+    if(i<nx-1&&j<ny-1) push(c,at(i+1,j+1,k),1);
+    if(i>0   &&j<ny-1) push(c,at(i-1,j+1,k),1);
+    if(k<nz-1&&j<ny-1) push(c,at(i,j+1,k+1),1);
+    if(k>0   &&j<ny-1) push(c,at(i,j+1,k-1),1);
+    if(i<nx-1&&k<nz-1&&j<ny-1) push(c,at(i+1,j+1,k+1),1);
+    if(i>0   &&k>0   &&j<ny-1) push(c,at(i-1,j+1,k-1),1);
+    if(i<nx-1&&k>0   &&j<ny-1) push(c,at(i+1,j+1,k-1),1);
+    if(i>0   &&k<nz-1&&j<ny-1) push(c,at(i-1,j+1,k+1),1);
+    // Bend members: collinear second neighbours only. Cross-coupled diagonals
+    // were tried and dropped - they tripled the member count, added no
+    // stiffness the collinear set does not already supply, and turned the
+    // lattice interior into unreadable mush.
+    if(i<nx-2) push(c,at(i+2,j,k),2);
+    if(j<ny-2) push(c,at(i,j+2,k),2);
+    if(k<nz-2) push(c,at(i,j,k+2),2);
+  }
+  // safety net: never emit an out-of-range index
+  const bad=[];
+  for(let e=0;e<ea.length;e++) if(ea[e]>=N||eb[e]>=N) bad.push(e);
+  if(bad.length){
+    for(const e of bad) console.error('dropping member',e,ea[e],eb[e]);
+    for(const e of bad.reverse()){ ea.splice(e,1); eb.splice(e,1); eL0.splice(e,1); et.splice(e,1); }
+  }
+
+  const cur=new Float32Array(3*N), prv=new Float32Array(3*N);
+  const invM=new Float32Array(N), fixed=new Uint8Array(N), bottom=new Uint8Array(N);
+  const onEdge=new Uint8Array(N);
+  for(let i=0;i<N;i++){
+    const x=i%nx, y=Math.floor(i/nx)%ny, z=Math.floor(i/(nx*ny));
+    cur[3*i]=x; cur[3*i+1]=y; cur[3*i+2]=z;
+    fixed[i] = (y===ny-1)?1:0;
+    bottom[i] = (y===0 && (x===0||x===nx-1||z===0||z===nz-1))?1:0;
+    onEdge[i] = (x===0||x===nx-1||y===0||y===ny-1||z===0||z===nz-1)?1:0;
+    invM[i]  = fixed[i]?0:1/NODE_M;
+  }
+  return {
+    nx,ny,nz,N,R,rest:1,height:ny-1,
+    cur,prv,invM,fixed,bottom,onEdge,
+    ea:new Uint16Array(ea), eb:new Uint16Array(eb),
+    eL0:new Float32Array(eL0), eType:new Uint8Array(et),
+    lam:new Float32Array(eL0.length),
+    strain:new Float32Array(eL0.length),
+    force:new Float32Array(eL0.length),
+    pLoad:new Float32Array(N), nLoad:0,
+    fx:new Float32Array(3*N), fy:new Float32Array(3*N), fz:new Float32Array(3*N),
+    sag:0, sway:0, peakEps:0, peakF:0
+  };
+}
+/* Platen participation: the rigid base plate shares the hanging mass over the
+   perimeter of the base plane, densest at the corners (where the four columns
+   land) and thinning along each edge. Fixed, so the sim stays deterministic. */
+function platenWeights(){
+  if(L._plDone) return L.pLoad;
+  const nx=L.nx, ny=L.ny, nz=L.nz, N=L.N;
+  let n=0;
+  for(let i=0;i<N;i++) L.pLoad[i]=0;
+  for(let i=0;i<N;i++){
+    if(!L.bottom[i]) continue;                // only the loaded plate shares the mass
+    const x=i%nx, z=Math.floor(i/(nx*ny));
+    const ex=(x===0||x===nx-1)?1:0, ez=(z===0||z===nz-1)?1:0;
+    L.pLoad[i]=(ex&&ez)?4:(ex||ez)?1.2:1.0;   // corner : edge : single-cell
+    n+=L.pLoad[i];
+  }
+  if(n===0) n=1;
+  const inv=1/n;
+  for(let i=0;i<N;i++){
+    if(!L.bottom[i]){ L.pLoad[i]=0; continue; }
+    L.pLoad[i]*=inv;                          // normalised participation
+  }
+  L.nLoad=n; L._plDone=true;
+  return L.pLoad;
+}
+function resetSim(){
+  const n=L.N;
+  for(let i=0;i<n;i++){
+    const x=i%L.nx, y=Math.floor(i/L.nx)%L.ny, z=Math.floor(i/(L.nx*L.ny));
+    L.cur[3*i]=x; L.cur[3*i+1]=y; L.cur[3*i+2]=z;
+    L.prv[3*i]=x; L.prv[3*i+1]=y; L.prv[3*i+2]=z;
+  }
+  L.lam.fill(0); L.strain.fill(0); L.force.fill(0);
+  L._plDone=false;
+  L.sag=0; L.sway=0; L.peakEps=0; L.peakF=0;
+  simTime=0; impulse=0; frame=0;
+  updateReadout();
+}
+
+/* ------------------------------------------------------------ solver step
+   Verlet integration + explicit Hookean member forces + axial damping,
+   followed by a short Gauss-Seidel length projection that removes the
+   residual stretch a symplectic integrator always leaves behind.
+
+     F_e   = k_type * (|d| - L0) * d_hat          Hooke, tension positive
+     F_d   = 2 zeta sqrt(k m_eff) * (v_rel . d_hat)  axial (Rayleigh) damping
+     x''+1 = c (x' - x'prev) + (F/m + g) dt^2
+*/
+function step(shakeGain){
+  const nx=L.nx, ny=L.ny, nz=L.nz, N=L.N, E=L.eL0.length;
+  const {cur,prv,invM,fixed,bottom,ea,eb,eL0,eType}=L;
+  const fx=L.fx, fy=L.fy, fz=L.fz;
+  const dt2=DT*DT, g=GRAV*GRAV_SCALE, dmp=P.damp;
+
+  // stiffness in N/m per member class
+  const K=[Math.max(1,P.k), Math.max(1,P.k*TYPE_K[1]), Math.max(1,P.k*TYPE_K[2])];
+  // Rayleigh damping ratio from the user slider: 0 = undamped, 1 = heavily damped
+  const zeta=0.02+0.16*(1-P.damp)/0.0995*0.0+ 0.30*clamp((0.9995-P.damp)/0.0995,0,1);
+  const CD=[0,1,2].map(t=> 2*zeta*Math.sqrt(K[t]*0.5));
+
+  // distributed platen: the rigid base plate shares the hanging mass and the
+  // shake drive over the perimeter of the base plane (fixed, deterministic)
+  const pLoad=platenWeights();
+  const baseMass=P.load;
+  const drive=clamp(shakeGain,0,1);
+  const t=simTime;
+  const hx=P.amp*26.0*Math.sin(t*OMEGA)*drive;
+  const hz=P.amp*26.0*0.62*Math.sin(t*OMEGA*0.73+1.1)*drive;
+
+  for(let s=0;s<SUBSTEPS;s++){
+    /* 1) clear member-force accumulator + external loads */
+    for(let i=0;i<N;i++){
+      const o=i*3;
+      if(fixed[i]){ fx[o]=0; fy[o]=0; fz[o]=0; prv[o]=cur[o]; prv[o+1]=cur[o+1]; prv[o+2]=cur[o+2]; continue; }
+      const w=pLoad[i];
+      const m=1/NODE_M;                          // node mass is uniform
+      fx[o]  =(hx*w)*m;
+      fy[o+1]=(-g-w*baseMass*g)*m;
+      fz[o+2]=(hz*w)*m;
+    }
+    /* 2) member forces: Hooke + axial damping ---------------------------- */
+    for(let e=0;e<E;e++){
+      const a=ea[e], b=eb[e], oa=a*3, ob=b*3, t=eType[e];
+      const dx=cur[ob]-cur[oa], dy=cur[ob+1]-cur[oa+1], dz=cur[ob+2]-cur[oa+2];
+      const len=Math.hypot(dx,dy,dz); if(len<1e-9) continue;
+      const ux=dx/len, uy=dy/len, uz=dz/len;
+      const C=len-eL0[e];
+      let f=K[t]*C;
+      // axial damping from the relative velocity along the member
+      const vx=(cur[ob]-prv[ob])-(cur[oa]-prv[oa]);
+      const vy=(cur[ob+1]-prv[ob+1])-(cur[oa+1]-prv[oa+1]);
+      const vz=(cur[ob+2]-prv[ob+2])-(cur[oa+2]-prv[oa+2]);
+      f += CD[t]*(vx*ux+vy*uy+vz*uz)/DT;
+      const ax=ux*f, ay=uy*f, az=uz*f;
+      fx[oa]+=ax; fy[oa+1]+=ay; fz[oa+2]+=az;
+      fx[ob]-=ax; fy[ob+1]-=ay; fz[ob+2]-=az;
+      L.force[e]=f; L.strain[e]=C/eL0[e];
+    }
+    /* 3) Verlet integration ---------------------------------------------- */
+    const vlim=V_CLAMP;                          // max |dx| per substep, rest units
+    for(let i=0;i<N;i++){
+      if(fixed[i]) continue;
+      const o=i*3, m=1/NODE_M;
+      let vx=(cur[o]-prv[o])*dmp, vy=(cur[o+1]-prv[o+1])*dmp, vz=(cur[o+2]-prv[o+2])*dmp;
+      const sp=Math.hypot(vx,vy,vz);
+      if(sp>vlim){ const q=vlim/sp; vx*=q; vy*=q; vz*=q; }
+      prv[o]=cur[o]; prv[o+1]=cur[o+1]; prv[o+2]=cur[o+2];
+      cur[o]  +=vx+fx[o]  /m*dt2;
+      cur[o+1]+=vy+fy[o+1]/m*dt2;
+      cur[o+2]+=vz+fz[o+2]/m*dt2;
+      if(!isFinite(cur[o])||!isFinite(cur[o+1])||!isFinite(cur[o+2])){
+        const r=i%nx, yy=Math.floor(i/nx)%ny, zz=Math.floor(i/(nx*ny));
+        cur[o]=r; cur[o+1]=yy; cur[o+2]=zz; prv[o]=r; prv[o+1]=yy; prv[o+2]=zz;
+      }
+    }
+  }
+
+  /* 5) one-shot horizontal impulse on the loaded platen (button / SPACE) --- */
+  if(impulse>0){
+    const dv=impulse*0.016;
+    for(let i=0;i<N;i++){
+      if(!L.bottom[i]||fixed[i]) continue;
+      prv[3*i]-=dv; prv[3*i+2]-=dv*0.55;
+    }
+    impulse=0;
+  }
+
+  /* 6) structural readout ------------------------------------------------ */
+  let pe=0, pf=0, sagSum=0, sagN=0, swaySum=0;
+  for(let e=0;e<E;e++){
+    const oa=ea[e]*3, ob=eb[e]*3;
+    const len=Math.hypot(cur[ob]-cur[oa], cur[ob+1]-cur[oa+1], cur[ob+2]-cur[oa+2]);
+    const eps=(len-eL0[e])/eL0[e];
+    L.strain[e]=eps;
+    const f=P.k*TYPE_K[eType[e]]*(len-eL0[e]);
+    L.force[e]=f;
+    const ae=Math.abs(eps); if(ae>pe) pe=ae;
+    const af=Math.abs(f);   if(af>pf) pf=af;
+  }
+  for(let i=0;i<N;i++){
+    if(!L.bottom[i]||fixed[i]) continue;
+    const x=i%nx, z=Math.floor(i/(nx*ny)), o=3*i;
+    sagSum+=-cur[o+1]; sagN++;                 // rest y of the base plane is 0
+    swaySum+=Math.hypot(cur[o]-x, cur[o+2]-z);
+  }
+  L.peakEps=pe; L.peakF=pf;
+  L.sag  = sagN? sagSum/sagN : 0;
+  L.sway = sagN? swaySum/sagN : 0;
+  simTime+=FRAME_DT;
+}
+
+/* ------------------------------------------------------------ strain LUT */
+const LUT=(()=>{
+  const stops=[
+    [-1.00, 0.045,0.115,0.330],   // strong compression
+    [-0.58, 0.030,0.235,0.470],   // compression
+    [-0.22, 0.026,0.135,0.250],
+    [ 0.00, 0.030,0.042,0.060],   // neutral
+    [ 0.22, 0.150,0.075,0.030],
+    [ 0.52, 0.520,0.150,0.030],   // tension
+    [ 0.80, 1.060,0.380,0.070],
+    [ 1.00, 1.550,0.760,0.250]    // yield
+  ];
+  const t=new Float32Array(256*3);
+  for(let i=0;i<256;i++){
+    const x=(i/255)*2-1;
+    let a=stops[0], b=stops[stops.length-1];
+    for(let s=0;s<stops.length-1;s++) if(x>=stops[s][0]&&x<=stops[s+1][0]){ a=stops[s]; b=stops[s+1]; break; }
+    const f=(x-a[0])/Math.max(1e-6,b[0]-a[0]);
+    t[i*3]=a[1]+(b[1]-a[1])*f;
+    t[i*3+1]=a[2]+(b[2]-a[2])*f;
+    t[i*3+2]=a[3]+(b[3]-a[3])*f;
+  }
+  return t;
+})();
+function lutRGB(i,o){
+  const k=clamp(Math.round(i*255),0,255)*3;
+  o[0]=LUT[k]; o[1]=LUT[k+1]; o[2]=LUT[k+2];
+  return o;
+}
+(function buildLegend(){
+  const stops=[];
+  for(let i=0;i<=8;i++){
+    const c=[0,0,0]; lutRGB(i/8,c);
+    const tone=v=>{ const m=v/(1+v); return Math.round(255*Math.pow(clamp(m,0,1),1/2.2)); };
+    stops.push('rgb('+tone(c[0])+','+tone(c[1])+','+tone(c[2])+')');
+  }
+  $('ramp').style.background='linear-gradient(90deg,'+stops.join(',')+')';
+})();
+
+/* ------------------------------------------------------------ camera */
+const cam={yaw:0.68, pitch:0.17, dist:9.0, tgt:[0,2,0], fov:40*Math.PI/180};
+function camEyeAt(dist){
+  const cp=Math.cos(cam.pitch), sp=Math.sin(cam.pitch);
+  return [cam.tgt[0]+dist*cp*Math.sin(cam.yaw),
+          cam.tgt[1]+dist*sp,
+          cam.tgt[2]+dist*cp*Math.cos(cam.yaw)];
+}
+function camEye(){ return camEyeAt(cam.dist); }
+/* ---------------------------------------------------------------- framing
+   The HUD owns the top and bottom of the frame, so the truss is fitted into the
+   clear window between them rather than the whole frame.
+
+   Two stages:
+     1. a yaw-invariant bounding-sphere fit, which is the distance that can
+        never crop the structure at any azimuth - the safe starting point;
+     2. a per-frame exact fit at the current yaw, exponentially smoothed toward
+        the distance that exactly fills the window. The sphere bound is loose
+        (a 4x5x4 truss sits inside a sphere of radius ~4.1), so stage 2 buys
+        most of the frame back. It is driven by the frame counter, not the
+        wall clock, so the sequence stays deterministic.
+
+   Centring uses a projection lens shift (proj[8], proj[9]) rather than moving
+   the aim point: with a lookAt matrix the target always projects to NDC (0,0),
+   so nudging the target to move the subject is circular.
+*/
+const FIT={x0:0.085, x1:0.915, y0:0.055, y1:0.940};   // frame fractions, y up
+const FIT_SHIFT=[(FIT.x0+FIT.x1-1), (FIT.y0+FIT.y1-1)]; // NDC centre of the window
+const FIT_EASE=0.06;   // per-frame approach rate for the exact fit
+let camDistFit=0;      // solved distance, eased across frames
+
+const _fvP=mat4(), _fvV=mat4(), _fvVP=mat4();
+
+function applyLensShift(m){ m[8]=FIT_SHIFT[0]; m[9]=FIT_SHIFT[1]; return m; }
+function viewProj(mP,mV,mVP,dist){
+  m4persp(mP,cam.fov,canvas.width/canvas.height,0.25,80);
+  applyLensShift(mP);
+  m4lookAt(mV,dist===undefined? camEye() : camEyeAt(dist),cam.tgt,[0,1,0]);
+  m4mul(mVP,mP,mV);
+  return mVP;
+}
+/* Points that must stay on screen: every node, both platen plates, the hanging
+   blocks, and the pin stubs above the ceiling. */
+function fitPts(out){
+  let n=0;
+  const h=L.height, w=L.nx-1, d=L.nz-1, drop=0.62+L.sag;
+  for(let i=0;i<L.N;i++){ out[n*3]=L.cur[3*i]; out[n*3+1]=L.cur[3*i+1]; out[n*3+2]=L.cur[3*i+2]; n++; }
+  for(const [ix,iz] of [[0,0],[w,0],[0,d],[w,d]]){
+    out[n*3]=ix;     out[n*3+1]=-drop;      out[n*3+2]=iz;      n++;
+    out[n*3]=ix+0.34;out[n*3+1]=-drop*0.45; out[n*3+2]=iz+0.34;  n++;
+    out[n*3]=ix;     out[n*3+1]=h+0.26;     out[n*3+2]=iz;      n++;
+  }
+  return n;
+}
+let _fitBuf=null, _fitN=0;
+function fitBounds(m){
+  const n=_fitN;
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9, any=false;
+  for(let k=0;k<n;k++){
+    const px=_fitBuf[k*3], py=_fitBuf[k*3+1], pz=_fitBuf[k*3+2];
+    const w=m[3]*px+m[7]*py+m[11]*pz+m[15];
+    if(w<=1e-6) continue;
+    const x=(m[0]*px+m[4]*py+m[8]*pz+m[12])/w;
+    const y=(m[1]*px+m[5]*py+m[9]*pz+m[13])/w;
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;
+    any=true;
+  }
+  if(!any) return null;
+  return {x0,x1,y0,y1};
+}
+function fitCamera(){
+  const h=L.height, w=L.nx-1, d=L.nz-1, drop=0.62+L.sag;
+  if(!_fitBuf) _fitBuf=new Float32Array((L.N+16)*3);
+  _fitN=fitPts(_fitBuf);
+
+  // centre of the point cloud
+  let cx=0,cy=0,cz=0;
+  for(let k=0;k<_fitN;k++){ cx+=_fitBuf[k*3]; cy+=_fitBuf[k*3+1]; cz+=_fitBuf[k*3+2]; }
+  cx/=_fitN; cy/=_fitN; cz/=_fitN;
+  cam.tgt=[cx,cy,cz];
+
+  // stage 1: yaw-invariant safe distance from the bounding sphere
+  let R=0;
+  for(let k=0;k<_fitN;k++){
+    R=Math.max(R, Math.hypot(_fitBuf[k*3]-cx,_fitBuf[k*3+1]-cy,_fitBuf[k*3+2]-cz));
+  }
+  const th=Math.tan(cam.fov*0.5), asp=canvas.width/canvas.height;
+  const lim=Math.min((FIT.y1-FIT.y0)*th, (FIT.x1-FIT.x0)*th*asp)*0.96;
+  const safeD=clamp(R/Math.max(1e-4,Math.sin(Math.atan(lim))), 3.0, 40.0);
+  if(camDistFit===0) camDistFit=safeD;
+  cam.dist=camDistFit;
+  if(!frame){ camDistFit=safeD; cam.dist=safeD; return; }   // first fit: safe distance
+
+  // stage 2: exact fit at this yaw. Bisect for the closest distance whose
+  // projected bounds still touch the window, then ease toward it.
+  // The bracket is anchored on safeD, never on cam.dist: cam.dist is the value
+  // being solved for, so seeding the bracket from it would compound each frame.
+  const ref=clamp(camDistFit, safeD*0.55, safeD*1.30);
+  let lo=safeD*0.35, hi=ref;
+  const fits=(d)=>{
+    viewProj(_fvP,_fvV,_fvVP,d);
+    const b=fitBounds(_fvVP);
+    if(!b) return false;
+    const u0=(b.x0+1)*0.5, u1=(b.x1+1)*0.5, v0=(b.y0+1)*0.5, v1=(b.y1+1)*0.5;
+    if(u0<FIT.x0||u1>FIT.x1||v0<FIT.y0||v1>FIT.y1) return false;
+    return true;
+  };
+  // grow the bracket upward if even hi is too tight
+  if(!fits(hi)){ hi=safeD*1.6; if(!fits(hi)) hi=safeD*1.6; }
+  if(fits(hi)){
+    for(let it=0;it<16;it++){
+      const mid=(lo+hi)*0.5;
+      if(fits(mid)) hi=mid; else lo=mid;
+    }
+    const target=clamp(hi, safeD*0.72, safeD*1.02);
+    camDistFit += (target-camDistFit)*FIT_EASE;
+  } else {
+    camDistFit = safeD;
+  }
+  cam.dist=camDistFit;
+}
+/* ------------------------------------------------------------ HUD */
+function sizeLabel(i){ const R=PRESETS[i]; return R.n+'×'+R.h+'×'+R.w; }
+function updateReadout(){
+  if(!L) return;
+  $('v_size').textContent=sizeLabel(P.preset);
+  $('v_k').textContent=P.k.toFixed(0);
+  $('v_c').textContent=P.damp.toFixed(4);
+  $('v_m').textContent=P.load.toFixed(0);
+  $('v_a').textContent=P.amp.toFixed(2);
+  $('sig').textContent='k = '+P.k.toFixed(0)+' N/m';
+  $('r_ns').textContent=L.N+' / '+L.eL0.length;
+  $('r_st').textContent=(L.peakEps*100).toFixed(2)+' %';
+  $('r_f').textContent=L.peakF.toFixed(0)+' N';
+  $('r_sag').textContent=L.sag.toFixed(3)+' u';
+  $('r_swy').textContent=L.sway.toFixed(3)+' u';
+  $('r_pct').textContent=(100*L.sag/Math.max(1,L.height)).toFixed(1)+' %';
+  $('r_r').textContent=P.load.toFixed(0)+' kg : '+N_KG().toFixed(0)+' kg self';
+  $('r_dt').textContent=(1000*FRAME_DT).toFixed(1)+' ms · '+fps.toFixed(1)+' fps';
+  $('barf').style.width=(100*clamp(L.peakEps/(STRAIN_FS*1.6),0,1)).toFixed(1)+'%';
+}
+function N_KG(){ return (L.N - L.nx*L.nz)*NODE_M; }
+
+/* ------------------------------------------------------------ build-up */
+function build(){
+  L=buildLattice(P.preset);
+  resetSim();
+  fitCamera();
+  // settle before the first visible frame so nothing looks mid-collapse
+  for(let i=0;i<220;i++) step(0);
+  simTime=0; frame=0;
+  updateReadout();
+}
+function rebuild(){ P.preset=parseInt($('s_size').value,10); build(); }
+function doPush(){
+  if(P.amp<0.30){ P.amp=0.42; $('s_a').value=String(P.amp); }
+  impulse=1.0;
+  updateReadout();
+}
+
+/* ------------------------------------------------------------ UI */
+function bind(id,key,after){
+  $(id).addEventListener('input',()=>{ P[key]=parseFloat($(id).value); if(after) after(); updateReadout(); });
+}
+bind('s_size','preset');
+$('s_size').addEventListener('change',build);
+bind('s_k','k'); bind('s_c','damp'); bind('s_m','load'); bind('s_a','amp');
+$('b_reset').addEventListener('click',()=>{ build(); });
+$('b_shake').addEventListener('click',doPush);
+$('t_nodes').addEventListener('click',function(){ P.nodes=!P.nodes; this.classList.toggle('on',P.nodes); });
+$('t_shear').addEventListener('click',function(){ P.shear=!P.shear; this.classList.toggle('on',P.shear); });
+$('t_ghost').addEventListener('click',function(){ P.ghost=!P.ghost; this.classList.toggle('on',P.ghost); });
+window.addEventListener('keydown',e=>{
+  if(e.target && e.target.tagName==='INPUT') return;
+  if(e.code==='Space'){ e.preventDefault(); doPush(); }
+  else if(e.key==='r'||e.key==='R'){ build(); }
+  else if(e.key==='p'||e.key==='P'){ P.paused=!P.paused; }
+});
+
+/* ---- pointer orbit / wheel dolly ---- */
+let drag=false, px0=0, py0=0;
+canvas.addEventListener('pointerdown',e=>{ drag=true; px0=e.clientX; py0=e.clientY;
+  canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup',e=>{ drag=false; try{canvas.releasePointerCapture(e.pointerId);}catch(_){} });
+canvas.addEventListener('pointermove',e=>{
+  if(!drag) return;
+  cam.yaw-=(e.clientX-px0)*0.0072;
+  cam.pitch=clamp(cam.pitch+(e.clientY-py0)*0.0052,-0.30,1.30);
+  px0=e.clientX; py0=e.clientY;
+});
+canvas.addEventListener('wheel',e=>{ e.preventDefault();
+  cam.dist=clamp(cam.dist*(1+Math.sign(e.deltaY)*0.085),2.8,26); },{passive:false});
+
+/* ------------------------------------------------------------ resize */
+function onResize(){
+  const w=Math.max(360,window.innerWidth), h=Math.max(280,window.innerHeight);
+  const asp=w/h;
+  // internal buffer held inside the calibrated software-rendering band
+  let ih=400, iw=Math.round(400*asp);
+  if(iw>640){ iw=640; ih=Math.round(640/asp); }
+  if(ih<320){ ih=320; iw=Math.round(320*asp); }
+  iw=Math.max(400,Math.min(700,iw));
+  ih=Math.max(280,Math.min(460,ih));
+  canvas.width=iw; canvas.height=ih;
+  canvas.style.width=w+'px'; canvas.style.height=h+'px';
+  allocTargets(iw,ih);
+  if(L) fitCamera();
+}
+window.addEventListener('resize',onResize);
+
+/* ------------------------------------------------------------ instance fill */
+const _c=[0,0,0];
+let nCyl=0, nSph=0;
+function fillInstances(){
+  const {cur,ea,eb,eL0,eType,strain,fixed,onEdge,bottom}=L;
+  nCyl=0; nSph=0;
+
+  // --- members (tubes) ---
+  for(let e=0;e<eL0.length;e++){
+    const t=eType[e];
+    if(t===1 && !P.shear) continue;
+    const oa=ea[e]*3, ob=eb[e]*3;
+    let dx=cur[ob]-cur[oa], dy=cur[ob+1]-cur[oa+1], dz=cur[ob+2]-cur[oa+2];
+    const len=Math.hypot(dx,dy,dz);
+    if(len<1e-6) continue;
+    dx/=len; dy/=len; dz/=len;
+    const eps=strain[e];
+    lutRGB(clamp(eps/(2*STRAIN_FS),-1,1)*0.5+0.5, _c);
+    const hot=clamp((Math.abs(eps)/STRAIN_FS-0.55)/0.45,0,1);
+    const o=nCyl*16;
+    cylArr[o]=cur[oa]; cylArr[o+1]=cur[oa+1]; cylArr[o+2]=cur[oa+2]; cylArr[o+3]=0;
+    cylArr[o+4]=dx; cylArr[o+5]=dy; cylArr[o+6]=dz; cylArr[o+7]=0;
+    cylArr[o+8]=TYPE_R[t]; cylArr[o+9]=len*0.5; cylArr[o+10]=0; cylArr[o+11]=0;
+    cylArr[o+12]=_c[0]; cylArr[o+13]=_c[1]; cylArr[o+14]=_c[2]; cylArr[o+15]=hot*hot*0.85;
+    nCyl++;
+    if(nCyl>=MAXI) break;
+  }
+  // --- nodes (spheres) ---
+  for(let i=0;i<L.N;i++){
+    const o=3*i, oo=nSph*16;
+    const fx=fixed[i], edge=onEdge[i], bot=bottom[i];
+    const sp=Math.hypot(cur[o]-L.prv[o],cur[o+1]-L.prv[o+1],cur[o+2]-L.prv[o+2])/FRAME_DT;
+    const base = fx? 0.95 : (bot? 0.82 : (edge? 0.42 : 0.20));
+    const r = 0.062*(fx?1.28:(bot?1.12:1.0));
+    const emis = (fx?0.34:0) + (bot?0.10:0) + clamp(sp*0.020,0,0.5);
+    sphArr[oo]=cur[o]; sphArr[oo+1]=cur[o+1]; sphArr[oo+2]=cur[o+2]; sphArr[oo+3]=0;
+    sphArr[oo+4]=0; sphArr[oo+5]=1; sphArr[oo+6]=0; sphArr[oo+7]=0;
+    sphArr[oo+8]=r; sphArr[oo+9]=0; sphArr[oo+10]=0; sphArr[oo+11]=0;
+    sphArr[oo+12]=base; sphArr[oo+13]=base*0.97; sphArr[oo+14]=base*1.06;
+    sphArr[oo+15]=emis;
+    nSph++;
+    if(nSph>=MAXI) break;
+  }
+  if(P.ghost){
+    // reference node markers at the undeformed positions: small, pale, matte
+    for(let i=0;i<L.N;i++){
+      const x=i%L.nx, y=Math.floor(i/L.nx)%L.ny, z=Math.floor(i/(L.nx*L.ny));
+      const oo=nSph*16;
+      sphArr[oo]=x; sphArr[oo+1]=y; sphArr[oo+2]=z; sphArr[oo+3]=0;
+      sphArr[oo+4]=0; sphArr[oo+5]=1; sphArr[oo+6]=0; sphArr[oo+7]=0;
+      sphArr[oo+8]=0.042; sphArr[oo+9]=0;
+      sphArr[oo+10]=0.30; sphArr[oo+11]=0.40; sphArr[oo+12]=0.52; sphArr[oo+13]=0;
+      nSph++;
+      if(nSph>=MAXI) break;
+    }
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER,cylBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER,0,cylArr.subarray(0,nCyl*16));
+  gl.bindBuffer(gl.ARRAY_BUFFER,sphBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER,0,sphArr.subarray(0,nSph*16));
+}
+
+/* ------------------------------------------------------------ line pass */
+function buildLines(){
+  lineCount=0;
+  const nx=L.nx, ny=L.ny, nz=L.nz, spanX=nx-1, spanZ=nz-1, h=L.height;
+  const rr=Math.max(spanX,spanZ)*0.5;
+  const CORNERS=[[0,0],[nx-1,0],[0,nz-1],[nx-1,nz-1]];
+  const cur3=o=>L.cur[o];
+
+  // floor: concentric rings + radial ticks (depth cue for the 3D read)
+  for(let r=1;r<=5;r++){
+    const rad=rr*0.42 + r*(rr*1.32/5);
+    const seg=72, a0=0.012+0.10*r*0.1, a1=0.02+0.13*r*0.14;
+    let px=0,pz=0;
+    for(let s=0;s<=seg;s++){
+      const a=s/seg*Math.PI*2;
+      const cx=Math.cos(a)*rad*1.28, cz=Math.sin(a)*rad;
+      if(s>0) line(px,0,pz,cx,0,cz,0.030,0.070,0.115,a0+(a1-a0)*(r/5));
+      px=cx; pz=cz;
+    }
+  }
+  for(let i=0;i<16;i++){
+    const a=i/16*Math.PI*2, c=Math.cos(a), s=Math.sin(a);
+    line(c*rr*0.42,0,s*rr*0.34, c*rr*1.72,0,s*rr*1.34, 0.036,0.082,0.130,0.13);
+  }
+  // grid cross-hair
+  line(-rr*1.72,0,0, rr*1.72,0,0, 0.026,0.058,0.098,0.20);
+  line(0,0,-rr*1.34, 0,0, rr*1.34, 0.026,0.058,0.098,0.20);
+
+  // ceiling platen (fixed support)
+  const cx0=spanX*0.5, cz0=spanZ*0.5, pad=0.30;
+  const y0=h;
+  const pl=(r,g,b,a)=>{
+    line(cx0-pad,y0,cz0-pad, cx0+pad,y0,cz0-pad, r,g,b,a);
+    line(cx0+pad,y0,cz0-pad, cx0+pad,y0,cz0+pad, r,g,b,a);
+    line(cx0+pad,y0,cz0+pad, cx0-pad,y0,cz0+pad, r,g,b,a);
+    line(cx0-pad,y0,cz0+pad, cx0-pad,y0,cz0-pad, r,g,b,a);
+  };
+  pl(0.62,0.40,0.10,0.95);
+  for(let i=0;i<=6;i++){
+    const t=i/6;
+    line(cx0-pad+2*pad*t, y0, cz0-pad, cx0-pad+2*pad*t, y0, cz0+pad, 0.30,0.18,0.05,0.45);
+    line(cx0-pad, y0, cz0-pad+2*pad*t, cx0+pad, y0, cz0-pad+2*pad*t, 0.30,0.18,0.05,0.45);
+  }
+  // pinned-node markers at the ceiling
+  for(let i=0;i<L.N;i++){
+    if(!L.fixed[i]) continue;
+    const x=i%nx, z=Math.floor(i/(nx*ny));
+    line(x,y0,z, x,y0+0.22,z, 0.55,0.34,0.09,0.60);
+  }
+
+  // loaded platen at the bottom (sags and sways with the structure)
+  const by=-L.sag, pad2=0.40;
+  const pl2=(r,g,b,a)=>{
+    line(cx0-pad2,by,cz0-pad2, cx0+pad2,by,cz0-pad2, r,g,b,a);
+    line(cx0+pad2,by,cz0-pad2, cx0+pad2,by,cz0+pad2, r,g,b,a);
+    line(cx0+pad2,by,cz0+pad2, cx0-pad2,by,cz0+pad2, r,g,b,a);
+    line(cx0-pad2,by,cz0+pad2, cx0-pad2,by,cz0-pad2, r,g,b,a);
+    for(let i=0;i<=4;i++){
+      const t=i/4;
+      line(cx0-pad2+2*pad2*t,by,cz0-pad2, cx0-pad2+2*pad2*t,by,cz0+pad2, r*0.55,g*0.55,b*0.55,a*0.7);
+    }
+  };
+  pl2(0.34,0.72,0.95,0.95);
+  // hanging weight blocks under the four platen corners
+  const hangW=0.16+0.34*clamp(P.load/60,0,1), blk=0.24;
+  for(const [ix,iz] of CORNERS){
+    const id=ix+nx*(0+ny*iz), o=id*3;
+    const ax=cur3(o), ay=by-hangW, az=cur3(o+2);
+    const s=(hangW*0.5)/blk;
+    // three visible edges of the block
+    line(ax,ay,az, ax+blk*s,ay,az,                 0.34,0.66,0.86,0.75);
+    line(ax,ay,az, ax,ay,az+blk*s,                 0.34,0.66,0.86,0.75);
+    line(ax+blk*s,ay,az, ax+blk*s,ay+hangW*0.5,az+blk*s, 0.17,0.36,0.50,0.55);
+  }
+
+  // sag gauge: original base height vs deflected base height
+  const gx=-rr*1.30, gz=0;
+  line(gx,0,gz, gx,h,gz, 0.10,0.16,0.24,0.55);
+  for(let s=0;s<=4;s++){
+    const yy=h*(1-s/4);
+    line(gx-0.09,yy,gz, gx+0.09,yy,gz, 0.16,0.24,0.34,0.55);
+  }
+  line(gx,0,gz, gx,by,gz, 0.98,0.44,0.10,0.95);
+  line(gx-0.11,by,gz, gx+0.11,by,gz, 0.98,0.44,0.10,0.95);
+  line(gx,by,gz, cx0-pad2,by,cz0-pad2, 0.34,0.15,0.05,0.26);
+
+  // guide rails: fixed support down to each platen corner
+  for(const [ix,iz] of CORNERS){
+    const o=3*(ix+nx*ny*iz);
+    line(ix,y0,iz, cur3(o),by,cur3(o+2), 0.11,0.20,0.30,0.28);
+  }
+
+  gLowCount=lineCount;
+
+  // Reference wireframe of the undeformed truss. Pale steel rather than a
+  // strain colour, so it never reads as "just another member" - it is the
+  // shape the structure is being measured against. Axial members only, which
+  // is enough to show the offset and keeps the reference from doubling the
+  // visual density of the scene.
+  if(P.ghost){
+    for(let e=0;e<L.eL0.length;e++){
+      if(L.eType[e]!==0) continue;
+      const a=L.ea[e], b=L.eb[e];
+      line(a%nx, Math.floor(a/nx)%ny, Math.floor(a/(nx*ny)),
+           b%nx, Math.floor(b/nx)%ny, Math.floor(b/(nx*ny)),
+           0.34,0.44,0.56,0.80);
+    }
+  }
+  return lineCount;
+}
+
+/* ------------------------------------------------------------ render */
+const proj=mat4(), view=mat4(), vp=mat4();
+let lastFrameMs=0;
+
+function renderFrame(){
+  const asp = canvas.width/canvas.height;
+  const eye = camEye();
+  viewProj(proj,view,vp);                     // lens-shifted projection
+
+  fillInstances();
+  buildLines();
+  gl.bindBuffer(gl.ARRAY_BUFFER,lineBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER,0,lineArr.subarray(0,lineCount*14));
+
+  /* ---- scene pass (premultiplied, depth-buffered) ---- */
+  bindTarget(T_SCENE);
+  gl.clearColor(0,0,0,0);
+  gl.clearDepth(1);
+  gl.depthMask(true);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+
+  // Line work. The undeformed ghost is depth-tested so it reads as a wireframe
+  // inside the structure; the floor and platen work is drawn without depth so
+  // the ground grid and gauge stay visible behind the truss.
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(P_LINE.p);
+  gl.uniformMatrix4fv(P_LINE.u.uVP,false,vp);
+  gl.bindVertexArray(lineVAO);
+  gl.disable(gl.DEPTH_TEST);
+  gl.drawArrays(gl.LINES,0,gLowCount*2);        // floor, platen, gauge, rails
+  gl.bindVertexArray(null);
+
+  // opaque geometry, z-buffered
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+  gl.useProgram(P_GEO.p);
+  gl.uniformMatrix4fv(P_GEO.u.uVP,false,vp);
+  gl.uniform3f(P_GEO.u.uCam,eye[0],eye[1],eye[2]);
+  gl.uniform2f(P_GEO.u.uFog, cam.dist*0.55, cam.dist*1.05);
+  if(nCyl>0){
+    gl.uniform1i(P_GEO.u.uMode,1);
+    gl.bindVertexArray(MESH_TUB.vao);
+    gl.drawElementsInstanced(gl.TRIANGLES,MESH_TUB.count,gl.UNSIGNED_SHORT,0,nCyl);
+  }
+  if(nSph>0 && P.nodes){
+    gl.uniform1i(P_GEO.u.uMode,0);
+    gl.bindVertexArray(MESH_SPH.vao);
+    gl.drawElementsInstanced(gl.TRIANGLES,MESH_SPH.count,gl.UNSIGNED_SHORT,0,nSph);
+  }
+  gl.bindVertexArray(null);
+
+  // depth-tested ghost wireframe over the geometry, depth-write off so it does
+  // not occlude the members that follow
+  if(P.ghost && lineCount>gLowCount){
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.useProgram(P_LINE.p);
+    gl.uniformMatrix4fv(P_LINE.u.uVP,false,vp);
+    gl.bindVertexArray(lineVAO);
+    gl.drawArrays(gl.LINES,gLowCount*2,(lineCount-gLowCount)*2);
+    gl.bindVertexArray(null);
+    gl.depthMask(true);
+  }
+  gl.disable(gl.BLEND);
+
+  /* ---- bright pass + separable blur at half res ---- */
+  gl.bindVertexArray(quadVAO);
+  bindTarget(T_A);
+  gl.useProgram(P_BRT.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,T_SCENE.tex);
+  gl.uniform1i(P_BRT.u.uTex,0);
+  gl.uniform2f(P_BRT.u.uTx, 0.5/T_SCENE.w, 0.5/T_SCENE.h);
+  gl.drawArrays(gl.TRIANGLE_FAN,0,4);
+
+  gl.useProgram(P_BLR.p);
+  bindTarget(T_B);
+  gl.bindTexture(gl.TEXTURE_2D,T_A.tex);
+  gl.uniform1i(P_BLR.u.uTex,0); gl.uniform2f(P_BLR.u.uDir, 1.4/T_A.w, 0);
+  gl.drawArrays(gl.TRIANGLE_FAN,0,4);
+
+  bindTarget(T_A);
+  gl.bindTexture(gl.TEXTURE_2D,T_B.tex);
+  gl.uniform2f(P_BLR.u.uDir, 0, 1.4/T_A.h);
+  gl.drawArrays(gl.TRIANGLE_FAN,0,4);
+  gl.bindVertexArray(null);
+
+  /* ---- composite ---- */
+  bindTarget(null);
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(P_CMP.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,T_SCENE.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,T_A.tex);
+  gl.uniform1i(P_CMP.u.uScene,0); gl.uniform1i(P_CMP.u.uGlow,1);
+  gl.bindVertexArray(quadVAO);
+  gl.drawArrays(gl.TRIANGLE_FAN,0,4);
+  gl.bindVertexArray(null);
+  gl.enable(gl.DEPTH_TEST);
+}
+
+/* ------------------------------------------------------------ loop */
+let prevT=0, fpsN=0, fpsT=0, hudT=0;
+function loop(now){
+  requestAnimationFrame(loop);
+  if(!L) return;
+  const t=now*0.001;
+  const dt=prevT? Math.min(0.25,t-prevT) : FRAME_DT;
+  prevT=t;
+
+  if(!P.paused){ step(1.0); frame++; cam.yaw += 0.0024; }
+  fitCamera();
+  renderFrame();
+
+  fpsN++;
+  if(t-fpsT>0.6){ fps=fpsN/(t-fpsT); fpsN=0; fpsT=t; lastFrameMs=1000/fps; }
+  hudT+=dt;
+  if(hudT>0.18){ hudT=0; updateReadout(); }
+
+  window.__probe={
+    fps:Math.round(fps), nodes:L.N, members:L.eL0.length, size:sizeLabel(P.preset),
+    k:P.k, damping:P.damp, load:P.load, shake:P.amp,
+    peakStrain:+(L.peakEps*100).toFixed(3), peakForce:+L.peakF.toFixed(1),
+    sag:+L.sag.toFixed(4), sway:+L.sway.toFixed(4), simTime:+simTime.toFixed(2),
+    res:canvas.width+'x'+canvas.height, cylinders:nCyl, spheres:nSph, fbo:T_SCENE.ok
+  };
+  if(!readyFlag){ readyFlag=true; window.__ready=true; }
+}
+
+/* ------------------------------------------------------------ boot */
+try{
+  onResize();
+  build();
+  window.__probe={fps:0,nodes:L.N,members:L.eL0.length,res:canvas.width+'x'+canvas.height};
+  requestAnimationFrame(loop);
+}catch(err){
+  console.error('BOOT FAIL',err);
+  window.__probe={error:String((err&&err.message)||err)};
+}
+</script>
+</body>
+</html>

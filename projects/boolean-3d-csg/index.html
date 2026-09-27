@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boolean SDF 3D — raymarched constructive solid geometry</title>
+<style>
+  :root{
+    --acc:#5ce1ff;          /* operand A — ice   */
+    --acc2:#ff6bd0;         /* operand B — orchid*/
+    --acc3:#ffcf5c;         /* cut face — amber  */
+    --ink:#d6ecf7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#03050a;overflow:hidden;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased}
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:5}
+  .panel{position:absolute;left:18px;top:18px;width:300px;padding:13px 15px 12px;border-radius:13px;
+    background:linear-gradient(168deg,rgba(9,17,31,.90),rgba(3,7,14,.84));
+    border:1px solid rgba(92,225,255,.20);
+    box-shadow:0 22px 60px rgba(0,0,0,.66), inset 0 1px 0 rgba(255,255,255,.07);
+    backdrop-filter:blur(10px) saturate(1.25);-webkit-backdrop-filter:blur(10px) saturate(1.25);
+    pointer-events:auto}
+  .ttl{font-size:15px;letter-spacing:.24em;font-weight:700;color:#eaf9ff;text-shadow:0 0 18px rgba(92,225,255,.45)}
+  .sub{margin-top:5px;font-size:8.3px;letter-spacing:.13em;color:rgba(158,204,224,.78);text-transform:uppercase;line-height:1.6}
+  .hr{height:1px;margin:11px 0 9px;background:linear-gradient(90deg,rgba(92,225,255,.52),rgba(92,225,255,0))}
+  .row{display:grid;grid-template-columns:74px 1fr 50px;align-items:center;gap:8px;height:23px}
+  .row label{font-size:8.4px;letter-spacing:.1em;color:rgba(178,214,232,.92);text-transform:uppercase}
+  .row output{font-size:9.4px;text-align:right;color:#eaf9ff;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;outline:none;
+    background:linear-gradient(90deg,var(--acc) var(--p,50%),rgba(255,255,255,.11) var(--p,50%));cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;
+    background:#f2fdff;box-shadow:0 0 0 3px rgba(92,225,255,.20),0 0 12px rgba(92,225,255,.75);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:10px;height:10px;border:none;border-radius:50%;background:#f2fdff;
+    box-shadow:0 0 0 3px rgba(92,225,255,.20),0 0 12px rgba(92,225,255,.75)}
+  .segs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+  .segs button{flex:1 1 40px;font:inherit;font-size:8.1px;letter-spacing:.06em;padding:5px 2px;border-radius:6px;cursor:pointer;
+    color:rgba(198,232,246,.86);background:rgba(92,225,255,.055);border:1px solid rgba(92,225,255,.2);
+    transition:background .12s,color .12s,border-color .12s;white-space:nowrap}
+  .segs button:hover{background:rgba(92,225,255,.2);color:#fff}
+  .segs button.on{background:rgba(92,225,255,.24);color:#fff;border-color:rgba(92,225,255,.62);
+    box-shadow:0 0 12px rgba(92,225,255,.24), inset 0 1px 0 rgba(255,255,255,.14)}
+  .segs.b2 button.on{background:rgba(255,107,208,.24);border-color:rgba(255,107,208,.62);
+    box-shadow:0 0 12px rgba(255,107,208,.24), inset 0 1px 0 rgba(255,255,255,.14)}
+  .group{margin-top:9px}
+  .glabel{font-size:8.2px;letter-spacing:.13em;color:rgba(150,196,216,.8);text-transform:uppercase;margin-bottom:2px;
+    display:flex;justify-content:space-between;align-items:baseline}
+  .glabel b{font-weight:400;color:rgba(120,170,195,.72);letter-spacing:.04em;text-transform:none;font-size:8.6px}
+  .swatch{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:6px;vertical-align:0}
+  .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:11px}
+  .btns button{font:inherit;font-size:8.1px;letter-spacing:.09em;padding:6px 0;border-radius:7px;cursor:pointer;
+    color:rgba(200,235,248,.9);background:rgba(92,225,255,.07);border:1px solid rgba(92,225,255,.24);
+    text-transform:uppercase;transition:background .12s,color .12s}
+  .btns button:hover{background:rgba(92,225,255,.22);color:#fff}
+  .btns button.on{background:rgba(255,207,92,.20);border-color:rgba(255,207,92,.58);color:#fff}
+  .tele{position:absolute;right:18px;top:18px;min-width:212px;padding:11px 13px;border-radius:11px;
+    background:linear-gradient(168deg,rgba(9,17,31,.86),rgba(3,7,14,.78));
+    border:1px solid rgba(92,225,255,.16);box-shadow:0 16px 44px rgba(0,0,0,.55);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:10.2px;line-height:1.68;
+    letter-spacing:.05em;color:rgba(198,228,242,.96);white-space:pre;font-variant-numeric:tabular-nums}
+  .tele b{color:var(--acc);font-weight:600}
+  .tele i{color:var(--acc2);font-style:normal}
+  .tele s{color:var(--acc3);text-decoration:none}
+  .tech{position:absolute;right:18px;bottom:18px;max-width:352px;padding:10px 13px;border-radius:11px;text-align:right;
+    background:linear-gradient(168deg,rgba(9,17,31,.80),rgba(3,7,14,.70));
+    border:1px solid rgba(92,225,255,.14);box-shadow:0 16px 44px rgba(0,0,0,.5);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:9.2px;line-height:1.78;
+    letter-spacing:.045em;color:rgba(180,214,230,.9)}
+  .tech em{color:var(--acc2);font-style:normal}
+  .tech s{color:var(--acc3);text-decoration:none}
+  .hint{position:absolute;left:50%;bottom:15px;transform:translateX(-50%);font-size:8.6px;letter-spacing:.14em;
+    color:rgba(160,200,220,.58);text-transform:uppercase;text-shadow:0 1px 8px rgba(0,0,0,.9);text-align:center;
+    pointer-events:auto}
+  @media (max-width:1000px){.tech{display:none}}
+  @media (max-height:640px){.tech{display:none}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="ui">
+
+  <div class="panel">
+    <div class="ttl">BOOLEAN SDF 3D</div>
+    <div class="sub">raymarched constructive solid geometry</div>
+    <div class="hr"></div>
+
+    <div class="group">
+      <div class="glabel">Operation <b id="opNote">min(a,b)</b></div>
+      <div class="segs" id="opSegs"></div>
+    </div>
+
+    <div class="group">
+      <div class="glabel"><span><span class="swatch" style="background:#5ce1ff"></span>Shape A</span></div>
+      <div class="segs b2" id="aSegs"></div>
+    </div>
+    <div class="group">
+      <div class="glabel"><span><span class="swatch" style="background:#ff6bd0"></span>Shape B</span></div>
+      <div class="segs b2" id="bSegs"></div>
+    </div>
+
+    <div class="hr"></div>
+
+    <div class="row"><label>smooth k</label><input type="range" id="kSlider" min="0" max="100" step="1" value="34"><output id="kOut">0.34</output></div>
+    <div class="row"><label>speed</label><input type="range" id="spSlider" min="0" max="250" step="1" value="100"><output id="spOut">1.00×</output></div>
+
+    <div class="group">
+      <div class="glabel">Cross-section <b id="sliceNote">off</b></div>
+      <div class="segs" id="sliceSegs"></div>
+      <div class="row" style="margin-top:5px"><label>cut depth</label><input type="range" id="cutSlider" min="-120" max="130" step="1" value="10"><output id="cutOut">0.10</output></div>
+      <div class="segs" id="axisSegs" style="margin-top:5px"></div>
+    </div>
+
+    <div class="btns">
+      <button id="pauseBtn" class="on">Pause</button>
+      <button id="stepBtn">Step +1</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <div class="tele" id="tele">booting…</div>
+  <div class="tech" id="tech">
+    exact CSG on signed distance · <em>min</em> / <em>max</em> / <em>max(a,−b)</em><br>
+    polynomial <em>smin·smax</em> fillets at k · tetrahedron-gradient normals<br>
+    sphere trace vs. 2 bounding spheres · <s>64×2 shadow/AO taps</s> · 640×400 internal, bilinear upscale
+  </div>
+  <div class="hint" id="hint">drag to orbit · wheel to dolly · <b>space</b> pause · <b>s</b> section · <b>1·2·3</b> operation</div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   Boolean SDF 3D — real CSG boolean operations on 3D primitives,
+   expressed as exact operators on signed distance fields, sphere
+   traced into a single implicit surface and lit from the field's own
+   gradient.
+
+     union        d = min(a, b)            -> smin(a,b,k)
+     intersection d = max(a, b)            -> smax(a,b,k) = -smin(-a,-b,k)
+     difference   d = max(a, -b)           -> smax(a,-b,k)
+
+   Because the operators are exact functions of the two distance
+   fields, the topology of the result changes as the operands move:
+   a cavity opens, becomes a tunnel, and closes again. Nothing is
+   meshed and nothing is approximated by marching cubes — the
+   raymarcher walks the boolean field itself.
+   ===================================================================== */
+
+/* ---------- deterministic RNG (mulberry32; never in the render path) ---------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(0x3DB0A1);   // fixed seed -> identical cold loads
+const DET = rand() * 6.2831853;     // one deterministic star-field twist
+
+/* ---------- fixed-timestep clock (never wall clock) ---------- */
+const DT       = 1 / 60;
+const SIM_SECS = 12.0;              // one full loop of the choreography
+const LOOP     = SIM_SECS * 2 * Math.PI;
+const FLOOR_Y  = -1.55;
+const RENDER_H = 400;               // internal height; width follows the aspect
+
+/* ---------- catalogues (single source of truth for UI + shader indices) ---------- */
+const SHAPES = [
+  { n:'Sphere'  }, { n:'Box'    }, { n:'Torus'  }, { n:'Capsule' },
+  { n:'Octa'    }, { n:'Cyl'    }, { n:'HexPrism'}, { n:'Cone'   },
+];
+/* bounding radius of each primitive (max |p| on its surface) + smoothing margin */
+const BOUND = [0.86, 1.34, 0.92, 0.92, 1.12, 0.92, 0.94, 1.00];
+
+const OPS  = ['Union', 'Intersect', 'Difference'];
+const OPNOTE = ['min(a,b)', 'max(a,b)', 'max(a,−b)'];
+const AXES = ['X', 'Y', 'Z'];
+
+const G = { op:'Difference', shapeA:'Box', shapeB:'Sphere', slice:'Off', axis:'Z' };
+
+let t = 0, playing = true, speed = 1.0, k = 0.34, cut = 0.10, sliceOn = 0;
+let userYaw = 0, userPitch = 0, userZoom = 0;
+
+/* ---------- 3x3 helpers (column-major, GLSL order) ---------- */
+const M3 = {
+  ident: () => [1,0,0, 0,1,0, 0,0,1],
+  mul(a,b){
+    const o = new Array(9);
+    for (let c=0;c<3;c++) for (let r=0;r<3;r++){
+      let s=0; for (let k=0;k<3;k++) s += a[k*3+r]*b[c*3+k];
+      o[c*3+r] = s;
+    }
+    return o;
+  },
+  rx(a){ const c=Math.cos(a), s=Math.sin(a); return [1,0,0,  0,c,s,  0,-s,c]; },
+  ry(a){ const c=Math.cos(a), s=Math.sin(a); return [c,0,-s,  0,1,0,  s,0,c]; },
+  rz(a){ const c=Math.cos(a), s=Math.sin(a); return [c,s,0,  -s,c,0,  0,0,1]; },
+  scale(m,s){ return [m[0]*s,m[1]*s,m[2]*s, m[3]*s,m[4]*s,m[5]*s, m[6]*s,m[7]*s,m[8]*s]; },
+  xform(m,v){ return [m[0]*v[0]+m[3]*v[1]+m[6]*v[2],
+                       m[1]*v[0]+m[4]*v[1]+m[7]*v[2],
+                       m[2]*v[0]+m[5]*v[1]+m[8]*v[2]]; },
+};
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const norm=(a)=>{ const l=Math.hypot(a[0],a[1],a[2])||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+
+/* =====================================================================
+   Choreography — a closed form of simulation time, so a slow machine
+   and a fast machine see exactly the same picture. Every term is
+   periodic in LOOP, so the animation is seamless.
+   ===================================================================== */
+/* The carver's polar angle is phased so that at t = 0 it sits on the
+   camera-facing corner of A — the preview then catches the deepest
+   part of the carve instead of a moment where nothing touches. */
+const PH0 = 0.951;   // atan2 of the hero camera's ground direction
+
+function choreo(time){
+  const a = (time % SIM_SECS) / SIM_SECS * Math.PI * 2;
+
+  /* operand A: slow full turn + a breathing tilt, hovering */
+  const posA = [0, 0.05*Math.sin(a), 0];
+  const matA = M3.mul(M3.ry(a * 1.0), M3.mul(M3.rx(0.30 + 0.26*Math.sin(a)), M3.rz(0.18*Math.sin(2*a))));
+  const sA = 1.0 + 0.045*Math.sin(2*a + 0.6);
+
+  /* operand B: a contracting polar orbit. At t=0 the carver is centred
+     on the block (a through-tunnel aimed at the camera); by a=PI/2 it has
+     withdrawn entirely and the hole is sealed; at a=PI it returns. The
+     hole therefore opens, deepens and closes twice per loop. */
+  const orb = 0.42 - 1.62*Math.sin(a);
+  const posB = [orb*Math.cos(a + PH0), 0.34*orb*Math.sin(2*a), orb*Math.sin(a + PH0)];
+  const matB = M3.mul(M3.ry(-a * 1.0), M3.mul(M3.rx(0.42*Math.sin(a + 1.0)), M3.rz(-a * 0.5)));
+  const sB = 1.0 + 0.16*Math.sin(a - 0.6);
+
+  return { posA, matA, sA, posB, matB, sB, a };
+}
+
+/* camera: composed off-centre — subject pushed right of the control panel */
+function camera(time, c){
+  const yaw   = 0.62 + 0.24*Math.sin(time*0.21) + userYaw;
+  const pitch = 0.33 + 0.11*Math.sin(time*0.17 + 1.0) + userPitch;
+  const rad   = 6.35 * Math.exp(-userZoom);
+  const cp = Math.cos(pitch);
+  const eye = [rad*Math.sin(yaw)*cp, rad*Math.sin(pitch) + 0.10, rad*Math.cos(yaw)*cp];
+  // look slightly ahead of the midpoint so the carve stays framed
+  const tgt = [0.42*(c.posA[0]+c.posB[0]), 0.10 + 0.30*(c.posA[1]+c.posB[1]), 0.42*(c.posA[2]+c.posB[2])];
+  const f = norm(sub(tgt, eye));
+  const r = norm(cross(f, [0,1,0]));
+  const u = cross(r, f);
+  return { eye, mat: [r[0],r[1],r[2], u[0],u[1],u[2], f[0],f[1],f[2]] };
+}
+
+/* =====================================================================
+   WebGL setup
+   ===================================================================== */
+const cv = document.getElementById('cv');
+const OPT = { alpha:false, depth:false, stencil:false, antialias:false,
+              preserveDrawingBuffer:true, powerPreference:'high-performance' };
+let gl = cv.getContext('webgl2', OPT) || cv.getContext('webgl', OPT) || cv.getContext('experimental-webgl', OPT);
+
+const VS = `
+attribute vec2 aPos;
+void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+const FS = `
+precision highp float;
+
+uniform vec2  uRes;
+uniform mat3  uCamM;
+uniform vec3  uCamP;
+uniform mat3  uMatA;  uniform vec3 uOffA;  uniform vec4 uSphA;
+uniform mat3  uMatB;  uniform vec3 uOffB;  uniform vec4 uSphB;
+uniform int   uOp;            // 0 union, 1 intersect, 2 difference
+uniform int   uShapeA, uShapeB;
+uniform float uK;
+uniform float uSlice;         // 0 or 1
+uniform vec3  uSliceN;        // unit plane normal
+uniform float uSliceD;        // signed plane offset
+uniform float uFrame;
+
+#define FLOOR_Y (-1.55)
+#define MAXSTEPS 80
+#define COL_A vec3(0.16, 0.55, 0.74)
+#define COL_B vec3(0.74, 0.26, 0.56)
+#define COL_C vec3(1.00, 0.74, 0.28)
+// key light pushed off-axis so no single face is blown flat
+const vec3 KEY  = vec3( 0.331, 0.856, 0.392);
+const vec3 FILL = vec3(-0.796, 0.199, -0.572);
+
+/* ---------------- hashes / noise (deterministic) ---------------- */
+float hash12(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float hash13(vec3 p){
+  p = fract(p * 0.1031);
+  p += dot(p, p.zyx + 31.32);
+  return fract((p.x + p.y) * p.z);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f*f*(3.0-2.0*f);
+  return mix(mix(hash12(i), hash12(i+vec2(1,0)), f.x),
+             mix(hash12(i+vec2(0,1)), hash12(i+vec2(1,1)), f.x), f.y);
+}
+float fbm2(vec2 p){
+  float s = vnoise(p) * 0.6;
+  s += vnoise(p*2.13 + 7.1) * 0.28;
+  s += vnoise(p*4.41 - 3.7) * 0.12;
+  return s;
+}
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+}
+
+/* ---------------- primitives (exact SDFs) ---------------- */
+float sdSphere(vec3 p, float r){ return length(p) - r; }
+float sdRoundBox(vec3 p, vec3 b, float r){
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
+}
+float sdTorus(vec3 p, vec2 t){
+  vec2 q = vec2(length(p.xz) - t.x, p.y);
+  return length(q) - t.y;
+}
+float sdCapsule(vec3 p, float h, float r){
+  p.y -= clamp(p.y, -h, h);
+  return length(p) - r;
+}
+float sdOcta(vec3 p, float s){
+  p = abs(p);
+  float m = p.x + p.y + p.z - s;
+  vec3 q;
+       if (3.0*p.x < m) q = p.xyz;
+  else if (3.0*p.y < m) q = p.yzx;
+  else if (3.0*p.z < m) q = p.zxy;
+  else return m * 0.57735027;
+  float k = clamp(0.5*(q.z - q.y + s), 0.0, s);
+  return length(vec3(q.x, q.y - s + k, q.z - k));
+}
+float sdCyl(vec3 p, float h, float r){
+  vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
+  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+float sdHexPrism(vec3 p, vec2 h){
+  const vec3 k = vec3(-0.8660254, 0.5, 0.57735);
+  p = abs(p);
+  p.xz -= 2.0*min(dot(k.xy, p.xz), 0.0)*k.xy;
+  vec2 d = vec2(length(p.xz - vec2(clamp(p.x, -k.z*h.x, k.z*h.x), h.x))*sign(p.z - h.x), p.y - h.y);
+  return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+float sdRoundCone(vec3 p, float r1, float r2, float h){
+  vec2 q = vec2(length(p.xz), p.y);
+  float b = (r1 - r2)/h;
+  float a = sqrt(1.0 - b*b);
+  float k = dot(q, vec2(-b, a));
+  if (k < 0.0)   return length(q) - r1;
+  if (k > a*h)   return length(q - vec2(0.0, h)) - r2;
+  return dot(q, vec2(a, b)) - r1;
+}
+float shapeSDF(int s, vec3 p){
+  if (s == 0) return sdSphere(p, 0.78);
+  if (s == 1) return sdRoundBox(p, vec3(0.60), 0.14);
+  if (s == 2) return sdTorus(p, vec2(0.62, 0.24));
+  if (s == 3) return sdCapsule(p, 0.52, 0.26);
+  if (s == 4) return sdOcta(p, 1.05);
+  if (s == 5) return sdCyl(p, 0.70, 0.48);
+  if (s == 6) return sdHexPrism(p, vec2(0.62, 0.62));
+  return sdRoundCone(p, 0.60, 0.22, 0.72);
+}
+
+/* ---------------- the boolean operators ---------------- */
+float smin(float a, float b, float k){
+  if (k <= 0.0005) return min(a, b);
+  float h = clamp(0.5 + 0.5*(b - a)/k, 0.0, 1.0);
+  return mix(b, a, h) - k*h*(1.0 - h);
+}
+float smax(float a, float b, float k){ return -smin(-a, -b, k); }
+
+/* xy = (dA, dB), z = boolean result, w = unused */
+vec4 csgRaw(vec3 p){
+  float da = shapeSDF(uShapeA, uMatA*p - uOffA);
+  float db = shapeSDF(uShapeB, uMatB*p - uOffB);
+  float d;
+  if      (uOp == 0) d = smin(da, db, uK);
+  else if (uOp == 1) d = smax(da, db, uK);
+  else               d = smax(da, -db, uK);
+  return vec4(da, db, d, 0.0);
+}
+/* same field, plus the cross-section half-space clip */
+float mapCSG(vec3 p){
+  float d = csgRaw(p).z;
+  if (uSlice > 0.5) d = max(d, dot(p, uSliceN) - uSliceD);
+  return d;
+}
+
+/* ---------------- material blend: which operand owns this surface ---------------- */
+float matW(float da, float db){
+  float e = max(uK, 0.0008);
+  if (uOp == 0) return smoothstep(0.0, e,  da - db);
+  if (uOp == 1) return smoothstep(0.0, e,  db - da);
+  return              smoothstep(0.0, e, -db - da);
+}
+vec3 albedoOf(vec3 p, float w){
+  vec3 base = mix(COL_A, COL_B, w);
+  // subtle brushed mottle — a per-cell cube hash reads as voxel mush
+  return base * (0.90 + 0.18*hash13(floor(p*26.0)) + 0.06*vnoise(p.xy*30.0 + p.z*11.0));
+}
+
+/* ---------------- ray / field ---------------- */
+bool sphHit(vec3 ro, vec3 rd, vec4 s, out float t0, out float t1){
+  vec3 oc = ro - s.xyz;
+  float b = dot(oc, rd);
+  float h = b*b - (dot(oc, oc) - s.w*s.w);
+  if (h < 0.0) return false;
+  h = sqrt(h);
+  t0 = -b - h; t1 = -b + h;
+  return true;
+}
+float traceSolid(vec3 ro, vec3 rd, int budget){
+  float a0,a1,b0,b1;
+  bool ha = sphHit(ro, rd, uSphA, a0, a1);
+  bool hb = sphHit(ro, rd, uSphB, b0, b1);
+  if (!ha && !hb) return -1.0;
+  float lo = 1e9, hi = -1e9;
+  if (ha){ lo = min(lo, max(a0, 0.0)); hi = max(hi, a1); }
+  if (hb){ lo = min(lo, max(b0, 0.0)); hi = max(hi, b1); }
+  if (lo > hi) return -1.0;
+  // A slightly soft hit radius costs a little fill rate but removes the
+  // stair-stepping that a hard 0.001 threshold prints on small apertures.
+  float tRad = 0.0016;
+  float tt = lo;
+  for (int i = 0; i < MAXSTEPS; i++){
+    if (i >= budget) break;
+    float d = mapCSG(ro + rd*tt);
+    if (d < tRad) return tt;
+    tt += d*0.92;
+    if (tt > hi) break;
+  }
+  return -1.0;
+}
+vec3 calcNormal(vec3 p){
+  vec2 e = vec2(1.0, -1.0) * 0.0018;
+  return normalize( e.xyy*mapCSG(p + e.xyy) + e.yyx*mapCSG(p + e.yyx) +
+                    e.yxy*mapCSG(p + e.yxy) + e.xxx*mapCSG(p + e.xxx) );
+}
+float calcAO(vec3 p, vec3 n){
+  float occ = 0.0, sca = 1.0;
+  for (int i = 0; i < 4; i++){
+    float h = 0.022 + 0.135*float(i);
+    occ += (h - mapCSG(p + n*h)) * sca;
+    sca *= 0.70;
+  }
+  return clamp(1.0 - 2.1*occ, 0.0, 1.0);
+}
+float softShadow(vec3 ro, vec3 rd){
+  float res = 1.0, tt = 0.05;
+  for (int i = 0; i < 16; i++){
+    float h = mapCSG(ro + rd*tt);
+    res = min(res, 8.5*h/tt);
+    tt += clamp(h, 0.020, 0.24);
+    if (res < 0.006 || tt > 3.2) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+/* ---------------- background ---------------- */
+vec3 fogCol(vec3 rd){
+  return mix(vec3(0.021, 0.036, 0.074), vec3(0.005, 0.009, 0.024), smoothstep(-0.12, 0.55, rd.y));
+}
+vec3 background(vec3 rd){
+  vec3 c = mix(vec3(0.021, 0.036, 0.074), vec3(0.005, 0.009, 0.024), smoothstep(-0.12, 0.55, rd.y));
+  float n = fbm2(rd.xz*2.6 + rd.y*1.7 + 4.1);
+  c += vec3(0.055, 0.030, 0.105) * pow(n, 2.6);
+  c += vec3(0.008, 0.040, 0.062) * pow(fbm2(rd.xy*4.3 - 2.7), 3.2);
+  // deterministic star field, world-fixed
+  vec2 suv = vec2(atan(rd.z, rd.x)*0.1591549 + 0.5, asin(clamp(rd.y, -1.0, 1.0))*0.3183099 + 0.5);
+  vec2 g = suv*vec2(360.0, 180.0);
+  vec2 gi = floor(g), gf = fract(g);
+  float hs = hash12(gi + 3.1);
+  if (hs > 0.930){
+    vec2 o = vec2(hash12(gi + 11.37), hash12(gi + 27.71)) - 0.5;
+    float d = length(gf - o);
+    float s = smoothstep(0.17, 0.0, d) * (hs - 0.930)/0.070;
+    c += mix(vec3(0.75, 0.86, 1.0), vec3(1.0, 0.92, 0.80), hash12(gi + 5.5)) * s * 0.85 * smoothstep(-0.05, 0.25, rd.y);
+  }
+  return c;
+}
+
+/* ---------------- hatching for the section view ---------------- */
+float hatchMask(vec3 p){
+  float a = (p.x*0.80 + p.y*0.62 + p.z*0.34)*13.0;
+  return smoothstep(0.40, 0.50, abs(fract(a) - 0.5));
+}
+
+/* ---------------- shading: the solid ---------------- */
+vec3 shadeSolid(vec3 p, vec3 rd, float dist){
+  vec3 n = calcNormal(p);
+  vec4 c = csgRaw(p);
+  float w = matW(c.x, c.y);
+  float seam = 1.0 - smoothstep(0.0, max(uK, 0.002), abs(c.x - c.y));
+
+  vec3 alb = albedoOf(p, w);
+  float ao = calcAO(p, n);
+  // On a difference, w=1 exactly where the -b branch of max(a,-b) won,
+  // i.e. the cavity wall. Note -c.y cannot be used for this: b==0 on the
+  // cavity surface by definition, so it is always 0 there.
+  float cut = (uOp == 2) ? w : 0.0;
+  float sha = softShadow(p + n*0.016, KEY);
+  float dif = max(dot(n, KEY), 0.0);
+  float fil = max(dot(n, FILL), 0.0);
+  float bnc = max(dot(n, normalize(vec3(-KEY.x, 0.85, -KEY.z))), 0.0);
+
+  vec3 hv = normalize(KEY - rd);
+  float spe = pow(max(dot(n, hv), 0.0), 58.0) * sha;
+  float fr  = pow(1.0 - max(dot(n, -rd), 0.0), 4.0);
+
+  vec3 col = vec3(0.0);
+  col += alb * KEY  * 1.02 * dif * sha;
+  col += alb * FILL * 0.34 * fil;
+  col += alb * vec3(0.24, 0.40, 0.62) * 0.22 * bnc;
+  col += alb * vec3(0.10, 0.16, 0.30) * 0.42 * ao;
+  col += vec3(1.0, 0.97, 0.90) * spe * 0.30;
+  // luminous fresnel rim, pulled right down inside the cavity
+  col += mix(vec3(0.30, 0.68, 0.92), vec3(0.92, 0.36, 0.70), w) * fr * mix(0.34, 0.10, cut);
+  // the smooth-union fillet glows: this is the k you are dragging.
+  // seam peaks where da == -db, which for a difference is precisely the
+  // rim where the carve breaks out through the surface.
+  col += vec3(1.0, 0.84, 0.58) * seam * mix(0.30, 0.62, cut) * (0.30 + 0.70*ao);
+  col += mix(COL_A, COL_B, w) * 0.035;
+
+  // the hole is dark: an order-0 difference cannot be lit from inside
+  col = mix(col, col*0.16 + vec3(0.008, 0.016, 0.036), cut*0.88);
+
+  return mix(col, fogCol(rd), clamp(1.0 - exp(-pow(max(dist - 2.2, 0.0)*0.105, 2.0)), 0.0, 0.80));
+}
+
+/* ---------------- shading: the cut face ---------------- */
+vec3 shadeCap(vec3 p, vec4 c){
+  float d = c.z;
+  vec3 col = COL_C * (0.44 + 0.30*smoothstep(-0.55, 0.0, d));
+  // iso-contours of the boolean field across the cut plane
+  float iso = abs(fract(d*6.5) - 0.5);
+  col = mix(col, vec3(0.05, 0.07, 0.13), smoothstep(0.40, 0.495, iso)*0.62);
+  // fine technical hatch
+  col = mix(col, col*0.80, hatchMask(p)*0.30);
+  // operand tint: cyan where A wins, orchid where B wins
+  col = mix(col, mix(col, vec3(0.18, 0.62, 0.80), 0.35), 1.0 - matW(c.x, c.y));
+  // hot outline where the section boundary is
+  col = mix(col, vec3(1.0, 0.96, 0.84), smoothstep(0.034, 0.0, abs(d))*0.90);
+  col += COL_C * 0.10;
+  return col;
+}
+
+/* ---------------- shading: the floor ---------------- */
+vec3 shadeFloor(vec3 p, vec3 rd, float dist){
+  vec3 n = vec3(0.0, 1.0, 0.0);
+  float r = length(p.xz);
+  float near = exp(-r*0.17);
+
+  vec2 g1 = abs(fract(p.xz) - 0.5);
+  vec2 g4 = abs(fract(p.xz*0.25) - 0.5);
+  float fine   = smoothstep(0.468, 0.500, max(g1.x, g1.y));
+  float coarse = smoothstep(0.484, 0.500, max(g4.x, g4.y));
+
+  vec3 col = vec3(0.011, 0.017, 0.032);
+  col += vec3(0.022, 0.060, 0.082) * fine * near;
+  col += vec3(0.050, 0.130, 0.175) * coarse * near * 0.9;
+
+  float fres = 0.035 + 0.62*pow(1.0 - max(-rd.y, 0.0), 4.0);
+
+  if (r < 8.0 && fres > 0.075){
+    vec3 org = p + n*0.012;
+    vec3 rrd = reflect(rd, n);
+    vec2 nsp = vec2(vnoise(p.xz*2.6), vnoise(p.xz*2.6 + 11.3)) - 0.5;
+    rrd = normalize(rrd + vec3(nsp.x, 0.0, nsp.y)*0.055);
+    float tr = traceSolid(org, rrd, 34);
+    if (tr > 0.0){
+      vec3 hp = org + rrd*tr;
+      vec3 hn = calcNormal(hp);
+      vec4 hc = csgRaw(hp);
+      float hw = matW(hc.x, hc.y);
+      vec3 halb = albedoOf(hp, hw);
+      float hd = max(dot(hn, KEY), 0.0);
+      float hr = pow(1.0 - max(dot(hn, -rrd), 0.0), 2.6);
+      col += (halb*(0.13 + 0.62*hd) + mix(vec3(0.32,0.70,0.95), vec3(0.95,0.38,0.72), hw)*hr*0.55) * fres * 0.95;
+    }
+  }
+
+  if (r < 6.0){
+    float sh = softShadow(p + n*0.02, KEY);
+    col *= mix(0.34, 1.0, sh);
+  }
+
+  return mix(col, fogCol(rd), clamp(1.0 - exp(-pow(max(dist - 1.6, 0.0)*0.150, 2.0)), 0.0, 0.92));
+}
+
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 q  = (fc - 0.5*uRes) / uRes.y;
+  q.x -= 0.13;      // composed: clears the control panel without crowding the frame
+  q.y -= 0.045;     // and a touch above centre
+
+  vec3 ro = uCamP;
+  vec3 rd = normalize(uCamM * vec3(q, 2.0));
+
+  vec3 col;
+
+  /* ---- cross-section: intersect the view ray with the cutting plane ---- */
+  float tCap = -1.0;
+  vec4 capC = vec4(0.0);
+  vec3 capP = vec3(0.0);
+  float ghost = 0.0;
+  if (uSlice > 0.5){
+    float dn = dot(rd, uSliceN);
+    if (abs(dn) > 1e-5){
+      float tP = (uSliceD - dot(ro, uSliceN)) / dn;
+      if (tP > 0.05){
+        vec3 pp = ro + rd*tP;
+        // The guard must be "is this point inside the solid", evaluated
+        // where the ray meets the plane. Testing the plane's own side
+        // (dot(pp,N) < D) is always false by construction of tP, and
+        // wrongly rejects the whole cap when the camera is on the far
+        // side — which it is for the Y and X sections.
+        vec4 cc = csgRaw(pp);
+        if (cc.z < 0.0){ tCap = tP; capC = cc; capP = pp; }
+        else if (cc.y < 0.0){
+          // material the boolean removed — show it as a ghost hatch
+          ghost = smoothstep(0.0, -0.34, cc.z) * hatchMask(pp);
+        }
+      }
+    }
+  }
+
+  float tObj = traceSolid(ro, rd, MAXSTEPS);
+
+  float tFl = 1e9;
+  if (rd.y < -1e-4){
+    float tf = (FLOOR_Y - ro.y) / rd.y;
+    if (tf > 0.0) tFl = tf;
+  }
+  if (tFl < 1e8 && uSlice > 0.5 && dot(ro + rd*tFl, uSliceN) > uSliceD) tFl = 1e9;
+
+  // the sky is the most expensive part of the shader (2 fbm + star grid),
+  // so it is only evaluated on rays that reach it.
+  //
+  // Where the cut plane meets the solid's *surface* the two hits describe
+  // the same surface, and which one the marcher reaches first depends on
+  // its step schedule and its epsilon — a race between tCap and tObj is
+  // therefore not stable enough to draw a cap from. The cap is instead
+  // authoritative wherever the plane passes through the solid, which is
+  // decided once, from the plane crossing alone.
+  bool capShown = (tCap > 0.0) && (tFl < 1e8 ? tCap < tFl : true);
+  if (capShown){
+    col = shadeCap(capP, capC);
+  } else if (tObj > 0.0 && tObj < tFl){
+    col = shadeSolid(ro + rd*tObj, rd, tObj);
+  } else if (tFl < 1e8){
+    col = shadeFloor(ro + rd*tFl, rd, tFl);
+  } else {
+    col = background(rd);
+  }
+
+  if (ghost > 0.0) col = mix(col, vec3(1.0, 0.78, 0.36), ghost*0.30);
+
+  col = aces(col*1.06);
+  col = pow(col, vec3(0.4545));
+  // keep the operand hues: the cool fill washes the ice tone toward grey
+  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = clamp(mix(vec3(lum), col, 1.22), 0.0, 1.0);
+  // vignette + grain. The grain is keyed to the pixel, never to the frame
+  // index: a frame-indexed term would make two cold loads differ.
+  vec2 vg = fc/uRes;
+  col *= 0.62 + 0.38*pow(16.0*vg.x*vg.y*(1.0-vg.x)*(1.0-vg.y), 0.16);
+  col += (hash13(vec3(fc, 17.0)) - 0.5) * 0.011;
+
+  gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+/* ---------- compile ---------- */
+const tele = document.getElementById('tele');
+function fail(msg){ tele.textContent = 'ERROR: ' + msg; window.__probe.error = msg; }
+
+let prog = null, U = {};
+function buildProgram(){
+  if (!gl) { fail('no webgl context'); return false; }
+  function sh(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      const log = gl.getShaderInfoLog(s) || '';
+      fail('shader: ' + log.slice(0, 220));
+      console.error(log);
+      return null;
+    }
+    return s;
+  }
+  const v = sh(gl.VERTEX_SHADER, VS), f = sh(gl.FRAGMENT_SHADER, FS);
+  if (!v || !f) return false;
+  const p = gl.createProgram();
+  gl.attachShader(p, v); gl.attachShader(p, f); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)){ fail('link: ' + gl.getProgramInfoLog(p)); return false; }
+  prog = p;
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(p, 'aPos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const names = ['uRes','uCamM','uCamP','uMatA','uOffA','uSphA','uMatB','uOffB','uSphB',
+                 'uOp','uShapeA','uShapeB','uK','uSlice','uSliceN','uSliceD','uFrame'];
+  for (const n of names) U[n] = gl.getUniformLocation(p, n);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  return true;
+}
+const ok = buildProgram();
+
+/* =====================================================================
+   Render
+   ===================================================================== */
+let frameIdx = 0;
+function setBuffer(w, h){
+  w = Math.max(2, w | 0); h = Math.max(2, h | 0);
+  if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; }
+  if (gl) gl.viewport(0, 0, w, h);
+}
+function fullSize(){
+  const cw = cv.clientWidth || 1280, ch = cv.clientHeight || 800;
+  return [Math.round(RENDER_H * cw / Math.max(1, ch)), RENDER_H];
+}
+
+const SHAPE_IDX = {}; SHAPES.forEach((s, i) => SHAPE_IDX[s.n] = i);
+
+function draw(time){
+  if (!prog) return;
+  const c = choreo(time);
+  const cam = camera(time, c);
+
+  const matA = M3.scale(c.matA, c.sA);
+  const matB = M3.scale(c.matB, c.sB);
+  const offA = M3.xform(matA, c.posA);
+  const offB = M3.xform(matB, c.posB);
+  const rA = BOUND[SHAPE_IDX[G.shapeA]] * c.sA;
+  const rB = BOUND[SHAPE_IDX[G.shapeB]] * c.sB;
+  const sn = G.axis === 'X' ? [1,0,0] : G.axis === 'Y' ? [0,1,0] : [0,0,1];
+
+  gl.useProgram(prog);
+  gl.uniform2f(U.uRes, cv.width, cv.height);
+  gl.uniformMatrix3fv(U.uCamM, false, cam.mat);
+  gl.uniform3f(U.uCamP, cam.eye[0], cam.eye[1], cam.eye[2]);
+  gl.uniformMatrix3fv(U.uMatA, false, matA); gl.uniform3f(U.uOffA, offA[0], offA[1], offA[2]);
+  gl.uniform4f(U.uSphA, c.posA[0], c.posA[1], c.posA[2], rA + 0.22);
+  gl.uniformMatrix3fv(U.uMatB, false, matB); gl.uniform3f(U.uOffB, offB[0], offB[1], offB[2]);
+  gl.uniform4f(U.uSphB, c.posB[0], c.posB[1], c.posB[2], rB + 0.22);
+  gl.uniform1i(U.uOp, OPS.indexOf(G.op));
+  gl.uniform1i(U.uShapeA, SHAPE_IDX[G.shapeA]);
+  gl.uniform1i(U.uShapeB, SHAPE_IDX[G.shapeB]);
+  gl.uniform1f(U.uK, k);
+  gl.uniform1f(U.uSlice, sliceOn);
+  gl.uniform3f(U.uSliceN, sn[0], sn[1], sn[2]);
+  gl.uniform1f(U.uSliceD, cut);
+  gl.uniform1f(U.uFrame, frameIdx);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  lastPose = { c, cam };
+}
+let lastPose = null;
+
+window.__probe = { ready:false, frames:0, warm:0, prime:0, t:0, op:'', k:0, res:'' };
+window.__ready = false;
+
+/* ---------- frame loop: warm up small, prime at full res, then run ---------- */
+let mode = 0, warm = 0, prime = 0;
+let lastMs = performance.now(), avgMs = 0, fps = 0;
+
+function frame(){
+  requestAnimationFrame(frame);
+  if (!prog) return;
+  const now = performance.now();
+  const dt = now - lastMs; lastMs = now;
+  if (mode >= 2){ avgMs = avgMs ? avgMs*0.82 + dt*0.18 : dt; fps = 1000/Math.max(avgMs, 0.001); }
+
+  if (mode === 0){                       // warm-up: tiny buffer, hero pose pinned
+    setBuffer(176, 110);
+    draw(0);
+    warm++;
+    if (warm >= 6){ setBuffer(fullSize()[0], fullSize()[1]); mode = 1; prime = 0; }
+    return;
+  }
+  if (mode === 1){                       // prime: full internal res, still pinned
+    draw(0);
+    prime++;
+    if (prime >= 2){
+      mode = 2;
+      window.__ready = true;
+      window.__probe.ready = true;
+      window.__probe.warm = warm; window.__probe.prime = prime;
+    }
+    return;
+  }
+  if (playing) t += DT * speed;
+  draw(t);
+  frameIdx++;
+  if (frameIdx % 6 === 1) renderTele();   // ~10 Hz: DOM writes are not free
+  window.__probe.frames = frameIdx;
+  window.__probe.t = +t.toFixed(3);
+  window.__probe.fps = +fps.toFixed(2);
+  window.__probe.frameMs = +avgMs.toFixed(1);
+  window.__probe.op = G.op; window.__probe.k = k; window.__probe.slice = G.slice;
+  if (lastPose) window.__probe.posB = lastPose.c.posB.map(v => +v.toFixed(3));
+}
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+function mkSegs(id, group, items, cls){
+  const host = document.getElementById(id);
+  for (const name of items){
+    const b = document.createElement('button');
+    b.textContent = name; b.dataset.g = group; b.dataset.v = name;
+    b.addEventListener('click', () => { G[group] = name; syncUI(); });
+    host.appendChild(b);
+  }
+  if (cls) host.classList.add(cls);
+}
+mkSegs('opSegs',  'op',     OPS);
+mkSegs('aSegs',   'shapeA', SHAPES.map(s => s.n));
+mkSegs('bSegs',   'shapeB', SHAPES.map(s => s.n));
+mkSegs('sliceSegs','slice', ['Off', 'On']);
+mkSegs('axisSegs','axis',   AXES);
+
+const kSlider = document.getElementById('kSlider'),  kOut  = document.getElementById('kOut');
+const spSlider= document.getElementById('spSlider'), spOut = document.getElementById('spOut');
+const cutSlider=document.getElementById('cutSlider'),cutOut= document.getElementById('cutOut');
+const opNote  = document.getElementById('opNote');
+const sliceNote = document.getElementById('sliceNote');
+const pauseBtn= document.getElementById('pauseBtn');
+
+function fill(sl){ const p = (sl.value - sl.min)/(sl.max - sl.min)*100; sl.style.setProperty('--p', p + '%'); }
+function syncUI(){
+  document.querySelectorAll('.segs button').forEach(b => b.classList.toggle('on', G[b.dataset.g] === b.dataset.v));
+  k    = +kSlider.value/100;   kOut.textContent   = k.toFixed(2);
+  speed= +spSlider.value/100;  spOut.textContent  = speed.toFixed(2) + '×';
+  cut  = +cutSlider.value/100; cutOut.textContent = cut.toFixed(2);
+  fill(kSlider); fill(spSlider); fill(cutSlider);
+  opNote.textContent   = OPNOTE[OPS.indexOf(G.op)] + (k > 0.005 ? ' → sm' + (G.op === 'Union' ? 'in' : 'ax') : ' (hard)');
+  sliceOn = (G.slice === 'On') ? 1 : 0;
+  sliceNote.textContent = sliceOn ? 'plane ' + G.axis + ' = ' + cut.toFixed(2) : 'off';
+  pauseBtn.classList.toggle('on', playing);
+  pauseBtn.textContent = playing ? 'Pause' : 'Play';
+  renderTele();
+}
+const MAXSTEPS_UI = 80;
+
+function renderTele(){
+  const p = lastPose ? lastPose.c.posB : [0,0,0];
+  const gap = lastPose ? Math.hypot(p[0], p[1], p[2]) : 0;
+  tele.innerHTML =
+    'op        <b>' + G.op.toUpperCase() + '</b>  <s>' + OPNOTE[OPS.indexOf(G.op)] + '</s>\n' +
+    'smin k    <b>' + k.toFixed(2) + '</b>  ' + (k > 0.005 ? 'fillet on' : 'exact edge') + '\n' +
+    'A         <i>' + G.shapeA + '</i>    B  <i>' + G.shapeB + '</i>\n' +
+    'section   ' + (sliceOn ? '<b>' + G.axis + '=' + cut.toFixed(2) + '</b>' : 'off') + '\n' +
+    'B radius  <b>' + gap.toFixed(2) + '</b>   t  <b>' + t.toFixed(2) + '</b> s\n' +
+    'trace     ' + MAXSTEPS_UI + ' steps · ' + (sliceOn ? 'cap on' : 'cap off') + '\n' +
+    'render    ' + cv.width + '×' + cv.height + ' → ' + cv.clientWidth + '×' + cv.clientHeight + '\n' +
+    'frame     <b>' + (avgMs ? avgMs.toFixed(0) : '–') + ' ms</b>   ' + fps.toFixed(2) + ' fps';
+}
+
+kSlider.addEventListener('input', syncUI);
+spSlider.addEventListener('input', syncUI);
+cutSlider.addEventListener('input', syncUI);
+pauseBtn.addEventListener('click', () => { playing = !playing; syncUI(); });
+document.getElementById('stepBtn').addEventListener('click', () => { playing = false; t += DT; syncUI(); });
+document.getElementById('resetBtn').addEventListener('click', () => {
+  t = 0; speed = 1; k = 0.34; cut = 0.10; playing = true;
+  userYaw = 0; userPitch = 0; userZoom = 0;
+  G.op = 'Difference'; G.shapeA = 'Box'; G.shapeB = 'Sphere'; G.slice = 'Off'; G.axis = 'Z';
+  kSlider.value = 34; spSlider.value = 100; cutSlider.value = 10;
+  syncUI();
+});
+
+addEventListener('keydown', e => {
+  const kk = e.key.toLowerCase();
+  if (kk === ' '){ playing = !playing; syncUI(); e.preventDefault(); }
+  else if (kk === 's'){ G.slice = G.slice === 'On' ? 'Off' : 'On'; syncUI(); }
+  else if (kk === '1'){ G.op = 'Union'; syncUI(); }
+  else if (kk === '2'){ G.op = 'Intersect'; syncUI(); }
+  else if (kk === '3'){ G.op = 'Difference'; syncUI(); }
+});
+
+/* drag to orbit / wheel to dolly */
+let drag = null;
+cv.addEventListener('pointerdown', e => { drag = { x:e.clientX, y:e.clientY, yaw:userYaw, pit:userPitch }; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  userYaw   = drag.yaw + (e.clientX - drag.x)*0.0055;
+  userPitch = Math.max(-1.2, Math.min(1.25, drag.pit + (e.clientY - drag.y)*0.0045));
+});
+cv.addEventListener('pointerup',   () => { drag = null; });
+cv.addEventListener('pointercancel', () => { drag = null; });
+cv.addEventListener('wheel', e => { userZoom = Math.max(-0.55, Math.min(0.85, userZoom + e.deltaY*0.0009)); e.preventDefault(); }, { passive:false });
+
+addEventListener('resize', () => { if (mode >= 1) setBuffer(fullSize()[0], fullSize()[1]); });
+
+syncUI();
+if (ok) requestAnimationFrame(frame);
+else { window.__ready = true; }
+</script>
+</body>
+</html>

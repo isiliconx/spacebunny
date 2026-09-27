@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>№ 40 — Type Specimen</title>
+<style>
+/* ============================================================
+   TYPE SPECIMEN — system font stacks only, zero webfonts.
+   Vertical metrics (cap, x-height, descent) and the resolved
+   family are read back from the rasterised face, not hard-coded.
+   ============================================================ */
+:root{
+  --ink:#f3ede1; --bg:#0e1115; --bg2:#151a21; --bg3:#222b37;
+  --acc:#ff6a4d;      /* proof-marking red  */
+  --acc2:#5fdcc0;     /* measuring teal     */
+  --mut:#a9b6c5; --mut2:#7e8d9e; --hair:#2e3845;
+
+  --stack:'Inter','Helvetica Neue',Arial,sans-serif;
+  --mono:'JetBrains Mono','Cascadia Mono','DejaVu Sans Mono',ui-monospace,monospace;
+
+  --b:17px;          /* base size                          */
+  --r:1.25;          /* scale ratio                        */
+  --lh:1.45;         /* body leading, unitless             */
+  --measure:64;      /* measure, in ch                     */
+}
+*,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
+html,body{ height:100%; }
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--mono);
+  overflow:hidden; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  /* the ground itself is a gradient — the largest single colour on the
+     sheet must never resolve to one flat value */
+  background-image:
+    linear-gradient(158deg,
+      var(--bg3) 0%, var(--bg2) 26%, var(--bg) 50%,
+      var(--bg) 58%, var(--bg2) 80%, var(--bg3) 100%);
+}
+#grain{ position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:80; opacity:.62; mix-blend-mode:overlay; }
+
+/* paper mottle — the ground is never one flat value */
+body::before{
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(118% 86% at 8% -14%, rgba(226,85,60,.16), transparent 56%),
+    radial-gradient(94% 72% at 102% 112%, rgba(84,203,176,.14), transparent 60%),
+    radial-gradient(64% 52% at 72% -6%, rgba(255,255,255,.07), transparent 68%);
+}
+/* faint measured grid across the stage, on the body baseline */
+.stage::before{
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(255,255,255,.026) 0 1px, transparent 1px var(--b)),
+    repeating-linear-gradient(to right, rgba(255,255,255,.018) 0 1px, transparent 1px 60px);
+  mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.25) 60%, rgba(0,0,0,.55));
+  -webkit-mask-image:linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.25) 60%, rgba(0,0,0,.55));
+}
+.stage > *{ position:relative; z-index:1; }
+
+.shell{ position:fixed; inset:0; }
+.rail,.stage{ position:absolute; top:0; transform-origin:0 0; overflow:hidden; }
+
+/* ─────────────────────────── rail ─────────────────────────── */
+.rail{
+  left:0; background:linear-gradient(176deg,var(--bg2),var(--bg) 72%);
+  border-right:1px solid var(--hair);
+  padding:24px 20px 16px; display:flex; flex-direction:column; gap:11px;
+}
+.rail::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:radial-gradient(80% 42% at 50% 0%, rgba(255,255,255,.05), transparent 70%);
+}
+.rail > *{ position:relative; z-index:1; }
+.num{ font-size:10.5px; letter-spacing:.26em; color:var(--acc); text-transform:uppercase; }
+.rail h1{
+  font-family:var(--stack); font-size:26px; line-height:1.0; font-weight:700;
+  letter-spacing:-.022em; margin:7px 0 6px;
+}
+.sub{ font-size:10.5px; line-height:1.56; color:var(--mut); max-width:35ch; }
+.rule{ border-top:1px solid var(--hair); }
+
+.grp{ display:flex; flex-direction:column; gap:5px; }
+.grp-hd{ display:flex; justify-content:space-between; align-items:baseline;
+  font-size:10.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--mut2); }
+.grp-hd b{ color:var(--ink); font-weight:400; letter-spacing:.02em; font-size:11.5px; }
+.grp-hd b em{ font-style:normal; color:var(--acc2); }
+
+.stacks{ display:flex; flex-direction:column; gap:1px; }
+.stack{
+  display:flex; align-items:center; gap:8px; background:none;
+  border:1px solid transparent; border-radius:2px; color:var(--mut);
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.03em;
+  text-align:left; cursor:pointer; padding:4px 6px; width:100%;
+}
+.stack .aa{ font-family:var(--sc); font-size:16px; line-height:1; color:var(--ink); width:22px; flex:none; }
+.stack .nm{ flex:1; }
+.stack .nt{ font-size:9.5px; color:var(--mut2); letter-spacing:.05em; }
+.stack:hover{ background:rgba(255,255,255,.055); color:var(--ink); }
+.stack.on{ background:rgba(226,85,60,.14); border-color:rgba(226,85,60,.5); color:var(--ink); }
+.stack.on .nt{ color:var(--acc); }
+
+input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:13px; background:none; cursor:pointer; }
+input[type=range]::-webkit-slider-runnable-track{ height:2px; background:var(--hair); border-radius:2px; }
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none; width:10px; height:10px;
+  margin-top:-4px; border-radius:50%; background:var(--ink); border:none;
+  box-shadow:0 0 0 3px var(--bg2);
+}
+input[type=range]:hover::-webkit-slider-thumb{ background:var(--acc); }
+
+.wchips{ display:flex; flex-wrap:wrap; gap:3px; }
+.wchips i{ font-style:normal; font-size:9.5px; letter-spacing:.03em; padding:2px 4px;
+  border:1px solid var(--hair); color:var(--mut2); border-radius:2px; }
+.wchips i.on{ border-color:rgba(84,203,176,.55); color:var(--acc2); }
+.wchips i.alias{ border-color:transparent; opacity:.5; }
+.xr{ font-size:10.5px; color:var(--mut); letter-spacing:.02em; }
+.xr b{ color:var(--ink); font-weight:400; }
+
+.tech{ margin-top:auto; border-top:1px solid var(--hair); padding-top:10px; }
+.tech span{ display:block; font-size:10px; letter-spacing:.24em; color:var(--acc);
+  text-transform:uppercase; margin-bottom:6px; }
+.tech p{ font-size:10.5px; line-height:1.6; color:var(--mut2); letter-spacing:.005em; }
+.tech p em{ font-style:normal; color:var(--acc2); }
+
+/* ─────────────────────────── stage ─────────────────────────── */
+.stage{ left:292px; padding:22px 34px 14px; display:flex; flex-direction:column; gap:11px; }
+
+.bar{ display:flex; justify-content:space-between; align-items:center; gap:18px;
+  font-size:10.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--mut2);
+  border-bottom:1px solid var(--hair); padding-bottom:8px; }
+.bar b{ color:var(--ink); font-weight:400; letter-spacing:.04em; }
+.bar em{ font-style:normal; color:var(--acc); }
+.seg{ display:flex; gap:2px; border:1px solid var(--hair); padding:2px; border-radius:3px; }
+.seg button{
+  background:none; border:0; border-radius:2px; color:var(--mut);
+  font-family:var(--mono); font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; padding:4px 8px; cursor:pointer;
+}
+.seg button.on{ color:var(--bg); background:var(--acc2); }
+
+.sec-hd{ display:flex; justify-content:space-between; align-items:baseline;
+  font-size:10.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--mut2);
+  margin-bottom:7px; }
+.sec-hd b{ color:var(--ink); font-weight:400; letter-spacing:.04em; }
+
+/* display */
+.dsp{ position:relative; }
+.dsp-gut{ position:absolute; left:0; top:0; width:58px; }
+.mtx{ position:absolute; left:0; display:flex; align-items:center; gap:4px;
+  font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--mut2); white-space:nowrap; }
+.mtx s{ text-decoration:none; color:var(--acc2); width:20px; }
+.mtx u{ text-decoration:none; display:block; width:28px; border-top:1px solid var(--acc); opacity:.8; }
+.mtx.base u{ border-top-color:var(--mut2); opacity:.7; }
+.mtx.base s{ color:var(--mut2); }
+.dsp-word{ font-family:var(--stack); margin-left:58px; white-space:nowrap;
+  letter-spacing:-.028em; font-weight:700; }
+.dsp-foot{ display:flex; justify-content:space-between; align-items:baseline; margin-top:7px;
+  font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--mut2); }
+.dsp-foot b{ color:var(--ink); font-weight:400; }
+.dsp-foot em{ font-style:normal; color:var(--acc2); }
+
+/* waterfall */
+.wf{ display:grid; grid-template-columns:repeat(7,1fr); border-top:1px solid var(--hair); }
+.wf-c{ padding:8px 11px 0 0; border-right:1px solid var(--hair); overflow:hidden; }
+.wf-c:last-child{ border-right:0; padding-right:0; }
+.wf-c .n{ font-size:10.5px; letter-spacing:.11em; color:var(--acc); }
+.wf-c .px{ font-size:10.5px; color:var(--mut2); margin:1px 0 7px; letter-spacing:.02em; }
+.wf-c .px b{ color:var(--mut); font-weight:400; }
+.wf-box{ position:relative; font-family:var(--stack); white-space:nowrap; }
+.wf-box span{ position:relative; z-index:1; letter-spacing:-.02em; }
+.wf-box i{ position:absolute; left:-6px; width:2px; background:var(--acc); opacity:.75; }
+.wf-box u{ position:absolute; left:-6px; width:2px; background:var(--mut2); opacity:.9; text-decoration:none; }
+.wf-t{ font-family:var(--stack); font-size:9.5px; line-height:1.4; color:var(--mut); margin-top:6px; opacity:.72; }
+
+/* reading */
+.read{ display:grid; grid-template-columns:auto 1fr; gap:0 36px; align-items:start; }
+.read-body{
+  font-family:var(--stack); font-size:var(--b); line-height:calc(var(--b) * var(--lh));
+  width:calc(var(--measure) * 1ch); hyphens:auto;
+}
+.read-body p + p{ text-indent:1.5em; }
+.read-body::first-letter{
+  float:left; font-size:calc(var(--b) * 3.7); line-height:.79; padding:.05em .08em 0 0;
+  font-weight:700; color:var(--acc);
+}
+.ruler{ display:flex; margin-top:9px; width:calc(var(--measure) * 1ch); border-top:1px solid var(--hair); padding-top:3px; }
+.ruler s{ text-decoration:none; flex:1; height:4px; border-left:1px solid rgba(84,203,176,.3); }
+.ruler s.t{ border-left-color:var(--acc2); height:7px; }
+.notes{ display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; align-content:start; }
+.mtr u{ text-decoration:none; display:block; font-size:10.5px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--mut2); margin-bottom:1px; }
+.mtr b{ font-weight:400; font-size:13px; letter-spacing:.01em; color:var(--ink); }
+.mtr b em{ font-style:normal; color:var(--mut); font-size:10.5px; }
+.note-p{ grid-column:1/-1; font-family:var(--stack); font-size:11.5px; line-height:1.58;
+  color:var(--mut); border-left:1px solid var(--acc); padding-left:10px; margin-top:3px; }
+
+/* letterforms + weights share a row */
+.duo{ display:grid; grid-template-columns:1fr 1fr; gap:0 30px; border-top:1px solid var(--hair); padding-top:9px; }
+.duo > *{ min-width:0; }
+.lf-r{ display:flex; align-items:baseline; gap:12px; margin-bottom:3px; }
+.lf-r s{ text-decoration:none; font-size:9.5px; letter-spacing:.1em; color:var(--mut2);
+  text-transform:uppercase; width:32px; flex:none; }
+.lf-r u{ text-decoration:none; font-family:var(--stack); white-space:nowrap;
+  letter-spacing:.05em; overflow:hidden; display:block; flex:1 1 auto; min-width:0; }
+.lf-r.dim u{ color:var(--mut); }
+
+.wl-g{ display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); }
+.wl-c{ border-right:1px solid var(--hair); padding-right:7px; overflow:hidden; }
+.wl-c:last-child{ border-right:0; padding-right:0; }
+.wl-s{ font-family:var(--stack); white-space:nowrap; line-height:1; letter-spacing:-.02em; margin-bottom:5px; }
+.wl-n{ font-size:10.5px; letter-spacing:.05em; color:var(--mut); }
+.wl-r{ font-size:9.5px; letter-spacing:.02em; color:var(--mut2); margin-top:1px; white-space:nowrap; }
+.wl-c.off .wl-s{ color:var(--mut2); opacity:.38; }
+.wl-c.native .wl-r{ color:var(--acc2); }
+
+.foot{ display:flex; justify-content:space-between; align-items:flex-start; gap:22px;
+  font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--mut2);
+  border-top:1px solid var(--hair); padding-top:8px; line-height:1.62; margin-top:auto; }
+.foot em{ font-style:normal; color:var(--acc); }
+.foot .m{ color:var(--mut2); font-size:9.5px; letter-spacing:.07em; text-align:center; }
+.foot .m b{ color:var(--acc2); font-weight:400; }
+.foot .n{ white-space:nowrap; }
+
+/* entrance — one deterministic pass, gated by __ready */
+.rise{ opacity:0; transform:translateY(6px); }
+@media (prefers-reduced-motion:no-preference){
+  .rise{ transition:opacity .40s ease, transform .40s cubic-bezier(.2,.7,.3,1); }
+}
+</style>
+</head>
+<body>
+<canvas id="grain" aria-hidden="true"></canvas>
+
+<aside class="rail" id="rail">
+  <div class="rise" data-d="0">
+    <div class="num">№ 40 — Projects</div>
+    <h1>Type<br>Specimen</h1>
+    <p class="sub">No webfont is loaded. Every glyph comes from a face already installed on the machine, reached through its generic stack.</p>
+  </div>
+
+  <div class="grp rise" data-d="1">
+    <div class="grp-hd"><span>Font stack</span><b id="vStack">Inter</b></div>
+    <div class="stacks" id="stacks"></div>
+    <div class="xr">→ resolves to <b id="vRes">—</b></div>
+  </div>
+
+  <div class="grp rise" data-d="2">
+    <div class="grp-hd"><span>Base size</span><b id="vBase">17 px</b></div>
+    <input type="range" id="sBase" min="13" max="23" step="0.5" value="17" aria-label="base size">
+  </div>
+  <div class="grp rise" data-d="3">
+    <div class="grp-hd"><span>Scale ratio</span><b id="vRatio">1.250</b></div>
+    <input type="range" id="sRatio" min="1.10" max="1.50" step="0.005" value="1.25" aria-label="scale ratio">
+  </div>
+  <div class="grp rise" data-d="4">
+    <div class="grp-hd"><span>Leading</span><b id="vLead">1.45</b></div>
+    <input type="range" id="sLead" min="1.10" max="1.85" step="0.01" value="1.45" aria-label="leading">
+  </div>
+  <div class="grp rise" data-d="5">
+    <div class="grp-hd"><span>Measure</span><b id="vMeas">64 ch</b></div>
+    <input type="range" id="sMeas" min="44" max="86" step="1" value="64" aria-label="measure">
+  </div>
+
+  <div class="rule rise" data-d="6"></div>
+
+  <div class="grp rise" data-d="7">
+    <div class="grp-hd"><span>Weights in face</span><b id="vW">—</b></div>
+    <div class="wchips" id="wchips"></div>
+    <div class="xr">x ⁄ cap = <b id="vX">—</b></div>
+  </div>
+
+  <div class="tech rise" data-d="8">
+    <span>Technique</span>
+    <p>Modular scale <em>base × ratioⁿ</em> · cap-height, x-height and descent scanned from the rasterised alpha channel · resolved family and weight support recovered by <em>FNV-1a hashing</em> the glyph bitmap against 16 installed faces.</p>
+  </div>
+</aside>
+
+<main class="stage" id="stage">
+  <div class="bar rise" data-d="0">
+    <span><b>Specimen</b> &nbsp;/&nbsp; scale · measure · letterforms</span>
+    <span>base <em id="barB">17.0</em> · ratio <em id="barR">1.250</em></span>
+    <span class="seg">
+      <button data-th="ink" class="on">Ink</button>
+      <button data-th="paper">Paper</button>
+    </span>
+  </div>
+
+  <section class="rise" data-d="1">
+    <div class="dsp" id="dsp">
+      <div class="dsp-gut" id="dspGut"></div>
+      <div class="dsp-word" id="dspWord">Hamburgefonstiv</div>
+    </div>
+    <div class="dsp-foot">
+      <span>display <b id="vDisp">—</b> &nbsp;·&nbsp; step <b>+7</b> · leading <b id="vDispLh">—</b></span>
+      <span><em id="vWidth">—</em> wide · tracking −2.8%</span>
+    </div>
+  </section>
+
+  <section class="rise" data-d="2">
+    <div class="sec-hd"><span>Modular scale</span><b id="vWf">—</b></div>
+    <div class="wf" id="wf"></div>
+  </section>
+
+  <section class="rise" data-d="3">
+    <div class="sec-hd"><span>Reading text</span><b id="vRead">—</b></div>
+    <div class="read">
+      <div>
+        <div class="read-body" id="readBody"></div>
+        <div class="ruler" id="ruler"></div>
+      </div>
+      <div class="notes">
+        <div class="mtr"><u>Measure</u><b><em id="nMeas">—</em></b></div>
+        <div class="mtr"><u>X-height</u><b><em id="nX">—</em></b></div>
+        <div class="mtr"><u>Cap height</u><b><em id="nCap">—</em></b></div>
+        <div class="mtr"><u>Ascender</u><b><em id="nAsc">—</em></b></div>
+        <div class="mtr"><u>Descent</u><b><em id="nDesc">—</em></b></div>
+        <div class="mtr"><u>Line box</u><b><em id="nBox">—</em></b></div>
+        <div class="mtr"><u>Family</u><b><em id="nFam">—</em></b></div>
+        <div class="mtr"><u>Weights</u><b><em id="nW">—</em></b></div>
+        <p class="note-p" id="noteP">—</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="duo rise" data-d="4">
+    <section class="lf">
+      <div class="sec-hd"><span>Letterforms</span><b id="vLf">—</b></div>
+      <div class="lf-r"><s>Cap</s><u id="lfA">ABCDEFGHIJKLMNOPQRSTUVWXYZ</u></div>
+      <div class="lf-r dim"><s>Lower</s><u id="lfB">abcdefghijklmnopqrstuvwxyz</u></div>
+      <div class="lf-r dim"><s>Fig</s><u id="lfC">0123456789 &amp;@#%?!()[]{}*&#92;†‡§¶·—–…&#8220;&#8221;&#8216;&#8217;/</u></div>
+    </section>
+    <section class="wl">
+      <div class="sec-hd"><span>Weights</span><b id="vWl">—</b></div>
+      <div class="wl-g" id="wl"></div>
+    </section>
+  </div>
+
+  <div class="foot rise" data-d="5">
+    <span class="n">№ 40 <em>type-specimen</em></span>
+    <span class="m">modular scale <b>base × ratioⁿ</b> · vertical metrics from <b>canvas TextMetrics</b> + alpha ink-bounds · family &amp; weight support by <b>FNV-1a bitmap hashing</b> · <b>0 network requests, 0 webfonts</b></span>
+    <span class="n" id="footC">—</span>
+  </div>
+</main>
+
+<script>
+"use strict";
+/* ==================================================================
+   0 · deterministic noise (mulberry32) — paper tooth + coarse
+       mottle, both baked before the first frame.
+   ================================================================== */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const GRAIN_SEED = 0x51ED9A2;
+const grain = document.getElementById('grain');
+let grainLight = true;
+
+/* The ground is the single largest colour on the sheet, so it must never
+   be one flat value. Two octaves of seeded value noise, signed, plus a
+   vignette — baked to a canvas before the first frame. */
+function paintGrain(){
+  const w = Math.max(1, Math.round(window.innerWidth));
+  const h = Math.max(1, Math.round(window.innerHeight));
+  grain.width = w; grain.height = h;
+  const g = grain.getContext('2d', { alpha: true });
+  const rnd = mulberry32(GRAIN_SEED);
+  const light = grainLight;
+
+  /* bilinear value noise on a coarse lattice */
+  function octave(cw, ch){
+    const lat = new Float32Array((cw + 1) * (ch + 1));
+    for (let i = 0; i < lat.length; i++) lat[i] = rnd() * 2 - 1;
+    const out = new Float32Array(cw * ch);
+    for (let y = 0; y < ch; y++){
+      const fy = (y / ch) * ch, y0 = Math.floor(fy), ty = fy - y0;
+      for (let x = 0; x < cw; x++){
+        const fx = (x / cw) * cw, x0 = Math.floor(fx), tx = fx - x0;
+        const i00 = lat[y0 * (cw + 1) + x0],     i10 = lat[y0 * (cw + 1) + x0 + 1];
+        const i01 = lat[(y0 + 1) * (cw + 1) + x0], i11 = lat[(y0 + 1) * (cw + 1) + x0 + 1];
+        const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        out[y * cw + x] = (i00 * (1 - sx) + i10 * sx) * (1 - sy) + (i01 * (1 - sx) + i11 * sx) * sy;
+      }
+    }
+    return out;
+  }
+  const CW = 22, CH = 15, CW3 = CW * 2, CH3 = CH * 2, CW6 = CW * 4, CH6 = CH * 4;
+  const o1 = octave(CW, CH), o2 = octave(CW3, CH3), o3 = octave(CW6, CH6);
+  const amp = light ? 62 : 70;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = CW; tmp.height = CH;
+  const tctx = tmp.getContext('2d');
+  const mot = tctx.createImageData(CW, CH), md = mot.data;
+  for (let y = 0; y < CH; y++) for (let x = 0; x < CW; x++){
+    const v = o1[y * CW + x] * 0.58
+            + o2[(y * 2) * CW3 + x * 2] * 0.29
+            + o3[(y * 4) * CW6 + x * 4] * 0.13;
+    const i = (y * CW + x) * 4;
+    /* signed: above the mean lightens the ground, below darkens it */
+    const up = v > 0;
+    md[i]     = up ? 255 : 0;
+    md[i + 1] = up ? 255 : 0;
+    md[i + 2] = up ? 255 : 0;
+    md[i + 3] = Math.min(255, Math.abs(v) * amp) | 0;
+  }
+  tctx.putImageData(mot, 0, 0);
+  g.clearRect(0, 0, w, h);
+  g.imageSmoothingEnabled = true;
+  g.drawImage(tmp, 0, 0, w, h);
+
+  /* fine tooth, on top */
+  const fine = g.getImageData(0, 0, w, h), fd = fine.data;
+  const peak = light ? 26 : 34;
+  for (let i = 0; i < fd.length; i += 4){
+    const n = (rnd() * peak) | 0;
+    const a = fd[i + 3] + (n >> 1);
+    fd[i + 3] = a > 255 ? 255 : a;
+  }
+  g.putImageData(fine, 0, 0);
+}
+
+/* ==================================================================
+   1 · face probing — rasterise, hash the alpha channel, scan ink
+       bounds. Every metric downstream is read from here.
+   ================================================================== */
+const PW = 780, PH = 132, PBASE = 104, FSIZE = 100;
+const probe = document.createElement('canvas');
+probe.width = PW; probe.height = PH;
+const pctx = probe.getContext('2d', { willReadFrequently: true });
+const PROBE_STR = 'Hamburgefonstiv';
+const PROBE_STR2 = 'quick brown fox 0123';
+
+/* Families that actually ship on a Linux desktop. The generic stacks below
+   are resolved against this set, so it is deliberately broad: fontconfig
+   substitutes a metric-compatible clone far more often than the requested
+   name, and the specimen should report the face that really rendered. */
+const CANDIDATES = [
+  'Inter','Arimo','Cantarell','Cascadia Mono','Cousine','Droid Sans Fallback',
+  'Public Sans','Source Sans 3','Tinos','WenQuanYi Micro Hei',
+  'DejaVu Sans','DejaVu Serif','DejaVu Sans Mono',
+  'Liberation Sans','Liberation Serif','Liberation Mono',
+  'Noto Sans','Noto Sans Display','Noto Serif','Noto Sans Mono','Noto Mono',
+  'JetBrains Mono'
+];
+
+/* FNV-1a over the alpha channel, plus the advance width, which together
+   identify a face far more reliably than the hash alone. */
+function rasterHash(stackCss, weight, str){
+  pctx.clearRect(0, 0, PW, PH);
+  pctx.font = weight + ' ' + FSIZE + 'px ' + stackCss;
+  pctx.textBaseline = 'alphabetic';
+  pctx.fillStyle = '#fff';
+  pctx.fillText(str || PROBE_STR, 3, PBASE);
+  const px = pctx.getImageData(0, 0, PW, PH).data;
+  let h = 0x811c9dc5, ink = 0;
+  for (let i = 3; i < px.length; i += 4){
+    if (px[i] === 0) continue;
+    ink++; h ^= px[i];
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return { h: h >>> 0, w: pctx.measureText(str || PROBE_STR).width, ink };
+}
+function inkBox(stackCss, weight, ch){
+  pctx.clearRect(0, 0, PW, PH);
+  pctx.font = weight + ' ' + FSIZE + 'px ' + stackCss;
+  pctx.textBaseline = 'alphabetic';
+  pctx.fillStyle = '#fff';
+  pctx.fillText(ch, 4, PBASE);
+  const px = pctx.getImageData(0, 0, PW, PH).data;
+  let top = PH, bot = -1, left = PW, right = -1;
+  for (let y = 0; y < PH; y++){
+    const row = y * PW * 4;
+    for (let x = 0; x < PW; x++){
+      if (px[row + x*4 + 3] > 8){
+        if (y < top) top = y;
+        if (y > bot) bot = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+    }
+  }
+  return bot < 0 ? null : { top, bot, left, right, h: bot - top + 1 };
+}
+/* (hash, width) → family. Several families can rasterise identically when
+   one is a metric clone of the other, so keep them joined. */
+const CAND_HASH = new Map();
+for (const fam of CANDIDATES){
+  const a = rasterHash("'" + fam + "'", 400);
+  const b = rasterHash("'" + fam + "'", 400, PROBE_STR2);
+  const key = a.h + ':' + Math.round(a.w) + ':' + b.h + ':' + Math.round(b.w);
+  CAND_HASH.set(key, CAND_HASH.has(key) ? CAND_HASH.get(key) + ' / ' + fam : fam);
+}
+
+/* Probing is a pure function of (stack css, weight), and each probe is a
+   full alpha-channel scan. Memoise it: the fit pass re-renders many times
+   and must not re-rasterise the same face on every pass. */
+const _hCache = new Map(), _mCache = new Map();
+function hashOf(css, weight, str){
+  const k = weight + '|' + (str ? '2' : '1') + '|' + css;
+  let v = _hCache.get(k);
+  if (v === undefined){ v = rasterHash(css, weight, str); _hCache.set(k, v); }
+  return v;
+}
+function metricsOf(css, weight){
+  const k = weight + '|' + css;
+  let v = _mCache.get(k);
+  if (v === undefined){
+    v = { xh:0, cap:0, desc:0, fbAsc:0, fbDesc:0 };
+    const x = inkBox(css, weight, 'x');
+    const h = inkBox(css, weight, 'H');
+    const g = inkBox(css, weight, 'g');
+    if (x) v.xh = x.h;
+    if (h) v.cap = h.h;
+    if (g && h) v.desc = Math.max(0, g.bot - h.bot);
+    pctx.clearRect(0, 0, PW, PH);
+    pctx.font = weight + ' ' + FSIZE + 'px ' + css;
+    const tm = pctx.measureText('Hxdp');
+    v.fbAsc = tm.fontBoundingBoxAscent || FSIZE * 0.93;
+    v.fbDesc = tm.fontBoundingBoxDescent || FSIZE * 0.24;
+    _mCache.set(k, v);
+  }
+  return v;
+}
+
+/* ==================================================================
+   2 · specimen data
+   ================================================================== */
+const STACKS = [
+  { nm:'Inter',           nt:'grotesk',     css:"'Inter','Helvetica Neue',Arial,sans-serif" },
+  { nm:'System UI',       nt:'platform',     css:"system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" },
+  { nm:'Liberation Sans', nt:'helvetica',    css:"'Liberation Sans',Arial,Helvetica,sans-serif" },
+  { nm:'Cantarell',       nt:'humanist',     css:"Cantarell,'Segoe UI',system-ui,sans-serif" },
+  { nm:'Noto Serif',      nt:'transitional', css:"'Noto Serif','Liberation Serif',Georgia,serif" },
+  { nm:'Georgia',         nt:'old-style',    css:"Georgia,'Times New Roman','Liberation Serif',serif" },
+  { nm:'JetBrains Mono',  nt:'monospace',    css:"'JetBrains Mono','Cascadia Mono','DejaVu Sans Mono',monospace" }
+];
+const RATIO_NAMES = [
+  [1.07,'octave'],[1.125,'major 2nd'],[1.20,'minor 3rd'],[1.25,'major 3rd'],
+  [1.334,'perfect 4th'],[1.414,'augmented 4th'],[1.50,'perfect 5th']
+];
+const PROSE = [
+  'Type is the voice of the page. A paragraph is a room the reader steps into without knocking, and every decision made at the drawing board — the size of the body, the distance between its lines, the length of the measure that holds it — is really a decision about how that room should feel. Generous leading lets the eye fall from one line to the next without losing its place.',
+  'The scale above is not decoration. Every size here is the base multiplied by one ratio, raised to a power, so the display setting and the caption beneath it share a single geometry. Change the ratio and the hierarchy keeps its order while every number moves. That is what a modular scale buys: not the figures themselves, but the relationship they encode.'
+];
+const STEPS = [-1, 0, 1, 2, 3, 4, 5];
+const WEIGHTS = [200, 300, 400, 500, 600, 700, 800, 900];
+
+const S = { stack:0, base:17, ratio:1.25, lead:1.45, measure:64, theme:'ink', fit:1 };
+const THEMES = {
+  ink:   { ink:'#f5efe4', bg:'#0e1115', bg2:'#151a21', bg3:'#1b212a', acc:'#ff6a4d', acc2:'#5fdcc0', mut:'#a9b6c5', mut2:'#7e8d9e', hair:'#2e3845' },
+  paper: { ink:'#14171b', bg:'#efe9dd', bg2:'#e4dccc', bg3:'#f8f3e8', acc:'#b03418', acc2:'#0a6f5b', mut:'#5f5849', mut2:'#8a816e', hair:'#cec4ae' }
+};
+const RAILW = 292, FIT_MIN = 0.6;
+
+const $ = id => document.getElementById(id);
+const f2 = (n, d) => Number(n).toFixed(d === undefined ? 2 : d);
+const ratioName = r => { let b = RATIO_NAMES[0]; for (const e of RATIO_NAMES) if (Math.abs(e[0]-r) < Math.abs(b[0]-r)) b = e; return b; };
+const stepPx = n => S.base * Math.pow(S.ratio, n);
+const stackCss = () => STACKS[S.stack].css;
+
+/* ==================================================================
+   3 · state → DOM
+   ================================================================== */
+let vm = null, resolved = '—', wmap = [];
+const faceOf = () => { const m = new Map(); wmap.forEach(x => { if (!m.has(x.h)) m.set(x.h, x.w); }); return m; };
+
+function applyTheme(){
+  const t = THEMES[S.theme], r = document.documentElement.style;
+  r.setProperty('--ink', t.ink); r.setProperty('--bg', t.bg); r.setProperty('--bg2', t.bg2); r.setProperty('--bg3', t.bg3);
+  r.setProperty('--acc', t.acc); r.setProperty('--acc2', t.acc2);
+  r.setProperty('--mut', t.mut); r.setProperty('--mut2', t.mut2); r.setProperty('--hair', t.hair);
+  grainLight = (S.theme === 'ink');
+  paintGrain();
+}
+function identify(css, weight){
+  const a = hashOf(css, weight);
+  const b = hashOf(css, weight, PROBE_STR2);
+  const list = CAND_HASH.get(a.h + ':' + Math.round(a.w) + ':' + b.h + ':' + Math.round(b.w));
+  if (!list) return null;
+  /* Metric clones rasterise identically. When the stack actually names one
+     of them, that is the answer worth reporting; otherwise show the tie. */
+  const named = list.split(' / ').filter(f => css.toLowerCase().includes(f.toLowerCase()));
+  return named.length === 1 ? named[0] : list;
+}
+function probeFace(){
+  const css = stackCss();
+  resolved = identify(css, 400) || 'installed face not in table';
+  wmap = WEIGHTS.map(w => ({ w, h: hashOf(css, w).h }));
+  vm = metricsOf(css, 400);
+}
+
+/* shrink a nowrap element until it fits its box; returns the size used */
+function fitToWidth(el, start, min, shrink){
+  let fs = start, guard = 0;
+  el.style.fontSize = fs + 'px';
+  while (el.scrollWidth > el.clientWidth + 0.5 && fs > min && guard++ < 140){
+    fs -= shrink; el.style.fontSize = fs + 'px';
+  }
+  return fs;
+}
+
+function render(){
+  const css = stackCss(), root = document.documentElement.style;
+  root.setProperty('--stack', css);
+  root.setProperty('--b', S.base + 'px');
+  root.setProperty('--r', f2(S.ratio, 3));
+  root.setProperty('--lh', f2(S.lead, 2));
+  root.setProperty('--measure', S.measure);
+
+  $('vStack').textContent = STACKS[S.stack].nm;
+  $('vRes').textContent = resolved;
+  $('vBase').textContent = f2(S.base, 1) + ' px';
+  $('vRatio').textContent = f2(S.ratio, 3);
+  $('vLead').textContent = f2(S.lead, 2);
+  $('vMeas').textContent = S.measure + ' ch';
+  $('barB').textContent = f2(S.base, 1);
+  $('barR').textContent = f2(S.ratio, 3);
+  $('vWf').textContent = 'base ' + f2(S.base,1) + ' · ratio ' + f2(S.ratio,3) + ' · ' + ratioName(S.ratio)[1];
+
+  /* — display: scale step +7, then fitted to the measure — */
+  const dlh = Math.max(0.78, Math.min(0.95, S.lead * 0.62));
+  const word = $('dspWord');
+  word.style.lineHeight = f2(dlh, 3);
+  const dspFs = fitToWidth(word, Math.min(128, Math.max(78, stepPx(7))), 40, 1);
+
+  $('vDisp').textContent = f2(dspFs, 1) + ' px';
+  $('vDispLh').textContent = f2(dspFs * dlh, 1) + ' px / ' + f2(dlh, 2);
+  $('vWidth').textContent = Math.round(word.scrollWidth) + ' px';
+
+  const dlhPx = dspFs * dlh;
+  const half = (dlhPx - (vm.fbAsc + vm.fbDesc) * dspFs / FSIZE) / 2;
+  const bl = half + vm.fbAsc * dspFs / FSIZE;
+  $('dspGut').style.height = dlhPx + 'px';
+  $('dspGut').innerHTML = [
+    ['cap', bl - vm.cap * dspFs / FSIZE, 'mtx'],
+    ['x',   bl - vm.xh  * dspFs / FSIZE, 'mtx'],
+    ['base', bl, 'mtx base'],
+    ['desc', bl + vm.desc * dspFs / FSIZE, 'mtx base']
+  ].map(r => '<div class="' + r[2] + '" style="top:' + f2(r[1],1) + 'px"><s>' + r[0] + '</s><u></u></div>').join('');
+
+  /* — waterfall: leading box and cap box drawn at every step — */
+  $('wf').innerHTML = STEPS.map(n => {
+    const px = stepPx(n), lhPx = px * S.lead;
+    const hw = (lhPx - (vm.fbAsc + vm.fbDesc) * px / FSIZE) / 2;
+    const blS = hw + vm.fbAsc * px / FSIZE, capS = vm.cap * px / FSIZE;
+    return '<div class="wf-c">' +
+      '<div class="n">' + (n > 0 ? '+' + n : n === 0 ? '0' : String(n)) + '</div>' +
+      '<div class="px"><b>' + f2(px,1) + '</b> / ' + f2(lhPx,1) + '</div>' +
+      '<div class="wf-box" style="font-size:' + f2(px,2) + 'px;line-height:' + f2(lhPx,2) + 'px">' +
+        '<i style="height:' + f2(lhPx,1) + 'px"></i>' +
+        '<u style="height:' + f2(capS,1) + 'px;top:' + f2(blS - capS,1) + 'px"></u>' +
+        '<span>Ag</span></div>' +
+      '<div class="wf-t">Handgloves</div></div>';
+  }).join('');
+
+  /* — reading text — */
+  const body = $('readBody');
+  if (!body.dataset.filled){ body.innerHTML = PROSE.map(p => '<p>' + p + '</p>').join(''); body.dataset.filled = '1'; }
+  let chPx = S.base * 0.5;
+  { const c = document.createElement('canvas').getContext('2d');
+    c.font = '400 ' + S.base + 'px ' + css; chPx = c.measureText('0').width || chPx; }
+  const linePx = S.base * S.lead;
+  $('vRead').textContent = S.base + '/' + f2(linePx,1) + ' · ' + S.measure + ' ch';
+  $('nMeas').textContent = Math.round(S.measure * chPx) + ' px';
+  $('nX').textContent   = f2(vm.xh   * S.base / FSIZE, 1) + ' px';
+  $('nCap').textContent = f2(vm.cap  * S.base / FSIZE, 1) + ' px';
+  $('nAsc').textContent = f2(vm.fbAsc* S.base / FSIZE, 1) + ' px';
+  $('nDesc').textContent= f2(vm.fbDesc* S.base / FSIZE, 1) + ' px';
+  $('nBox').textContent = f2(linePx, 1) + ' px';
+  $('nFam').textContent = resolved;
+  const byH = faceOf();
+  const native = wmap.filter(x => byH.get(x.h) === x.w);
+  $('nW').textContent = native.length + ' native';
+  $('vX').innerHTML = f2(vm.xh / Math.max(1, vm.cap), 3);
+  $('vW').textContent = native.length + ' of ' + wmap.length;
+  $('noteP').textContent = 'Set solid at ' + S.base + '/' + f2(linePx,1) + ' — a leading of ' +
+    f2(S.lead,2) + ' over a ' + S.measure + '-character measure, one ' + ratioName(S.ratio)[1] + ' apart.';
+  let rk = '';
+  for (let i = 1; i <= S.measure; i++) rk += '<s' + (i % 10 === 0 ? ' class="t"' : '') + '></s>';
+  $('ruler').innerHTML = rk;
+
+  /* — letterforms: each row sets itself to fill the column — */
+  const lfA = fitToWidth($('lfA'), f2(Math.min(42, S.base * 2.3), 1), 11, 0.5);
+  fitToWidth($('lfB'), f2(Math.min(36, S.base * 1.95), 1), 10, 0.5);
+  fitToWidth($('lfC'), f2(Math.min(24, S.base * 1.3), 1), 8, 0.25);
+  $('vLf').textContent = 'set to fill · ' + f2(lfA, 1) + ' px';
+
+  /* — weights — */
+  $('vWl').textContent = native.length + ' native of ' + wmap.length + ' · ' + resolved;
+  const ws = f2(Math.min(30, S.base * 1.62), 1);
+  $('wl').innerHTML = wmap.map(x => {
+    const isNat = byH.get(x.h) === x.w;
+    return '<div class="wl-c ' + (isNat ? 'native' : 'off') + '">' +
+      '<div class="wl-s" style="font-size:' + ws + 'px;font-weight:' + x.w + '">Ag</div>' +
+      '<div class="wl-n">' + x.w + '</div>' +
+      '<div class="wl-r">' + (isNat ? 'native' : '→ ' + byH.get(x.h)) + '</div></div>';
+  }).join('');
+  $('wchips').innerHTML = wmap.map(x => '<i class="' + (byH.get(x.h) === x.w ? 'on' : 'alias') + '">' + x.w + '</i>').join('');
+  $('footC').textContent = STEPS.length + ' steps · fit ' + f2(S.fit, 2);
+}
+
+/* ==================================================================
+   4 · fit pass — a real designer's sheet reflows rather than
+       clips. Both panes are laid out at an enlarged logical size
+       and uniformly scaled down until nothing is cut off.
+   ================================================================== */
+function setGeom(k){
+  const H = window.innerHeight, W = window.innerWidth;
+  const rail = $('rail'), stage = $('stage');
+  rail.style.width = (RAILW / k) + 'px';
+  rail.style.height = (H / k) + 'px';
+  rail.style.transform = 'scale(' + k + ')';
+  stage.style.left = RAILW + 'px';
+  stage.style.width = ((W - RAILW) / k) + 'px';
+  stage.style.height = (H / k) + 'px';
+  stage.style.transform = 'scale(' + k + ')';
+}
+
+/* A real designer's sheet reflows rather than clips. Both panes are laid
+   out at an enlarged logical size and uniformly scaled down until nothing
+   is cut off. Each pass re-renders at the new scale, because the letterform
+   rows re-fit themselves to the column and the columns depend on k. */
+function layout(){
+  const rail = $('rail'), stage = $('stage');
+  let k = S.fit;
+  for (let pass = 0; pass < 8; pass++){
+    setGeom(k);
+    render();
+    const over = Math.max(rail.scrollHeight - rail.clientHeight,
+                          stage.scrollHeight - stage.clientHeight);
+    if (over <= 1) break;
+    const ref = stage.clientHeight || 1;
+    k = Math.max(FIT_MIN, +(k * (ref / (ref + over))).toFixed(4));
+  }
+  S.fit = k;
+  $('footC').textContent = STEPS.length + ' steps · fit ' + f2(k, 2);
+}
+function update(){ layout(); window.__probe = probeObj(); }
+
+/* ==================================================================
+   5 · controls
+   ================================================================== */
+$('stacks').innerHTML = STACKS.map((s,i) =>
+  '<button class="stack' + (i === 0 ? ' on' : '') + '" data-i="' + i + '">' +
+  '<span class="aa" style="--sc:' + s.css + '">Aa</span>' +
+  '<span class="nm">' + s.nm + '</span><span class="nt">' + s.nt + '</span></button>').join('');
+$('stacks').addEventListener('click', e => {
+  const b = e.target.closest('.stack'); if (!b) return;
+  S.stack = +b.dataset.i;
+  [...$('stacks').children].forEach(c => c.classList.toggle('on', c === b));
+  probeFace(); update();
+});
+$('sBase').addEventListener('input',  e => { S.base    = +e.target.value; S.fit = 1; update(); });
+$('sRatio').addEventListener('input', e => { S.ratio   = +e.target.value; S.fit = 1; update(); });
+$('sLead').addEventListener('input',  e => { S.lead    = +e.target.value; S.fit = 1; update(); });
+$('sMeas').addEventListener('input',  e => { S.measure = +e.target.value; S.fit = 1; update(); });
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+  S.theme = b.dataset.th;
+  document.querySelectorAll('.seg button').forEach(x => x.classList.toggle('on', x === b));
+  applyTheme(); update();
+}));
+window.addEventListener('resize', () => { paintGrain(); S.fit = 1; update(); });
+
+/* ==================================================================
+   6 · boot
+   ================================================================== */
+function probeObj(){
+  const byH = faceOf();
+  return {
+    stack: STACKS[S.stack].nm,
+    stackCss: stackCss(),
+    resolvedFamily: resolved,
+    basePx: S.base, ratio: +S.ratio.toFixed(3), ratioName: ratioName(S.ratio)[1],
+    leading: S.lead, measureCh: S.measure, fitScale: +S.fit.toFixed(3),
+    scaleSteps: STEPS.map(n => +stepPx(n).toFixed(2)),
+    displayPx: +(($('dspWord').style.fontSize || '0px').replace('px','')),
+    weightsRequested: WEIGHTS,
+    weightsNative: wmap.filter(x => byH.get(x.h) === x.w).map(x => x.w),
+    weightsAliased: wmap.filter(x => byH.get(x.h) !== x.w).map(x => x.w + '→' + byH.get(x.h)),
+    metrics: {
+      xHeightPx100: +vm.xh.toFixed(1), capHeightPx100: +vm.cap.toFixed(1),
+      descentPx100: +vm.desc.toFixed(1), ascentPx100: +vm.fbAsc.toFixed(1),
+      descentBoxPx100: +vm.fbDesc.toFixed(1), xOverCap: +(vm.xh / Math.max(1, vm.cap)).toFixed(3)
+    },
+    probeCanvasPx: PW * PH, grainSeed: GRAIN_SEED,
+    networkRequests: 0, webfonts: 0, fps: 0
+  };
+}
+/* The entrance must be finished before the harness is told it is safe to
+   screenshot — otherwise a slow frame catches a half-faded sheet. The flag
+   is raised on the animations' own completion, not on a bare timer. */
+function reveal(){
+  const els = [...document.querySelectorAll('.rise')];
+  els.forEach(el => setTimeout(() => el.classList.remove('rise'), 40 + (+el.dataset.d || 0) * 52));
+  const running = () => els.flatMap(el => (el.getAnimations ? el.getAnimations() : []))
+                         .filter(a => a.playState === 'running');
+  return new Promise(res => {
+    const settle = () => {
+      if (!running().length) return res();
+      setTimeout(settle, 60);
+    };
+    setTimeout(settle, 500);   /* nothing animating (reduced motion) */
+  });
+}
+(async function boot(){
+  applyTheme();
+  probeFace();
+  S.fit = 1;
+  layout();
+  window.__probe = probeObj();
+  if (document.fonts && document.fonts.ready){
+    await document.fonts.ready;
+    probeFace();
+    update();
+  }
+  await reveal();
+  /* Final pass, then wait for a real painted frame: the grain canvas is
+     composited on the frame after it is written, so raising __ready from a
+     timer alone can hand the harness the frame before the last composite. */
+  layout();
+  window.__probe = probeObj();
+  await new Promise(res => {
+    let seen = 0;
+    const step = () => (++seen < 3) ? requestAnimationFrame(step) : res();
+    requestAnimationFrame(step);
+  });
+  window.__ready = true;
+})();
+</script>
+</body>
+</html>

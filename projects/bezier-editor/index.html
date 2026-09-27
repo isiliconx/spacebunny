@@ -1,0 +1,1182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bezier Lab — cubic Bézier shape editor</title>
+<style>
+  :root{
+    --panel2:#141c28; --panel:#0e141d; --edge:#232e3f; --edge2:#31405a;
+    --txt:#b9c6da; --dim:#7d8ba3;
+    --acc:#ffc061; --curve:#8ff0e2; --a1:#4aa8ff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:#070a0e; color:var(--txt);
+    font-family:var(--mono); font-size:12px; line-height:1.45;
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+    display:grid; grid-template-columns:300px 1fr; gap:12px; padding:12px;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:radial-gradient(1200px 740px at 60% 30%, #182334 0%, #0d131c 45%, #06080c 100%);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.9;
+    background-image:radial-gradient(circle, rgba(158,196,255,.05) 1px, transparent 1.4px);
+    background-size:26px 26px;
+  }
+  #left,#right{position:relative; z-index:1; min-width:0; min-height:0}
+  #left{
+    background:linear-gradient(180deg,var(--panel2) 0%, var(--panel) 38%, #0b1017 100%);
+    border:1px solid var(--edge); border-radius:9px; padding:11px 12px 10px;
+    display:flex; flex-direction:column; gap:8px; overflow:hidden;
+    box-shadow:0 18px 46px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  #right{display:grid; grid-template-rows:minmax(0,1fr) 212px; gap:12px; min-height:0}
+  .pane{position:relative; min-width:0; min-height:0; overflow:hidden;
+         border:1px solid var(--edge); border-radius:9px;
+         background:#0a0f16; box-shadow:0 20px 54px rgba(0,0,0,.55)}
+  .pane canvas{position:absolute; inset:0; display:block; width:100%; height:100%}
+  h1{margin:0; font-size:14.5px; letter-spacing:.15em; font-weight:600; color:#eaf2ff;
+     display:flex; align-items:baseline; gap:8px}
+  h1 small{font-size:11px; letter-spacing:.08em; color:var(--dim); font-weight:400}
+  .tech{font-size:11px; color:#93a9c8; line-height:1.55;
+    background:rgba(90,150,255,.07); border:1px solid rgba(110,170,255,.16);
+    border-left:2px solid var(--a1); border-radius:4px; padding:5px 8px}
+  .tech b{color:#d3e4ff; font-weight:600}
+  .pill{display:inline-block; padding:0 4px; border-radius:3px; font-size:10.5px;
+    background:rgba(255,192,97,.14); color:var(--acc); border:1px solid rgba(255,192,97,.26)}
+  .sect{display:flex; flex-direction:column; gap:4px}
+  .lbl{font-size:10.5px; letter-spacing:.16em; color:var(--dim); text-transform:uppercase;
+       display:flex; justify-content:space-between; align-items:baseline; gap:6px}
+  .lbl em{font-style:normal; color:#dce8f8; letter-spacing:.03em; font-size:11.5px}
+  .row{display:flex; gap:4px; align-items:center}
+  button{font:inherit; font-size:11.5px; color:var(--txt); cursor:pointer;
+    background:#182130; border:1px solid var(--edge2); border-radius:4px;
+    padding:4px 7px; letter-spacing:.04em; flex:1;
+    transition:background .12s, color .12s, border-color .12s}
+  button:hover{background:#202c3e; color:#e8f1ff; border-color:#42546f}
+  button.on{background:rgba(74,168,255,.22); border-color:rgba(125,192,255,.65); color:#e2f0ff}
+  button.sq{flex:0 0 26px; padding:4px 0; text-align:center}
+  .swatch{flex:1; height:16px; padding:0; border-radius:3px; border:1px solid rgba(255,255,255,.18)}
+  .swatch.on{outline:2px solid #dcebff; outline-offset:1px}
+  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:18px;
+    background:transparent; cursor:ew-resize; margin:0}
+  input[type=range]::-webkit-slider-runnable-track{height:3px; border-radius:2px; background:#27334a}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:13px; height:13px;
+    margin-top:-5px; border-radius:50%; background:var(--acc); border:1.5px solid #14181f;
+    box-shadow:0 0 8px rgba(255,192,97,.6)}
+  .nums{display:grid; grid-template-columns:1fr 1fr; gap:1px 12px; font-size:11px; color:var(--dim);
+    border-top:1px solid var(--edge); padding-top:7px}
+  .nums span{color:#dae7f8}
+  .foot{margin-top:auto; font-size:11px; color:#63718a; line-height:1.55}
+  .foot b{color:#8ea4c2; font-weight:400}
+  canvas{display:block}
+  #stage canvas{cursor:crosshair; touch-action:none}
+</style>
+</head>
+<body>
+
+<aside id="left">
+  <h1>BEZIER LAB <small>shape editor</small></h1>
+
+  <div class="tech">
+    <b>B(t)</b> = (1−t)³P₀ + 3(1−t)²t·P₁ + 3(1−t)t²·P₂ + t³P₃<br>
+    adaptive flatten · tol <span class="pill">0.2px</span> · chains joined C¹ by
+    <b>shared</b> handles · +seg = exact de&nbsp;Casteljau
+  </div>
+
+  <div class="sect">
+    <div class="lbl">cubic segments <em id="vSeg">3</em></div>
+    <div class="row">
+      <button class="sq" id="segDn">−</button>
+      <input type="range" id="segR" min="1" max="6" step="1" value="3">
+      <button class="sq" id="segUp">+</button>
+    </div>
+  </div>
+
+  <div class="sect">
+    <div class="lbl">render</div>
+    <div class="row">
+      <button class="on" data-mode="both">FILL+STROKE</button>
+      <button data-mode="fill">FILL</button>
+    </div>
+    <div class="row">
+      <button data-mode="outline">OUTLINE</button>
+      <button data-mode="wire">WIREFRAME</button>
+    </div>
+    <div class="row"><button id="closeBtn">CLOSE PATH: ON</button></div>
+  </div>
+
+  <div class="sect">
+    <div class="lbl">joint continuity <em id="vHandle">smooth</em></div>
+    <div class="row">
+      <button data-hm="free">FREE</button>
+      <button data-hm="smooth">SMOOTH</button>
+      <button data-hm="mirrored">MIRROR</button>
+    </div>
+    <div class="row"><button data-hm="cusp">CUSP (corner)</button></div>
+  </div>
+
+  <div class="sect">
+    <div class="lbl">palette</div>
+    <div class="row" id="pals"></div>
+  </div>
+
+  <div class="sect">
+    <div class="lbl">presets</div>
+    <div class="row" id="pres"></div>
+    <div class="row" id="pres2"></div>
+  </div>
+
+  <div class="sect">
+    <div class="lbl">parameter t <em id="vT">0.420</em></div>
+    <input type="range" id="tR" min="0" max="1" step="0.001" value="0.42">
+    <div class="row">
+      <button id="drift">DRIFT: OFF</button>
+      <button id="jitter">RESHAPE</button>
+    </div>
+  </div>
+
+  <div class="nums">
+    <div>anchors <span id="nA">4</span></div><div>handles <span id="nH">8</span></div>
+    <div>chords <span id="nP">—</span></div><div>length <span id="nL">—</span></div>
+    <div>area <span id="nAr">—</span></div><div>fps <span id="nF">—</span></div>
+  </div>
+
+  <div class="foot">
+    drag <b>◆ anchor</b> / <b>● handle</b> · click the curve to scrub <b>t</b><br>
+    <b>space</b> toggles drift · three colours, one gradient, no dependencies
+  </div>
+</aside>
+
+<main id="right">
+  <div class="pane" id="stage"><canvas id="art"></canvas></div>
+  <div class="pane" id="strip"><canvas id="bas"></canvas></div>
+</main>
+
+<script>
+"use strict";
+/* ================================================================== *
+ *  BÉZIER LAB — interactive cubic Bézier shape editor.
+ *  Deterministic: fixed-dt simulation, seeded RNG (handlers only).
+ *  No external requests, no dependencies. Runs from file://.
+ * ================================================================== */
+
+const $   = s => document.querySelector(s);
+const TAU = Math.PI * 2;
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp  = (a,b,t) => a + (b-a)*t;
+const h2    = (x,y) => Math.hypot(x,y);
+
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a>>>15), 1 | a);
+    t = (t + Math.imul(t ^ (t>>>7), 61 | t)) ^ t;
+    return ((t ^ (t>>>14)) >>> 0) / 4294967296;
+  };
+}
+let rng = mulberry32(0x5EED1E);           // only ever advanced from a handler
+
+/* ------------------------------ palettes ---------------------------- */
+const PALETTES = [
+  { id:'aurora', a:'#4aa8ff', b:'#a06cf5', c:'#37e0c0' },
+  { id:'ember',  a:'#ff8a4a', b:'#ff4f7d', c:'#ffd166' },
+  { id:'kelp',   a:'#2ee6a8', b:'#3aa0ff', c:'#c9f24a' },
+  { id:'orchid', a:'#8f6cf5', b:'#f25cb0', c:'#6cf5d8' },
+  { id:'dusk',   a:'#6d7cff', b:'#ff6fb0', c:'#63e6ff' }
+];
+
+/* ------------------------------- presets ---------------------------- *
+ *  Normalised artboard coords (x right, y down), authored as anchors +
+ *  tangent directions and solved for C1, then verified numerically
+ *  (0.00 deg at every joint, all control points inside 0..1).
+ *  Each segment is [P0, P1, P2, P3]; consecutive segments share the
+ *  join node, which the loader turns into a single anchor carrying an
+ *  incoming (hi) and an outgoing (ho) control point.
+ *  Every preset is authored to fill roughly x 0.18-0.80, y 0.16-0.80 of
+ *  the artboard: the shape sits left of centre with its handles reaching
+ *  further, so the frame is composed instead of a medallion in the middle.
+ * -------------------------------------------------------------------- */
+const PRESETS = [
+  { id:'petal', label:'PETAL', closed:true, joint:'smooth', segs:[
+      [[0.2050,0.4550],[0.1391,0.3203],[0.1816,0.2987],[0.2900,0.2150]],
+      [[0.2900,0.2150],[0.3984,0.1313],[0.3258,0.1754],[0.4700,0.1550]],
+      [[0.4700,0.1550],[0.6142,0.1346],[0.5576,0.1752],[0.6350,0.2900]],
+      [[0.6350,0.2900],[0.7124,0.4048],[0.7399,0.4451],[0.6650,0.5450]],
+      [[0.6650,0.5450],[0.5901,0.6449],[0.6272,0.6924],[0.4550,0.7150]],
+      [[0.4550,0.7150],[0.2828,0.7376],[0.2709,0.5897],[0.2050,0.4550]],
+  ] },
+  { id:'blob', label:'BLOB', closed:true, joint:'smooth', segs:[
+      [[0.2150,0.3750],[0.3316,0.2875],[0.3078,0.1096],[0.4350,0.2050]],
+      [[0.4350,0.2050],[0.5622,0.3004],[0.7574,0.3112],[0.6550,0.4150]],
+      [[0.6550,0.4150],[0.5526,0.5188],[0.6117,0.7661],[0.4750,0.6850]],
+      [[0.4750,0.6850],[0.3383,0.6039],[0.0984,0.4625],[0.2150,0.3750]],
+  ] },
+  { id:'leaf', label:'LEAF', closed:true, joint:'smooth', segs:[
+      [[0.2250,0.7400],[0.3671,0.5506],[0.3066,0.5592],[0.3600,0.4500]],
+      [[0.3600,0.4500],[0.4134,0.3408],[0.7834,0.1640],[0.5850,0.2700]],
+      [[0.5850,0.2700],[0.3866,0.3760],[0.0829,0.9294],[0.2250,0.7400]],
+  ] },
+  { id:'crescent', label:'CRESCENT', closed:true, joint:'smooth', segs:[
+      [[0.1900,0.2400],[0.3535,0.1809],[0.3346,0.0188],[0.4500,0.1500]],
+      [[0.4500,0.1500],[0.5654,0.2812],[0.7569,0.2511],[0.6750,0.3850]],
+      [[0.6750,0.3850],[0.5931,0.5189],[0.7083,0.7719],[0.5550,0.6900]],
+      [[0.5550,0.6900],[0.4017,0.6081],[0.3124,0.8939],[0.3300,0.7200]],
+      [[0.3300,0.7200],[0.3476,0.5461],[0.0265,0.2991],[0.1900,0.2400]],
+  ] },
+  { id:'wave', label:'WAVE', closed:true, joint:'smooth', segs:[
+      [[0.1650,0.6400],[0.2979,0.4370],[0.3536,0.2758],[0.4300,0.3450]],
+      [[0.4300,0.3450],[0.5476,0.4515],[0.8289,0.5398],[0.6900,0.5900]],
+      [[0.6900,0.5900],[0.4718,0.6689],[0.0783,0.7724],[0.1650,0.6400]],
+  ] },
+  { id:'ribbon', label:'RIBBON', closed:false, joint:'smooth', segs:[
+      [[0.2300,0.4550],[0.4149,0.3947],[0.4379,0.1805],[0.4500,0.3000]],
+      [[0.4500,0.3000],[0.4643,0.4419],[0.6922,0.5026],[0.7000,0.5800]],
+  ] },
+];
+
+/* -------------------------------- model ----------------------------- *
+ *  anchors: [{ x, y, hi:{x,y}, ho:{x,y} }]
+ *    hi = control point on the INCOMING segment, ho = on the OUTGOING one.
+ *  Segment i is  A[i] -> A[i].ho -> A[i+1].hi -> A[i+1].
+ *  ho and hi are always DISTINCT points. C¹ continuity is a constraint
+ *  (see applyJoint), never object identity — aliasing them would make
+ *  the two control points of a joint coincide and flatten the curve.
+ * -------------------------------------------------------------------- */
+const M = {
+  anchors: [],
+  closed: true,
+  mode: 'both',             // fill | outline | both | wire
+  joint: 'smooth',          // free | smooth | mirrored | cusp
+  preset: 'petal',
+  palIdx: 0,
+  t: 0.42,
+  drift: false,
+  W: 800, H: 500,
+  sel: null, hover: null, drag: null
+};
+
+const N    = () => M.anchors.length;
+const at   = i => M.anchors[((i % N()) + N()) % N()];
+const nseg = () => M.closed ? N() : N() - 1;
+const segOf = i => { const a = at(i), b = at(i+1); return [a, a.ho, b.hi, b]; };
+
+/* ---- build anchors from a preset ----
+ * A preset is a list of segments [P0,P1,P2,P3]. A closed preset's last
+ * segment ends on the FIRST anchor, so the loop below re-pushes it; we
+ * drop that duplicate and stitch the chain from the unique nodes only.  */
+function fromPreset(p, W, H){
+  const A = [];
+  p.segs.forEach((seg, i) => {
+    const [p0, p1, p2, p3] = seg;
+    if (i === 0)
+      A.push({ x:p0[0]*W, y:p0[1]*H, hi:{x:p0[0]*W, y:p0[1]*H}, ho:{x:p1[0]*W, y:p1[1]*H} });
+    else
+      A[i-1].ho = { x:p1[0]*W, y:p1[1]*H };   // join node already pushed
+    A.push({ x:p3[0]*W, y:p3[1]*H, hi:{x:p2[0]*W, y:p2[1]*H}, ho:{x:p3[0]*W, y:p3[1]*H} });
+  });
+  /* a closed chain returns to anchor 0 — drop the repeat */
+  if (p.closed && A.length > 1){
+    const a = A[0], b = A[A.length-1];
+    if (h2(a.x - b.x, a.y - b.y) < 1e-3){
+      a.hi = { x:b.hi.x, y:b.hi.y };          // last segment's end handle
+      A.pop();
+    }
+  }
+  M.anchors = A;
+  M.closed = p.closed;
+  M.preset = p.id;
+  M.joint = p.joint || M.joint;
+  applyJoint();                              // presets are authored C¹
+}
+
+/* ---- joint constraint at interior anchors ---- */
+function interior(idx){
+  if (M.closed) return idx >= 0 && idx < N();
+  return idx > 0 && idx < N() - 1;
+}
+/* Apply the joint's continuity rule. `base` fixes the tangent direction and
+ * the handle lengths, so a drag is stable instead of drifting.            */
+function applyJoint(base){
+  for (let i = 0; i < N(); i++){
+    if (!interior(i)) continue;
+    const a = M.anchors[i];
+    if (M.joint === 'free') continue;
+    let hx = a.ho.x - a.x, hy = a.ho.y - a.y;          // outgoing handle
+    let ex = a.hi.x - a.x, ey = a.hi.y - a.y;          // incoming handle
+    let L  = h2(hx,hy), L2 = h2(ex,ey);
+    if (M.joint === 'cusp'){
+      /* both handles on the same point: a true corner, C0 only */
+      a.ho = { x:a.x + hx, y:a.y + hy };
+      a.hi = { x:a.x + hx, y:a.y + hy };
+      continue;
+    }
+    if (base && base.hi){ L = base.L; hx = base.dx; hy = base.dy; }
+    else if (L < 0.01 && L2 < 0.01) continue;
+    else if (L2 > L){
+      /* the incoming handle is the longer one: the tangent follows it */
+      const u = L2 > 1e-6 ? 1/L2 : 0;
+      hx = ex*u*L2; hy = ey*u*L2; L = L2;
+    }
+    if (L < 0.01) continue;
+    const ux = hx/L, uy = hy/L;
+    if (M.joint === 'mirrored'){
+      a.ho = { x:a.x + ux*L,   y:a.y + uy*L   };
+      a.hi = { x:a.x - ux*L,   y:a.y - uy*L   };        // equal length, opposite
+    } else {                                           // smooth: collinear
+      const s = base && base.L2 ? base.L2 : L2;
+      a.ho = { x:a.x + ux*L,   y:a.y + uy*L   };
+      a.hi = { x:a.x - ux*(s||L), y:a.y - uy*(s||L) };
+    }
+  }
+}
+/* Snapshot a joint's tangent before a drag so applyJoint stays stable. */
+function jointBase(i){
+  const a = at(i);
+  const L  = h2(a.ho.x - a.x, a.ho.y - a.y);
+  const L2 = h2(a.hi.x - a.x, a.hi.y - a.y);
+  if (L < 0.01 && L2 < 0.01) return null;
+  const src = L >= L2 ? a.ho : a.hi;
+  const len = Math.max(L, L2);
+  const sgn = L >= L2 ? 1 : -1;
+  const ux = (src.x - a.x)/len * sgn, uy = (src.y - a.y)/len * sgn;
+  return { dx:ux, dy:uy, L, L2 };
+}
+
+/* ------------------- exact de Casteljau split / merge ---------------- */
+function chordBend(P0,P1,P2,P3){
+  const dx = P3.x-P0.x, dy = P3.y-P0.y;
+  const L2 = dx*dx + dy*dy;
+  if (L2 < 1e-9) return Math.max(h2(P1.x-P0.x,P1.y-P0.y), h2(P2.x-P0.x,P2.y-P0.y));
+  const L = Math.sqrt(L2);
+  const d1 = Math.abs((P1.x-P0.x)*dy - (P1.y-P0.y)*dx) / L;
+  const d2 = Math.abs((P2.x-P0.x)*dy - (P2.y-P0.y)*dx) / L;
+  return Math.max(d1, d2);
+}
+function splitSegment(i, t){
+  const [P0,P1,P2,P3] = segOf(i);
+  const q0 = { x:lerp(P0.x,P1.x,t), y:lerp(P0.y,P1.y,t) };
+  const q1 = { x:lerp(P1.x,P2.x,t), y:lerp(P1.y,P2.y,t) };
+  const q2 = { x:lerp(P2.x,P3.x,t), y:lerp(P2.y,P3.y,t) };
+  const r0 = { x:lerp(q0.x,q1.x,t), y:lerp(q0.y,q1.y,t) };
+  const r1 = { x:lerp(q1.x,q2.x,t), y:lerp(q1.y,q2.y,t) };
+  const s  = { x:lerp(r0.x,r1.x,t), y:lerp(r0.y,r1.y,t) };
+  /* left = P0, P1, q0, r0   ·   right = s, r1, q2, P3 */
+  const mid = { x:s.x, y:s.y, hi:{x:r0.x,y:r0.y}, ho:{x:r1.x,y:r1.y} };
+  M.anchors.splice(i+1, 0, mid);
+  if (M.closed){ at(i+1).ho = { x:s.x, y:s.y }; }
+  applyJoint();
+}
+function mergeSegment(i){
+  const P2 = at(i+1).hi, P3 = at(i+1), Q1 = at(i+1).ho;
+  const Pm = { x:(P2.x + P3.x + Q1.x)/3, y:(P2.y + P3.y + Q1.y)/3 };  // C¹-exact
+  M.anchors.splice(i+1, 1);
+  at(i).ho = Pm;
+  applyJoint();
+}
+function setSegments(n){
+  n = clamp(n|0, 1, 6);
+  let guard = 0;
+  while (nseg() < n && guard++ < 16){
+    let bi = 0, bf = -1;
+    for (let i = 0; i < nseg(); i++){
+      const f = chordBend(...segOf(i));
+      if (f > bf){ bf = f; bi = i; }
+    }
+    splitSegment(bi, 0.5);
+  }
+  while (nseg() > n && guard++ < 16){
+    /* drop the interior node whose removal disturbs the shape least */
+    let bi = -1, bs = Infinity;
+    for (let i = 0; i < nseg(); i++){
+      if (!M.closed && i + 1 >= N()-1) break;      // never eat the last node
+      if (M.closed && i + 1 >= N())   break;      // never eat anchor 0
+      const s = h2(at(i+1).hi.x - at(i).x,      at(i+1).hi.y - at(i).y)
+              + h2(at(i+1).x  - at(i+1).ho.x,   at(i+1).y - at(i+1).ho.y);
+      if (s < bs){ bs = s; bi = i; }
+    }
+    if (bi < 0) break;
+    mergeSegment(bi);
+  }
+  M.sel = M.hover = null;
+  syncUI(); dirty();
+}
+
+/* ------------------------- curve evaluation ------------------------- */
+function cubicAt(P0,P1,P2,P3,t){
+  const u = 1-t, a = u*u*u, b = 3*u*u*t, c = 3*u*t*t, d = t*t*t;
+  return { x:a*P0.x + b*P1.x + c*P2.x + d*P3.x,
+           y:a*P0.y + b*P1.y + c*P2.y + d*P3.y };
+}
+function cubicD(P0,P1,P2,P3,t){
+  const u = 1-t, a = 3*u*u, b = 6*u*t, c = 3*t*t;
+  return { x:a*(P1.x-P0.x) + b*(P2.x-P1.x) + c*(P3.x-P2.x),
+           y:a*(P1.y-P0.y) + b*(P2.y-P1.y) + c*(P3.y-P2.y) };
+}
+function deCasteljau(P0,P1,P2,P3,t){
+  const A={x:lerp(P0.x,P1.x,t),y:lerp(P0.y,P1.y,t)};
+  const B={x:lerp(P1.x,P2.x,t),y:lerp(P1.y,P2.y,t)};
+  const C={x:lerp(P2.x,P3.x,t),y:lerp(P2.y,P3.y,t)};
+  const D={x:lerp(A.x,B.x,t),y:lerp(A.y,B.y,t)};
+  const E={x:lerp(B.x,C.x,t),y:lerp(B.y,C.y,t)};
+  const F={x:lerp(D.x,E.x,t),y:lerp(D.y,E.y,t)};
+  return {A,B,C,D,E,F};
+}
+const TOL = 0.2;
+function halfCubic(P0,P1,P2,P3){
+  const q0={x:(P0.x+P1.x)/2,y:(P0.y+P1.y)/2}, q1={x:(P1.x+P2.x)/2,y:(P1.y+P2.y)/2},
+        q2={x:(P2.x+P3.x)/2,y:(P2.y+P3.y)/2};
+  const r0={x:(q0.x+q1.x)/2,y:(q0.y+q1.y)/2}, r1={x:(q1.x+q2.x)/2,y:(q1.y+q2.y)/2};
+  const s ={x:(r0.x+r1.x)/2,y:(r0.y+r1.y)/2};
+  return [P0,q0,r0,s, r1,q2,P3];
+}
+let lastFlat = 0;
+function flatten(P0,P1,P2,P3,out,budget,depth){
+  if (depth >= 15 || budget.n <= 0 || chordBend(P0,P1,P2,P3) <= TOL){
+    out.push({x:P3.x, y:P3.y}); budget.n--; return;
+  }
+  const [l0,l1,l2,l3,r1,r2,r3] = halfCubic(P0,P1,P2,P3);
+  flatten(l0,l1,l2,l3,out,budget,depth+1);
+  flatten(l3,r1,r2,r3,out,budget,depth+1);
+}
+function shapePath(){
+  const s = nseg(), out = [{x:at(0).x, y:at(0).y}], budget = {n: 600};
+  for (let i = 0; i < s; i++) flatten(...segOf(i), out, budget, 0);
+  lastFlat = out.length;
+  return out;
+}
+function polyMetrics(pts){
+  let len = 0, area = 0;
+  for (let i = 1; i < pts.length; i++)
+    len += h2(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
+  for (let i = 0, j = pts.length-1; i < pts.length; j = i++)
+    area += (pts[j].x + pts[i].x) * (pts[j].y - pts[i].y);
+  return { len, area: Math.abs(area/2) };
+}
+function distToPath(pts,x,y){
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++){
+    const ax=pts[i-1].x, ay=pts[i-1].y, bx=pts[i].x, by=pts[i].y;
+    const dx=bx-ax, dy=by-ay, L=dx*dx+dy*dy;
+    let t = L > 0 ? ((x-ax)*dx + (y-ay)*dy)/L : 0; t = clamp(t,0,1);
+    const d = h2(x-(ax+dx*t), y-(ay+dy*t));
+    if (d < best) best = d;
+  }
+  return best;
+}
+function globalT(g){
+  const s = nseg();
+  const i = clamp(Math.floor(g * s), 0, s-1);
+  return { seg:i, t: clamp(g*s - i, 0, 1) };
+}
+function evalGlobal(g){
+  const q = globalT(g), [a,b,c,d] = segOf(q.seg);
+  return cubicAt(a,b,c,d,q.t);
+}
+
+/* ------------------------------ canvases ---------------------------- */
+const art = $('#art'), actx = art.getContext('2d');
+const bas = $('#bas'), bctx = bas.getContext('2d');
+const DPR = 1;                               // 1:1 — software raster, keep it cheap
+const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+/* Baked ground layer for the artboard (ground + grid). Rebuilt only when
+ * the artboard size changes; see groundLayer(). Declared here so layout()
+ * can invalidate it before its own definition is reached.                */
+let groundCache = null;
+
+function layout(){
+  const b = art.parentElement.getBoundingClientRect();
+  const s = bas.parentElement.getBoundingClientRect();
+  const w = Math.max(320, Math.round(b.width));
+  const h = Math.max(220, Math.round(b.height));
+  const bw = Math.max(320, Math.round(s.width));
+  const bh = Math.max(120, Math.round(s.height));
+  /* Idempotent on purpose: assigning canvas.width ALWAYS clears the
+   * backing store, so re-assigning the same size would wipe a frame that
+   * was just drawn. Only touch the canvases when the size really moved. */
+  if (w === M.W && h === M.H && bw === bas.width && bh === bas.height) return false;
+  M.W = w; M.H = h;
+  art.width = w * DPR;  art.height = h * DPR;
+  bas.width = bw * DPR; bas.height = bh * DPR;
+  groundCache = null;          // size changed → the baked ground is stale
+  dirty();
+  return true;
+}
+const rgba = (hex,a) => {
+  const v = parseInt(hex.slice(1), 16);
+  return `rgba(${(v>>16)&255},${(v>>8)&255},${v&255},${a})`;
+};
+
+/* =========================== the artboard =========================== */
+function groundLayer(W, H){
+  if (groundCache && groundCache.width === W && groundCache.height === H)
+    return groundCache;
+  const g = (typeof OffscreenCanvas !== 'undefined')
+    ? new OffscreenCanvas(W, H)
+    : Object.assign(document.createElement('canvas'), { width:W, height:H });
+  g.width = W; g.height = H;
+  const q = g.getContext('2d');
+  q.fillStyle = '#0a0f16'; q.fillRect(0,0,W,H);
+  const gr = q.createLinearGradient(0, 0, W*0.6, H);
+  gr.addColorStop(0, '#121b28'); gr.addColorStop(0.55,'#0c121b'); gr.addColorStop(1,'#080b11');
+  q.fillStyle = gr; q.fillRect(0,0,W,H);
+  q.lineWidth = 1; q.strokeStyle = 'rgba(150,190,255,.040)';
+  q.beginPath();
+  for (let x=40; x<W; x+=40){ q.moveTo(x+.5,0); q.lineTo(x+.5,H); }
+  for (let y=40; y<H; y+=40){ q.moveTo(0,y+.5); q.lineTo(W,y+.5); }
+  q.stroke();
+  q.strokeStyle = 'rgba(150,190,255,.085)';
+  q.beginPath();
+  for (let x=200; x<W; x+=200){ q.moveTo(x+.5,0); q.lineTo(x+.5,H); }
+  for (let y=200; y<H; y+=200){ q.moveTo(0,y+.5); q.lineTo(W,y+.5); }
+  q.stroke();
+  groundCache = g;
+  return g;
+}
+
+function drawStage(){
+  const c = actx, W = M.W, H = M.H, P = PALETTES[M.palIdx];
+  c.setTransform(DPR,0,0,DPR,0,0);
+  c.clearRect(0,0,W,H);
+
+  /* Ground + grid never change unless the canvas resizes, so they are
+   * baked once into an offscreen canvas and blitted. Redrawing them every
+   * frame was most of the per-frame cost on the software rasteriser. */
+  c.drawImage(groundLayer(M.W*DPR, M.H*DPR), 0, 0, M.W, M.H);
+
+  /* the shape as a path of exact cubics */
+  const build = () => {
+    c.beginPath();
+    c.moveTo(at(0).x, at(0).y);
+    for (let i = 0; i < nseg(); i++){
+      const [a,b,cc,d] = segOf(i);
+      c.bezierCurveTo(b.x, b.y, cc.x, cc.y, d.x, d.y);
+    }
+    if (M.closed) c.closePath();
+  };
+  const wantFill   = M.mode === 'fill'   || M.mode === 'both';
+  const wantStroke = M.mode !== 'fill';
+
+  /* soft bloom — stacked strokes, no filter (filters are ruinous here) */
+  if (M.mode !== 'wire'){
+    c.save(); build();
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    c.globalCompositeOperation = 'lighter';
+    for (const [lw,a] of [[30,.022],[17,.030],[10,.038]]){
+      c.lineWidth = lw; c.strokeStyle = rgba(P.b, a); c.stroke();
+    }
+    c.restore();
+  }
+  /* gradient fill + interior light + hatch */
+  if (wantFill){
+    c.save(); build();
+    const g = c.createLinearGradient(0, H*0.04, W*0.92, H*0.98);
+    g.addColorStop(0.00, rgba(P.a, .96));
+    g.addColorStop(0.46, rgba(P.b, .92));
+    g.addColorStop(1.00, rgba(P.c, .80));
+    c.fillStyle = g; c.fill();
+    c.clip();
+    const rg = c.createRadialGradient(W*.34, H*.26, 4, W*.34, H*.26, Math.max(W,H)*.66);
+    rg.addColorStop(0,  'rgba(255,255,255,.28)');
+    rg.addColorStop(.32,'rgba(255,255,255,.055)');
+    rg.addColorStop(1,  'rgba(0,0,0,.34)');
+    c.fillStyle = rg; c.fillRect(0,0,W,H);
+    c.strokeStyle = 'rgba(255,255,255,.05)'; c.lineWidth = 1;
+    c.beginPath();
+    for (let k = -H; k < W; k += 9){ c.moveTo(k, 0); c.lineTo(k+H, H); }
+    c.stroke();
+    /* a highlight band across the upper third sells the "lit surface" */
+    const hb = c.createLinearGradient(0, H*.10, 0, H*.44);
+    hb.addColorStop(0,'rgba(255,255,255,0)');
+    hb.addColorStop(.5,'rgba(255,255,255,.10)');
+    hb.addColorStop(1,'rgba(255,255,255,0)');
+    c.fillStyle = hb; c.fillRect(0,0,W,H);
+    c.restore();
+  } else if (M.mode === 'wire'){
+    c.save(); build(); c.fillStyle = rgba(P.a, .09); c.fill(); c.restore();
+  }
+
+  /* outline */
+  if (wantStroke){
+    c.save(); build();
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    if (M.mode === 'both'){
+      c.lineWidth = 3.4; c.strokeStyle = 'rgba(6,9,14,.6)';  c.stroke();
+      c.lineWidth = 1.7;
+      const sg = c.createLinearGradient(0, 0, W, H);
+      sg.addColorStop(0, '#f4fcff'); sg.addColorStop(.5,'#c2f5ff'); sg.addColorStop(1,'#ffdcae');
+      c.strokeStyle = sg; c.stroke();
+    } else {
+      c.lineWidth = 1.7; c.strokeStyle = rgba(P.c, .95); c.stroke();
+    }
+    c.restore();
+  }
+
+  /* the closing edge, called out explicitly */
+  if (M.closed){
+    const a = at(0), b = at(N()-1);
+    c.save();
+    c.setLineDash([6,5]); c.lineWidth = 1.1; c.strokeStyle = 'rgba(255,192,97,.40)';
+    c.beginPath(); c.moveTo(b.x,b.y); c.lineTo(a.x,a.y); c.stroke();
+    c.restore();
+  }
+
+  /* control polygon (the anchor chain) */
+  c.save();
+  c.lineWidth = 1.2; c.strokeStyle = 'rgba(196,216,246,.24)';
+  c.beginPath(); c.moveTo(at(0).x, at(0).y);
+  for (let i = 1; i < N(); i++) c.lineTo(at(i).x, at(i).y);
+  c.stroke(); c.restore();
+
+  /* handle stems */
+  c.save();
+  c.lineWidth = 1; c.strokeStyle = 'rgba(255,192,97,.40)';
+  c.beginPath();
+  for (let i = 0; i < N(); i++){
+    const a = at(i);
+    for (let s = (i === 0 ? 0 : i-1); s <= i && s < nseg(); s++){
+      const q = segOf(s);
+      c.moveTo(q[0].x, q[0].y); c.lineTo(q[1].x, q[1].y);
+      c.moveTo(q[2].x, q[2].y); c.lineTo(q[3].x, q[3].y);
+    }
+  }
+  c.stroke(); c.restore();
+
+  /* parameter ticks at t = 0, .25, .5, .75, 1 */
+  c.save();
+  for (const g of [0, .25, .5, .75, 1]){
+    const q = evalGlobal(g);
+    c.beginPath(); c.arc(q.x, q.y, 2.3, 0, TAU);
+    c.fillStyle = 'rgba(8,12,18,.9)'; c.fill();
+    c.lineWidth = 1; c.strokeStyle = 'rgba(226,242,255,.6)'; c.stroke();
+  }
+  c.restore();
+
+  /* handle dots — the two control points of every joint */
+  for (let i = 0; i < N(); i++){
+    const a = at(i);
+    for (const [k, key] of [['ho','ho'+i], ['hi','hi'+i]]){
+      const h = a[k];
+      /* the outer ring of a closed path has only one real handle */
+      if (!M.closed && ((k === 'ho' && i === N()-1) || (k === 'hi' && i === 0))) continue;
+      const on = (M.hover && M.hover.key === key) || (M.sel && M.sel.key === key);
+      c.beginPath(); c.arc(h.x, h.y, on ? 5.2 : 3.6, 0, TAU);
+      c.fillStyle = on ? rgba('#ffc061',.95) : '#0a0e15';
+      c.fill();
+      c.lineWidth = on ? 1.8 : 1.4;
+      c.strokeStyle = on ? '#fff3da' : rgba('#ffc061',.88);
+      c.stroke();
+    }
+  }
+
+  /* anchors — rotated squares */
+  for (let i = 0; i < N(); i++){
+    const a = at(i), on = (M.hover && M.hover.key === 'a'+i) || (M.sel && M.sel.key === 'a'+i);
+    const s = on ? 7.4 : 5.8;
+    c.save(); c.translate(a.x, a.y); c.rotate(Math.PI/4);
+    if (on){
+      c.beginPath(); c.rect(-s-5, -s-5, (s+5)*2, (s+5)*2);
+      c.fillStyle = rgba('#ffc061',.15); c.fill();
+    }
+    c.beginPath(); c.rect(-s/2, -s/2, s, s);
+    c.fillStyle = on ? '#ffe6bd' : '#eef6ff'; c.fill();
+    c.lineWidth = 1.4; c.strokeStyle = '#080c12'; c.stroke();
+    c.restore();
+    if (on){
+      c.save();
+      c.font = `600 11px ${FONT}`; c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.fillStyle = '#ffe6bd';
+      c.fillText(`P${i}`, a.x, a.y - s - 7);
+      c.restore();
+    }
+  }
+
+  drawTangent(c, P);
+  drawInset(c, P);
+  drawChrome(c, P);
+}
+
+function drawTangent(c, P){
+  const q0 = globalT(M.t), [P0,P1,P2,P3] = segOf(q0.seg);
+  const t  = q0.t;
+  const q  = cubicAt(P0,P1,P2,P3,t);
+  const d  = cubicD (P0,P1,P2,P3,t);
+  const m  = h2(d.x, d.y) || 1;
+  const ux = d.x/m, uy = d.y/m, nx = -uy, ny = ux;
+  const L  = clamp(m*0.27, 20, 165);
+  const dc = deCasteljau(P0,P1,P2,P3,t);
+  c.save();
+  /* control triangle: P0 → lerp(P0,P1,t) → B(t) */
+  c.setLineDash([3,3]); c.lineWidth = 1; c.strokeStyle = 'rgba(255,224,170,.42)';
+  c.beginPath();
+  c.moveTo(P0.x, P0.y); c.lineTo(dc.A.x, dc.A.y); c.lineTo(q.x, q.y);
+  c.moveTo(P1.x, P1.y); c.lineTo(dc.B.x, dc.B.y); c.lineTo(dc.F.x, dc.F.y);
+  c.moveTo(P2.x, P2.y); c.lineTo(dc.C.x, dc.C.y); c.lineTo(dc.F.x, dc.F.y);
+  c.stroke(); c.setLineDash([]);
+  for (const p of [dc.A, dc.B, dc.C]){
+    c.beginPath(); c.arc(p.x, p.y, 2, 0, TAU);
+    c.fillStyle = 'rgba(255,235,200,.8)'; c.fill();
+  }
+  /* halo */
+  c.beginPath(); c.arc(q.x, q.y, 12, 0, TAU); c.fillStyle = rgba('#ffc061',.13); c.fill();
+  /* tangent */
+  c.lineWidth = 1.8; c.strokeStyle = '#ffd68e';
+  c.beginPath();
+  c.moveTo(q.x-ux*L, q.y-uy*L); c.lineTo(q.x+ux*L, q.y+uy*L); c.stroke();
+  const hx = q.x+ux*L, hy = q.y+uy*L, a = 0.42;
+  c.beginPath();
+  c.moveTo(hx, hy);
+  c.lineTo(hx - ux*9 - nx*a*5.5, hy - uy*9 - ny*a*5.5);
+  c.moveTo(hx, hy);
+  c.lineTo(hx - ux*9 + nx*a*5.5, hy - uy*9 + ny*a*5.5);
+  c.lineWidth = 1.5; c.strokeStyle = '#ff9f2e'; c.stroke();
+  /* normal */
+  c.setLineDash([2,3]); c.lineWidth = 1; c.strokeStyle = 'rgba(255,192,97,.55)';
+  c.beginPath(); c.moveTo(q.x, q.y); c.lineTo(q.x-nx*14, q.y-ny*14); c.stroke();
+  c.setLineDash([]);
+  /* the point */
+  c.beginPath(); c.arc(q.x, q.y, 4.6, 0, TAU);
+  c.fillStyle = '#ffe9c4'; c.fill();
+  c.lineWidth = 1.7; c.strokeStyle = '#ff9f2e'; c.stroke();
+  /* label */
+  const txt = `B(${M.t.toFixed(3)})  |B′|=${m.toFixed(0)}px/s`;
+  c.font = `600 11px ${FONT}`;
+  let lx = q.x + ux*(L+14), ly = q.y + uy*(L+14);
+  const tw = c.measureText(txt).width;
+  if (lx + tw + 18 > M.W) lx = q.x - ux*(L+14) - tw - 12;
+  if (ly < 16) ly = q.y + uy*(L+18);
+  c.textAlign = 'left'; c.textBaseline = 'middle';
+  c.fillStyle = 'rgba(6,9,14,.78)';
+  if (c.roundRect) c.roundRect(lx-6, ly-9, tw+12, 18, 4); else c.rect(lx-6, ly-9, tw+12, 18);
+  c.fill();
+  c.fillStyle = '#ffe0ad'; c.fillText(txt, lx, ly);
+  c.restore();
+}
+
+/* bottom-right technical inset: the local construction, drawn small */
+function drawInset(c, P){
+  const iw = 176, ih = 128;
+  const x0 = M.W - iw - 14, y0 = M.H - ih - 34;
+  if (iw < 90) return;
+  c.save();
+  c.fillStyle = 'rgba(7,11,17,.72)';
+  if (c.roundRect) { c.beginPath(); c.roundRect(x0, y0, iw, ih, 6); c.fill(); }
+  else c.fillRect(x0, y0, iw, ih);
+  c.lineWidth = 1; c.strokeStyle = 'rgba(150,190,255,.16)';
+  c.strokeRect(x0+.5, y0+.5, iw-1, ih-1);
+  c.font = `10.5px ${FONT}`; c.fillStyle = 'rgba(150,180,215,.85)';
+  c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText(`SEGMENT ${q0seg()} @ t`, x0+8, y0+7);
+
+  const [P0,P1,P2,P3] = segOf(q0seg());
+  const t = globalT(M.t).t;
+  const dc = deCasteljau(P0,P1,P2,P3,t);
+  const all = [P0,P1,P2,P3,dc.A,dc.B,dc.C,dc.D,dc.E,dc.F];
+  let lx0=1e9, ly0=1e9, lx1=-1e9, ly1=-1e9;
+  for (const p of all){
+    lx0=Math.min(lx0,p.x); ly0=Math.min(ly0,p.y);
+    lx1=Math.max(lx1,p.x); ly1=Math.max(ly1,p.y);
+  }
+  const pad = 16, aw = iw-16, ah = ih-30;
+  const sc = Math.min(aw/Math.max(1,(lx1-lx0)), ah/Math.max(1,(ly1-ly0)));
+  const mx = (lx0+lx1)/2, my = (ly0+ly1)/2;
+  const T = p => ({ x: x0 + 8 + aw/2 + (p.x-mx)*sc, y: y0 + 22 + ah/2 + (p.y-my)*sc });
+  const a=T(P0), b=T(P1), d=T(P2), e=T(P3);
+  const A=T(dc.A), B=T(dc.B), C=T(dc.C), D=T(dc.D), E=T(dc.E), F=T(dc.F);
+  c.lineWidth = 1; c.strokeStyle = 'rgba(190,212,242,.34)';
+  c.beginPath();
+  c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.lineTo(d.x,d.y); c.lineTo(e.x,e.y);
+  c.moveTo(A.x,A.y); c.lineTo(B.x,B.y); c.lineTo(C.x,C.y);
+  c.moveTo(D.x,D.y); c.lineTo(E.x,E.y);
+  c.stroke();
+  c.lineWidth = 1.9; c.strokeStyle = rgba('#8ff0e2',.9);
+  c.beginPath();
+  c.moveTo(a.x,a.y); c.lineTo(A.x,A.y); c.lineTo(D.x,D.y); c.lineTo(F.x,F.y);
+  c.stroke();
+  for (const [p,col] of [[a,'#fff'],[b,'#9fb0c8'],[d,'#9fb0c8'],[e,'#fff'],
+                         [A,'#7fe6d8'],[B,'#7fe6d8'],[C,'#7fe6d8'],
+                         [D,'#ffc061'],[E,'#ffc061'],[F,'#ff8a2e']])
+  {
+    c.beginPath(); c.arc(p.x, p.y, 2.6, 0, TAU);
+    c.fillStyle = col; c.fill();
+  }
+  c.restore();
+}
+const q0seg = () => globalT(M.t).seg;
+
+function drawChrome(c, P){
+  const W = M.W, H = M.H;
+  c.save();
+  c.font = `11px ${FONT}`;
+  c.fillStyle = 'rgba(146,168,198,.62)';
+  c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+  c.fillText('drag ◆ ●   ·   click the curve to scrub t', 14, H-14);
+  c.textAlign = 'right';
+  c.fillStyle = 'rgba(255,192,97,.78)';
+  c.fillText(`${N()} anchors · ${nseg()*2} handles · ${lastFlat} chords`, W-14, H-14);
+  /* corner tick marks */
+  c.strokeStyle = 'rgba(150,190,255,.22)'; c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(10.5,10.5); c.lineTo(10.5,26.5); c.moveTo(10.5,10.5); c.lineTo(26.5,10.5);
+  c.moveTo(W-10.5,10.5); c.lineTo(W-10.5,26.5); c.moveTo(W-10.5,10.5); c.lineTo(W-26.5,10.5);
+  c.stroke();
+  c.restore();
+}
+
+/* ================== Bernstein basis + de Casteljau strip ============= */
+function drawStrip(){
+  const c = bctx, W = bas.width/DPR, H = bas.height/DPR;
+  c.setTransform(DPR,0,0,DPR,0,0);
+  c.fillStyle = '#0a0f16'; c.fillRect(0,0,W,H);
+  const g = c.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'#121b28'); g.addColorStop(1,'#080b11');
+  c.fillStyle = g; c.fillRect(0,0,W,H);
+
+  const s = globalT(M.t), t = s.t;
+  const [P0,P1,P2,P3] = segOf(s.seg);
+  const dc = deCasteljau(P0,P1,P2,P3,t);
+  const splitX = Math.round(W*0.46);
+
+  /* ---- left: the four Bernstein basis polynomials ---- */
+  const L = { x:42, y:30, w:splitX-66, h:H-72 };
+  c.save();
+  c.font = `11px ${FONT}`; c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillStyle = 'rgba(160,185,215,.9)';
+  c.fillText('BERNSTEIN BASIS   B₃,ₖ(t) = C(3,k)·tᵏ·(1−t)³⁻ᵏ', 12, 8);
+  c.strokeStyle = 'rgba(150,190,255,.08)'; c.lineWidth = 1;
+  c.beginPath();
+  for (let k=0;k<=4;k++){
+    const y = L.y + L.h - (k/4)*L.h;
+    c.moveTo(L.x, y+.5); c.lineTo(L.x+L.w, y+.5);
+    const x = L.x + (k/4)*L.w;
+    c.moveTo(x+.5, L.y); c.lineTo(x+.5, L.y+L.h);
+  }
+  c.stroke();
+  c.fillStyle = 'rgba(130,152,182,.6)'; c.textAlign = 'right'; c.textBaseline = 'middle';
+  for (let k=0;k<=4;k++) c.fillText((k/4).toFixed(2), L.x-6, L.y+L.h-(k/4)*L.h);
+
+  const cols  = ['#5ad2ff','#7f9cff','#c08cff','#ffc061'];
+  const names = ['B₀=(1−t)³','B₁=3(1−t)²t','B₂=3(1−t)t²','B₃=t³'];
+  const bv = k => { const u = 1-t; return k===0 ? u*u*u : k===1 ? 3*u*u*t : k===2 ? 3*u*t*t : t*t*t; };
+  for (let k=0;k<4;k++){
+    c.beginPath(); c.moveTo(L.x, L.y+L.h);
+    for (let i=0;i<=96;i++){
+      const x = i/96, u = 1-x;
+      const v = k===0 ? u*u*u : k===1 ? 3*u*u*x : k===2 ? 3*u*x*x : x*x*x;
+      c.lineTo(L.x + x*L.w, L.y + L.h - v*L.h);
+    }
+    c.lineTo(L.x+L.w, L.y+L.h); c.closePath();
+    c.fillStyle = rgba(cols[k], .12); c.fill();
+    c.beginPath();
+    for (let i=0;i<=96;i++){
+      const x = i/96, u = 1-x;
+      const v = k===0 ? u*u*u : k===1 ? 3*u*u*x : k===2 ? 3*u*x*x : x*x*x;
+      const px = L.x + x*L.w, py = L.y + L.h - v*L.h;
+      i ? c.lineTo(px,py) : c.moveTo(px,py);
+    }
+    c.lineWidth = 1.7; c.strokeStyle = cols[k]; c.stroke();
+    c.font = `10.5px ${FONT}`; c.textAlign='left'; c.textBaseline='top';
+    c.fillStyle = rgba(cols[k],.95);
+    c.fillText(names[k], L.x + k*(L.w/4) + 4, L.y + L.h + 7);
+  }
+  const tx = L.x + t*L.w;
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(tx+.5, L.y-5); c.lineTo(tx+.5, L.y+L.h+4); c.stroke();
+  for (let k=0;k<4;k++){
+    c.beginPath(); c.arc(tx, L.y + L.h - bv(k)*L.h, 3.2, 0, TAU);
+    c.fillStyle = '#fff'; c.fill();
+    c.lineWidth = 1.3; c.strokeStyle = cols[k]; c.stroke();
+  }
+  c.restore();
+
+  /* ---- right: the de Casteljau construction at t ---- */
+  const R = { x:splitX+26, y:32, w:W-splitX-50, h:H-76 };
+  c.save();
+  c.strokeStyle = 'rgba(150,190,255,.13)'; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(splitX+.5, 8); c.lineTo(splitX+.5, H-8); c.stroke();
+
+  const all = [P0,P1,P2,P3,dc.A,dc.B,dc.C,dc.D,dc.E,dc.F];
+  let lx0=1e9, ly0=1e9, lx1=-1e9, ly1=-1e9;
+  for (const p of all){
+    lx0=Math.min(lx0,p.x); ly0=Math.min(ly0,p.y);
+    lx1=Math.max(lx1,p.x); ly1=Math.max(ly1,p.y);
+  }
+  const sc = Math.min((R.w-14)/Math.max(1,(lx1-lx0)), (R.h-10)/Math.max(1,(ly1-ly0)));
+  const mx = (lx0+lx1)/2, my = (ly0+ly1)/2;
+  const T = p => ({ x:R.x + R.w/2 + (p.x-mx)*sc, y:R.y + R.h/2 + (p.y-my)*sc });
+  const a=T(P0), b=T(P1), d=T(P2), e=T(P3);
+  const A=T(dc.A), B=T(dc.B), C=T(dc.C), D=T(dc.D), E=T(dc.E), F=T(dc.F);
+
+  c.font = `11px ${FONT}`; c.textAlign='left'; c.textBaseline='top';
+  c.fillStyle = 'rgba(160,185,215,.9)';
+  c.fillText('DE CASTELJAU  —  successive lerp toward B(t)', splitX+14, 8);
+  c.lineWidth = 1; c.strokeStyle = 'rgba(190,212,242,.32)';
+  c.beginPath();
+  c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.lineTo(d.x,d.y); c.lineTo(e.x,e.y);
+  c.moveTo(A.x,A.y); c.lineTo(B.x,B.y); c.lineTo(C.x,C.y);
+  c.moveTo(D.x,D.y); c.lineTo(E.x,E.y);
+  c.stroke();
+  c.setLineDash([4,4]); c.strokeStyle = 'rgba(190,212,242,.16)';
+  c.beginPath();
+  c.moveTo(a.x,a.y); c.lineTo(b.x,b.y); c.lineTo(d.x,d.y); c.lineTo(e.x,e.y); c.closePath();
+  c.stroke(); c.setLineDash([]);
+  c.lineWidth = 2.1; c.strokeStyle = '#8ff0e2';
+  c.beginPath(); c.moveTo(a.x,a.y); c.lineTo(A.x,A.y); c.lineTo(D.x,D.y); c.lineTo(F.x,F.y); c.stroke();
+  c.beginPath(); c.moveTo(a.x,a.y); c.bezierCurveTo(b.x,b.y,d.x,d.y,e.x,e.y);
+  c.lineWidth = 1.2; c.setLineDash([5,4]);
+  c.strokeStyle = 'rgba(143,240,226,.5)'; c.stroke(); c.setLineDash([]);
+  for (const [p,col] of [[a,'#fff'],[b,'#9fb0c8'],[d,'#9fb0c8'],[e,'#fff'],
+                         [A,'#7fe6d8'],[B,'#7fe6d8'],[C,'#7fe6d8'],
+                         [D,'#ffc061'],[E,'#ffc061'],[F,'#ff8a2e']])
+  {
+    c.beginPath(); c.arc(p.x, p.y, 3.1, 0, TAU);
+    c.fillStyle = col; c.fill();
+    c.lineWidth = 1; c.strokeStyle = 'rgba(6,9,14,.9)'; c.stroke();
+  }
+  c.font = `10.5px ${FONT}`; c.textAlign='right'; c.textBaseline='bottom';
+  c.fillStyle = 'rgba(160,185,215,.7)';
+  c.fillText(`seg ${s.seg} · t=${t.toFixed(3)} · weight ${(3*t*(1-t)).toFixed(3)}`, W-12, H-8);
+  c.restore();
+}
+
+/* --------------------------- loop + probe -------------------------- */
+let dirtyFlag = true;
+let simT = 0;
+const DT = 1/60;
+let fps = 0, acc = 0, nf = 0, lastT = performance.now(), firstFrame = true;
+const probe = { fps:0, ms:0, segments:0, anchors:0, handles:0, chords:0,
+                length:0, area:0, closed:true, mode:'', joint:'', preset:'',
+                palette:'', t:0, drift:false, flattenBudget:600 };
+const dirty = () => { dirtyFlag = true; };
+
+function frame(){
+  if (M.drift){
+    simT += DT;                                   // fixed dt, never wall clock
+    M.t = 0.5 - 0.48*Math.cos(simT*0.5);
+    for (let i = 0; i < N(); i++){
+      if (!interior(i)) continue;
+      const a = at(i), ph = i*1.7 + simT*0.45;
+      const R = 34 + 9*Math.sin(simT*0.33 + i);
+      a.ho.x = a.x + Math.cos(ph)*R*0.82;  a.ho.y = a.y + Math.sin(ph)*R;
+    }
+    applyJoint();
+    $('#tR').value = M.t; $('#vT').textContent = M.t.toFixed(3);
+    dirtyFlag = true;
+  }
+  if (dirtyFlag){
+    const t0 = performance.now();
+    drawStage();
+    drawStrip();
+    probe.ms = +(performance.now() - t0).toFixed(2);
+    updateNums();
+    dirtyFlag = false;
+    if (firstFrame){
+      firstFrame = false;
+      window.__probe = probe;
+      window.__ready = true;                     // first real frame is on screen
+    }
+  }
+  const now = performance.now();
+  acc += now - lastT; lastT = now; nf++;
+  if (acc >= 500){
+    fps = nf*1000/acc; acc = 0; nf = 0;
+    probe.fps = +fps.toFixed(1);
+    $('#nF').textContent = fps.toFixed(0);
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ------------------------------ UI glue ---------------------------- */
+function updateNums(){
+  const m = polyMetrics(shapePath());
+  $('#nA').textContent  = N();
+  $('#nH').textContent  = nseg()*2;
+  $('#nP').textContent  = lastFlat;
+  $('#nL').textContent  = m.len.toFixed(0) + 'px';
+  $('#nAr').textContent = (m.area/1000).toFixed(1) + 'k';
+  probe.segments = nseg(); probe.anchors = N(); probe.handles = nseg()*2;
+  probe.chords = lastFlat; probe.length = Math.round(m.len);
+  probe.area = Math.round(m.area); probe.closed = M.closed;
+  probe.mode = M.mode; probe.joint = M.joint; probe.preset = M.preset;
+  probe.palette = PALETTES[M.palIdx].id; probe.t = +M.t.toFixed(3);
+  probe.drift = M.drift;
+}
+function syncUI(){
+  $('#vSeg').textContent    = nseg();
+  $('#segR').value          = clamp(nseg(), 1, 6);
+  $('#vHandle').textContent = M.joint;
+  $('#vT').textContent      = M.t.toFixed(3);
+  $('#tR').value            = M.t;
+  document.querySelectorAll('[data-mode]').forEach(b =>
+    b.classList.toggle('on', b.dataset.mode === M.mode));
+  document.querySelectorAll('[data-hm]').forEach(b =>
+    b.classList.toggle('on', b.dataset.hm === M.joint));
+  document.querySelectorAll('.swatch').forEach(b =>
+    b.classList.toggle('on', +b.dataset.pal === M.palIdx));
+  document.querySelectorAll('[data-pres]').forEach(b =>
+    b.classList.toggle('on', b.dataset.pres === M.preset));
+  $('#closeBtn').textContent = 'CLOSE PATH: ' + (M.closed ? 'ON' : 'OFF');
+  $('#closeBtn').classList.toggle('on', M.closed);
+  $('#drift').textContent = 'DRIFT: ' + (M.drift ? 'ON' : 'OFF');
+  $('#drift').classList.toggle('on', M.drift);
+}
+
+PALETTES.forEach((p,i) => {
+  const b = document.createElement('button');
+  b.className = 'swatch'; b.dataset.pal = i; b.title = p.id;
+  b.style.background = `linear-gradient(100deg, ${p.a}, ${p.b} 55%, ${p.c})`;
+  b.addEventListener('click', () => { M.palIdx = i; syncUI(); dirty(); });
+  $('#pals').appendChild(b);
+});
+PRESETS.forEach((p, k) => {
+  const b = document.createElement('button');
+  b.textContent = p.label; b.dataset.pres = p.id;
+  b.addEventListener('click', () => {
+    fromPreset(p, M.W, M.H); M.sel = M.hover = null; syncUI(); dirty();
+  });
+  $(k < 3 ? '#pres' : '#pres2').appendChild(b);
+});
+
+$('#segR').addEventListener('input', e => setSegments(+e.target.value));
+$('#segDn').addEventListener('click', () => setSegments(nseg()-1));
+$('#segUp').addEventListener('click', () => setSegments(nseg()+1));
+document.querySelectorAll('[data-mode]').forEach(b =>
+  b.addEventListener('click', () => { M.mode = b.dataset.mode; syncUI(); dirty(); }));
+document.querySelectorAll('[data-hm]').forEach(b =>
+  b.addEventListener('click', () => { M.joint = b.dataset.hm; applyJoint(); syncUI(); dirty(); }));
+$('#closeBtn').addEventListener('click', () => {
+  M.closed = !M.closed; applyJoint(); M.sel = M.hover = null; syncUI(); dirty();
+});
+$('#tR').addEventListener('input', e => {
+  M.t = +e.target.value; $('#vT').textContent = M.t.toFixed(3); dirty();
+});
+$('#drift').addEventListener('click', () => { M.drift = !M.drift; syncUI(); dirty(); });
+$('#jitter').addEventListener('click', () => {         // seeded ⇒ reproducible
+  rng = mulberry32(0x5EED1E + N()*977);
+  for (let i = 0; i < N(); i++){
+    if (!interior(i)) continue;
+    const a = at(i), R = 30 + rng()*44, ph = rng()*TAU;
+    a.ho.x = a.x + Math.cos(ph)*R;   a.ho.y = a.y + Math.sin(ph)*R;
+  }
+  applyJoint(); dirty();
+});
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); M.drift = !M.drift; syncUI(); dirty(); }
+});
+
+/* ------------------------- pointer interaction --------------------- */
+const clampX = x => clamp(x, -80, M.W+80);
+const clampY = y => clamp(y, -80, M.H+80);
+function localPt(ev){
+  const r = art.getBoundingClientRect();
+  return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+function hitTest(x, y){
+  for (let i = 0; i < N(); i++)
+    if (h2(at(i).x - x, at(i).y - y) < 11) return { key:'a'+i, i, kind:'anchor' };
+  for (let i = 0; i < N(); i++){
+    const a = at(i);
+    if (h2(a.ho.x - x, a.ho.y - y) < 10) return { key:'ho'+i, i, kind:'out' };
+    if (h2(a.hi.x - x, a.hi.y - y) < 10) return { key:'hi'+i, i, kind:'in'  };
+  }
+  return null;
+}
+art.addEventListener('pointermove', ev => {
+  const p = localPt(ev);
+  if (M.drag){
+    const d = M.drag;
+    if (d.kind === 'anchor'){
+      const a = at(d.i);
+      a.x = clampX(d.px + (p.x - d.ox));
+      a.y = clampY(d.py + (p.y - d.oy));
+      /* anchors carry no handles of their own — move the neighbours'
+       * handles with them so the curve does not swing wildly.          */
+      if (d.l) at(d.i-1).ho = { x:d.lh.x + (a.x - d.lp.x), y:d.lh.y + (a.y - d.lp.y) };
+      if (d.r) at(d.i+1).hi = { x:d.rh.x + (a.x - d.rp.x), y:d.rh.y + (a.y - d.rp.y) };
+      applyJoint();
+    } else {
+      /* one joint's handle per point: move it, the joint rule follows */
+      const i = d.i;
+      const a = at(i);
+      const k = d.kind === 'out' ? 'ho' : 'hi';
+      a[k].x = clampX(p.x); a[k].y = clampY(p.y);
+      applyJoint(d.base);
+    }
+    dirty();
+    return;
+  }
+  const h = hitTest(p.x, p.y);
+  const changed = (h && h.key) !== (M.hover && M.hover.key);
+  M.hover = h;
+  art.style.cursor = h ? 'grab' : 'crosshair';
+  if (changed) dirty();
+});
+art.addEventListener('pointerdown', ev => {
+  const p = localPt(ev);
+  const h = hitTest(p.x, p.y);
+  if (h){
+    M.sel = h;
+    if (h.kind === 'anchor'){
+      M.drag = { ...h, px: at(h.i).x, py: at(h.i).y, ox: p.x, oy: p.y,
+                 lp: {x:at(h.i).x, y:at(h.i).y},
+                 lh: h.i > 0 ? {...at(h.i-1).ho} : null,
+                 rp: h.i < N()-1 ? {x:at(h.i+1).x, y:at(h.i+1).y} : null,
+                 rh: h.i < N()-1 ? {...at(h.i+1).hi} : null };
+    } else {
+      M.drag = { ...h, base: jointBase(h.i) };
+    }
+    art.setPointerCapture(ev.pointerId);
+  } else {
+    const pts = shapePath();
+    if (distToPath(pts, p.x, p.y) < 10){
+      let bi = 1, bd = Infinity;
+      for (let i = 0; i < pts.length; i++){
+        const d = h2(pts[i].x - p.x, pts[i].y - p.y);
+        if (d < bd){ bd = d; bi = i; }
+      }
+      M.t = clamp(bi / Math.max(1, pts.length-1), 0, 1);
+      $('#tR').value = M.t; $('#vT').textContent = M.t.toFixed(3);
+    } else { M.sel = null; M.t = 0.42; $('#tR').value = M.t; $('#vT').textContent = '0.420'; }
+  }
+  dirty();
+});
+const endDrag = ev => {
+  if (M.drag){ try { art.releasePointerCapture(ev.pointerId); } catch(_){} }
+  M.drag = null; dirty();
+};
+art.addEventListener('pointerup', endDrag);
+art.addEventListener('pointercancel', endDrag);
+art.addEventListener('pointerleave', () => { if (!M.drag){ M.hover = null; dirty(); } });
+
+/* -------------------------------- boot ----------------------------- */
+layout();
+fromPreset(PRESETS[0], M.W, M.H);
+M.sel = { key:'a1', i:1, kind:'anchor' };
+M.hover = { key:'a1', i:1, kind:'anchor' };
+syncUI();
+/* Resize: rescale the control points, then re-sync the backing stores.
+ * layout() is a no-op when nothing moved, so this cannot loop.        */
+let resizeT = 0;
+new ResizeObserver(() => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => {
+    const r = art.parentElement.getBoundingClientRect();
+    const w = Math.max(320, Math.round(r.width)), h = Math.max(220, Math.round(r.height));
+    if (w === M.W && h === M.H) return;
+    const sx = w / M.W, sy = h / M.H;
+    for (const a of M.anchors){
+      a.x*=sx; a.y*=sy; a.hi.x*=sx; a.hi.y*=sy; a.ho.x*=sx; a.ho.y*=sy;
+    }
+    layout();
+    dirty();
+  }, 40);
+}).observe(art.parentElement);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,1678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Phase Portrait — Attractors, Equilibria, Basins</title>
+<style>
+  :root{
+    --bg:#04060b;
+    --ink:#c8dcf0;
+    --ink-dim:#8fa6c0;
+    --ink-faint:#6b8098;
+    --mint:#48ffc0;
+    --cyan:#2fd8ff;
+    --amber:#ffc24a;
+    --rose:#ff3d6e;
+    --line:rgba(100,145,190,.28);
+    --panel:rgba(8,14,24,.80);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);}
+  body{
+    font-family:"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+  }
+  #stage{position:fixed;inset:0;width:100vw;height:100vh;display:block;z-index:0}
+
+  /* ---------- title ---------- */
+  #title{
+    position:fixed; left:3.8%; top:1.6%; z-index:5;
+    display:flex; align-items:baseline; gap:14px; pointer-events:none;
+  }
+  #title h1{
+    margin:0; font-size:17px; letter-spacing:.34em; font-weight:600;
+    color:#eaf4ff; text-shadow:0 0 18px rgba(47,216,255,.35);
+  }
+  #title .sub{font-size:11px; letter-spacing:.20em; color:var(--ink-faint); text-transform:uppercase}
+  #title .rule{flex:0 0 46px;height:1px;background:linear-gradient(90deg,var(--cyan),transparent);align-self:center}
+
+  /* ---------- right instrument column ---------- */
+  #col{
+    position:fixed; left:71.6%; width:25.6%; top:1.9%; bottom:1.9%;
+    z-index:6; display:flex; flex-direction:column; gap:5px;
+    overflow:hidden; scrollbar-width:none;
+  }
+  #col::-webkit-scrollbar{display:none}
+  .pnl{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-left:2px solid rgba(72,255,192,.34);
+    padding:5px 8px 6px;
+  }
+  .hd{
+    font-size:9.5px; letter-spacing:.22em; color:var(--ink-faint);
+    text-transform:uppercase; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;
+  }
+  .hd em{font-style:normal; color:var(--mint); letter-spacing:.08em; font-size:9px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
+  button{
+    font:inherit; font-size:9.5px; letter-spacing:.04em;
+    background:rgba(20,32,50,.55); color:var(--ink-dim);
+    border:1px solid var(--line); padding:4px 3px; cursor:pointer;
+    text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  button:hover{color:#eaf4ff;border-color:rgba(72,255,192,.5);background:rgba(28,50,70,.6)}
+  button.on{color:#04060b;background:var(--mint);border-color:var(--mint);font-weight:700}
+  button.on.warm{background:var(--amber);border-color:var(--amber)}
+  button.acc{color:var(--cyan);border-color:rgba(47,216,255,.45)}
+
+  .sl{margin:0 0 2px}
+  .sl:last-child{margin-bottom:0}
+  .sl .lb{display:flex;justify-content:space-between;align-items:baseline;font-size:9.5px;letter-spacing:.08em;color:var(--ink-dim)}
+  .sl .lb i{font-style:normal;color:#eaf4ff}
+  .sl .lb b{font-style:normal;color:var(--mint);font-weight:600;font-size:10px}
+  .sl .nb{display:none}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:13px;background:transparent;margin:1px 0 0;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,rgba(47,216,255,.75),rgba(47,216,255,.18));}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:9px;height:13px;margin-top:-5.5px;
+    background:var(--mint);border:none;box-shadow:0 0 8px rgba(72,255,192,.6);
+  }
+  input[type=range]::-moz-range-track{height:2px;background:rgba(47,216,255,.5)}
+  input[type=range]::-moz-range-thumb{width:9px;height:13px;border:none;border-radius:0;background:var(--mint)}
+
+  /* equilibria table */
+  .fx{padding:2px 0 2.5px;border-bottom:1px dotted rgba(90,130,175,.16);font-size:9.5px;line-height:1.25}
+  .fx .r1{display:flex;align-items:baseline;gap:5px}
+  .fx .r2{display:flex;align-items:baseline;gap:6px;margin-left:12px;margin-top:1px}
+  .fx:last-child{border-bottom:none}
+  .fx .dot{width:7px;height:7px;flex:0 0 7px;border:1px solid var(--amber);transform:rotate(45deg);align-self:center}
+  .fx .nm{color:var(--amber);letter-spacing:.10em;min-width:26px}
+  .fx .ty{color:#dceaf8;letter-spacing:.02em}
+  .fx .sp{margin-left:auto;color:var(--ink);font-size:9px;white-space:nowrap}
+  .fx .lam{color:var(--mint);font-size:9px;letter-spacing:.03em;white-space:nowrap;opacity:.95;margin-left:auto}
+  .fx.dimmed{opacity:.42}
+  .none{font-size:9.5px;color:var(--ink-faint);padding:3px 0}
+
+  #lyapv{font-size:14px;color:var(--mint);letter-spacing:.04em;line-height:1.05}
+  #lyapv small{font-size:8.5px;color:var(--ink-faint);letter-spacing:.16em;display:block;margin-top:2px}
+  #spark{width:100%;height:30px;display:block;margin-top:3px;opacity:.9}
+
+  /* ---------- in-plot overlays ---------- */
+  #cap{
+    position:fixed; z-index:4; font-size:10px; letter-spacing:.12em; line-height:1.55;
+    color:rgba(150,175,200,.92); pointer-events:none; text-transform:uppercase;
+  }
+  #cap b{color:var(--cyan);font-weight:600}
+  #ticks,#chips{position:fixed;inset:0;z-index:4;pointer-events:none}
+  .tk{position:absolute;font-size:10px;color:rgba(150,175,200,.88);letter-spacing:.05em;transform:translate(-50%,-50%);white-space:nowrap;text-shadow:0 0 6px rgba(2,4,8,.9)}
+  .tk.ax{color:rgba(90,220,255,.95);font-size:10.5px;letter-spacing:.18em;font-weight:600}
+  .ch{
+    position:absolute;font-size:9px;color:#0a0d12;background:var(--amber);
+    padding:1px 3px;letter-spacing:.08em;transform:translate(-50%,-50%);white-space:nowrap;font-weight:700;
+  }
+  .ch.k{background:transparent;color:rgba(127,150,176,.8);font-weight:400}
+  #stat{
+    position:fixed; z-index:5; font-size:9.5px; letter-spacing:.12em; color:var(--ink-dim);
+    pointer-events:none; line-height:1.6;
+  }
+  #stat b{color:var(--ink-dim);font-weight:400}
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="title">
+  <h1>PHASE&nbsp;PORTRAIT</h1>
+  <div class="rule"></div>
+  <div class="sub" id="tsub">attractors &middot; equilibria &middot; basins</div>
+</div>
+
+<div id="col">
+  <div class="pnl">
+    <div class="hd">System <em id="syskind">flow</em></div>
+    <div class="grid" id="sysbtns"></div>
+  </div>
+
+  <div class="pnl">
+    <div class="hd">Parameters <em id="prname">—</em></div>
+    <div id="params"></div>
+  </div>
+
+  <div class="pnl">
+    <div class="hd">Motion <em>fixed &Delta; t</em></div>
+    <div id="motion"></div>
+  </div>
+
+  <div class="pnl">
+    <div class="hd">View</div>
+    <div class="grid3" id="viewbtns"></div>
+    <div class="grid3" style="margin-top:3px">
+      <button id="bProj" class="acc">proj &mdash;</button>
+      <button id="bFit" class="acc">auto&#8209;fit</button>
+      <button id="bField">field</button>
+    </div>
+    <div class="grid" style="margin-top:3px">
+      <button id="bSeeds">seeds</button>
+      <button id="bPause">pause</button>
+      <button id="bClear">clear</button>
+      <button id="bRe">re&#8209;seed</button>
+    </div>
+  </div>
+
+  <div class="pnl">
+    <div class="hd">Equilibria <em>J spectrum</em></div>
+    <div id="fps"></div>
+  </div>
+
+  <div class="pnl">
+    <div class="hd">Largest Lyapunov &lambda;<sub>1</sub></div>
+    <div id="lyapv">—</div>
+    <canvas id="spark" width="600" height="88"></canvas>
+  </div>
+</div>
+
+<div id="ticks"></div>
+<div id="chips"></div>
+<div id="cap"></div>
+<div id="stat"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   PHASE PORTRAIT — an animated phase portrait of 2-D/3-D dynamical systems.
+
+   Pipeline
+     · state vector advanced by RK4 (flows) or direct iteration (maps) with a
+       FIXED step dt per tick, never wall-clock
+     · trail rendered into a 640x400 phosphor buffer that decays every TICK
+       sim-steps, so trail length is measured in simulation steps and is
+       identical on fast and slow machines
+     · equilibria located by Newton iteration on F(s)-s=0 from a deterministic
+       seed lattice; stability from the eigenvalues of the numerical Jacobian
+       J = dF/ds (central differences), decomposed in closed form (2x2) and
+       by Cardano on the characteristic cubic (3x3)
+     · largest Lyapunov exponent by Benettin's algorithm (renormalised
+       tangent vector) + Benettin curve plotted live
+     · bifurcation mode re-integrates the logistic map across an r-sweep
+   ========================================================================= */
+
+/* ---------------- deterministic RNG (mulberry32) ---------------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const SEED0 = 0x5eed1a7;
+let rng = mulberry32(SEED0);
+let seedCount = 0;
+
+/* ---------------- small numeric helpers ---------------- */
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const mix = (a,b,t)=> a+(b-a)*t;
+const TAU = Math.PI*2;
+
+/* colour ramp: rose -> violet -> cyan -> mint (cyclic) */
+const RAMP = [[255,61,110],[164,75,255],[47,216,255],[72,255,192]];
+const RAMPN = 1024;
+const LUT = new Uint8Array(RAMPN*3);
+(function(){
+  const seg = RAMP.length;
+  for(let i=0;i<RAMPN;i++){
+    const t = i/RAMPN*seg, k = Math.floor(t), f = t-k;
+    const a = RAMP[k%seg], b = RAMP[(k+1)%seg];
+    LUT[i*3  ] = Math.round(mix(a[0],b[0],f));
+    LUT[i*3+1] = Math.round(mix(a[1],b[1],f));
+    LUT[i*3+2] = Math.round(mix(a[2],b[2],f));
+  }
+})();
+function ramp(t, o){
+  let i = (t%1+1)%1*(RAMPN-1) | 0; i = i<0?0:i;
+  o[0]=LUT[i*3]; o[1]=LUT[i*3+1]; o[2]=LUT[i*3+2];
+}
+
+/* ---------------- systems ---------------- */
+const VIEWS = [['x','y'],['x','z'],['y','z']];
+/* axis name -> component index in the state vector (x=0, y=1, z=2) */
+const IDX = {x:0, y:1, z:2};
+const COMP = ['x','y','z'];
+
+const SYS = {
+lorenz:{
+  label:'Lorenz', kind:'flow', dim:3, dt:0.0040, phaseKind:'vel',
+  ref:[-32,32,-48,48,-8,66],
+  note:'convection rolls: the classic butterfly',
+  names:['x','y','z'],
+  def:{sigma:10,rho:28,beta:8/3},
+  ps:[
+    {k:'sigma',lb:'σ',min:4,max:20,st:0.1,n:'Prandtl'},
+    {k:'rho', lb:'ρ',min:2,max:60, st:0.2,n:'Rayleigh'},
+    {k:'beta', lb:'β',min:0.6,max:6,st:0.02,n:'geometry'}
+  ],
+  f(s,p,o){
+    o[0]=p.sigma*(s[1]-s[0]);
+    o[1]=s[0]*(p.rho-s[2])-s[1];
+    o[2]=s[0]*s[1]-p.beta*s[2];
+  },
+  start(){ return [0.9,1.6,18]; }
+},
+vdp:{
+  label:'van der Pol', kind:'flow', dim:2, dt:0.010, phaseKind:'vel',
+  ref:[-3.6,3.6,-3.2,3.2],
+  note:'self-sustained oscillator, the limit cycle',
+  names:['x','ẋ'],
+  def:{mu:1.0},
+  ps:[{k:'mu',lb:'μ',min:0.05,max:9,st:0.05,n:'non-linearity'}],
+  f(s,p,o){ o[0]=s[1]; o[1]=p.mu*(1-s[0]*s[0])*s[1]-s[0]; },
+  start(){ return [0.2,0]; }
+},
+henon:{
+  label:'Hénon', kind:'map', dim:2, dt:1, phaseKind:'pos',
+  ref:[-2.2,2.2,-2.2,2.2],
+  note:'area-dissipating quadratic map',
+  names:['xₙ','yₙ'],
+  def:{a:1.4,b:0.3},
+  ps:[
+    {k:'a',lb:'a',min:0.4,max:2.0,st:0.01,n:'curvature'},
+    {k:'b',lb:'b',min:0.05,max:0.6,st:0.005,n:'folding'}
+  ],
+  f(s,p,o){ o[0]=1-p.a*s[0]*s[0]+p.b*s[1]; o[1]=s[0]; },
+  start(){ return [0.1,0.1]; }
+},
+rossler:{
+  label:'Rössler', kind:'flow', dim:3, dt:0.010, phaseKind:'vel',
+  ref:[-11,13,-13,13,-1,13],
+  note:'single-scroll spiral band',
+  names:['x','y','z'],
+  def:{a:0.2,b:0.2,c:5.7},
+  ps:[
+    {k:'a',lb:'a',min:0.05,max:0.5,st:0.005,n:'fold I'},
+    {k:'b',lb:'b',min:0.05,max:2.2,st:0.005,n:'fold II'},
+    {k:'c',lb:'c',min:2.0,max:20,st:0.05,n:'injection'}
+  ],
+  f(s,p,o){
+    o[0]=-s[1]-s[2];
+    o[1]=s[0]+p.a*s[1];
+    o[2]=p.b+s[2]*(s[0]-p.c);
+  },
+  start(){ return [1,1,1]; }
+},
+clifford:{
+  label:'Clifford', kind:'map', dim:2, dt:1, phaseKind:'pos',
+  ref:[-2.6,2.6,-2.6,2.6],
+  note:'four-parameter trigonometric map',
+  names:['x','y'],
+  def:{a:-1.7,b:1.3,c:-0.1,d:-1.21},
+  ps:[
+    {k:'a',lb:'a',min:-3,max:3,st:0.02,n:'freq y'},
+    {k:'b',lb:'b',min:-3,max:3,st:0.02,n:'freq x'},
+    {k:'c',lb:'c',min:-3,max:3,st:0.02,n:'cos x'},
+    {k:'d',lb:'d',min:-3,max:3,st:0.02,n:'cos y'}
+  ],
+  f(s,p,o){
+    o[0]=Math.sin(p.a*s[1])+p.c*Math.cos(p.a*s[0]);
+    o[1]=Math.sin(p.b*s[0])+p.d*Math.cos(p.b*s[1]);
+  },
+  start(){ return [0.1,0.1]; }
+},
+logistic:{
+  label:'Bifurcation', kind:'map', dim:1, dt:1, phaseKind:'pos', mode:'bifur',
+  ref:[2.4,4.0,0,1],
+  note:'period-doubling cascade to chaos',
+  names:['r','xₙ'],
+  def:{cols:440, its:760},
+  ps:[
+    {k:'cols',lb:'res x',min:220,max:640,st:20,n:'',int:true},
+    {k:'its', lb:'res y',min:300,max:1100,st:50,n:'',int:true}
+  ],
+  f(s,p,o){ o[0]=p.r*s[0]*(1-s[0]); },
+  start(){ return [0.5]; }
+}
+};
+const ORDER = ['lorenz','vdp','henon','rossler','clifford','logistic'];
+
+/* ---------------- state ---------------- */
+const S = {
+  id:'lorenz', sys:SYS.lorenz, p:{},
+  view:1, viewBtn:0,
+  st:[0.9,1.6,18],
+  tan:[1,0,0], lyap:0, lyapN:0, lyapHist:[], lyapSpan:180,
+  vref:1, speed:20, ticks:110, traceTicks:110,
+  seed:1, seeds:[],
+  fxp:[], field:1, seedsOn:1, pause:0,
+  lastR:2.42, seedX:0.5
+};
+const cur = new Float64Array(4), tmp = new Float64Array(4);
+const k1=new Float64Array(4), k2=new Float64Array(4), k3=new Float64Array(4), k4=new Float64Array(4);
+const J = []; for(let i=0;i<3;i++) J.push(new Float64Array(3));
+
+/* ---------------- dynamics ---------------- */
+function rk4(h){
+  const s=S.st, p=S.p, f=S.sys.f, n=S.sys.dim;
+  for(let i=0;i<n;i++) k1[i]=0;
+  f(s,p,k1);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*h*k1[i];
+  f(tmp,p,k2);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+0.5*h*k2[i];
+  f(tmp,p,k3);
+  for(let i=0;i<n;i++) tmp[i]=s[i]+h*k3[i];
+  f(tmp,p,k4);
+  const c=h/6;
+  for(let i=0;i<n;i++) s[i]+=c*(k1[i]+2*k2[i]+2*k3[i]+k4[i]);
+}
+function fwd(){ const s=S.st,p=S.p,n=S.sys.dim; S.sys.f(s,p,cur); return cur; }
+
+/* one simulation tick: TICK steps, then one phosphor decay */
+const TICK = 24;
+let tickCount = 0, stepCount = 0;
+
+/* Tangent map for the Lyapunov exponent.
+   For a MAP this is just dF/ds.  For a FLOW advanced by RK4 the correct
+   operator is the derivative of the RK4 STEP MAP, not dF/ds -- using dF/ds
+   here overstates the exponent by orders of magnitude.  Both are computed by
+   differencing the respective stepper.                                        */
+const Jw=new Float64Array(4), Jw2=new Float64Array(4), Jbase=new Float64Array(4), Jpert=new Float64Array(4);
+function jacobian(){
+  const p=S.p, f=S.sys.f, n=S.sys.dim, s=S.st, h=S.sys.dt;
+  if(S.sys.kind==='map'){
+    for(let j=0;j<n;j++){
+      const x=s[j], e=1e-7*Math.max(1,Math.abs(x));
+      s[j]=x+e; f(s,p,Jw);
+      s[j]=x-e; f(s,p,Jw2);
+      s[j]=x;
+      for(let i=0;i<n;i++) J[i][j]=(Jw[i]-Jw2[i])/(2*e);
+    }
+  }else{
+    // unperturbed step
+    for(let q=0;q<n;q++) Jbase[q]=s[q];
+    rk4On(Jbase, h, n);
+    const w=new Float64Array(4);
+    for(let j=0;j<n;j++){
+      const e=1e-7*Math.max(1,Math.abs(s[j]));
+      for(let q=0;q<n;q++) w[q]=s[q];
+      w[j]+=e;                                  // perturb component j only
+      rk4On(w, h, n, Jpert);
+      for(let i=0;i<n;i++) J[i][j]=(Jpert[i]-Jbase[i])/e;
+    }
+  }
+}
+
+/* Benettin: renormalised tangent vector, one sample per tick */
+function lyapStep(){
+  const n=S.sys.dim;
+  if(n<2) return;                    // no tangent space in 1-D
+  if(S.lyapN===0){ for(let i=0;i<n;i++) S.tan[i]=0; S.tan[0]=1; }
+  jacobian();
+  let sum=0;
+  for(let i=0;i<n;i++){ let a=0; for(let j=0;j<n;j++) a+=J[i][j]*S.tan[j]; S.tan[i]=a; }
+  for(let i=1;i<n;i++) sum+=S.tan[i]*S.tan[i];
+  const nn=Math.sqrt(S.tan[0]*S.tan[0]+sum);
+  if(nn>1e-300 && isFinite(nn)){
+    S.tan[0]/=nn; for(let i=1;i<n;i++) S.tan[i]/=nn;
+    S.lyap += Math.log(nn);
+  }
+  S.lyapN++;
+  if(S.lyapN>48 && (S.lyapN%6===0)){
+    S.lyapHist.push(S.lyap/S.lyapN);
+    if(S.lyapHist.length>S.lyapSpan) S.lyapHist.shift();
+  }
+}
+
+/* ---------------- eigen decomposition ---------------- */
+function quadRoots(a,b){ // λ² - aλ + b
+  const d=a*a-4*b;
+  if(d>=0){ const s=Math.sqrt(d); return [{re:(a+s)/2,im:0},{re:(a-s)/2,im:0}]; }
+  const s=Math.sqrt(-d)/2;
+  return [{re:a/2,im:s},{re:a/2,im:-s}];
+}
+function eig2(m){
+  const tr=m[0][0]+m[1][1], dt=m[0][0]*m[1][1]-m[0][1]*m[1][0];
+  return quadRoots(tr,dt);
+}
+function eig3(M){
+  // characteristic polynomial  λ³ − c1 λ² + c2 λ − c3  (traces / principal minors)
+  const a=M[0][0],b=M[0][1],c=M[0][2],d=M[1][0],e=M[1][1],f=M[1][2],g=M[2][0],h=M[2][1],i=M[2][2];
+  const c1=a+e+i;
+  const c2=(a*e-b*d)+(a*i-c*g)+(e*i-f*h);
+  const c3=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);
+  // depressed cubic λ = y + c1/3  ->  y³ + qa y + qb
+  const qa=c2-c1*c1/3;
+  const qb=-2*c1*c1*c1/27+c1*c2/3-c3;
+  const half=qb/2, third=qa/3;
+  const disc=half*half+third*third*third;
+  const out=[];
+  const P=(l)=>((l-c1)*l+c2)*l-c3;      // the cubic itself
+  const dP=(l)=>(3*l-2*c1)*l+c2;         // its derivative
+  const polish=(l)=>{
+    for(let k=0;k<8;k++){ const d=dP(l); if(Math.abs(d)<1e-14) break; l-=P(l)/d; }
+    return l;
+  };
+  if(disc>1e-13*Math.max(1,Math.abs(half)+Math.abs(third*third*third))){
+    // one real root + a conjugate pair
+    const sq=Math.sqrt(disc);
+    let r=Math.cbrt(-half+sq)+Math.cbrt(-half-sq)+c1/3;
+    r=polish(r);
+    out.push({re:r,im:0});
+    // divide the cubic by (λ − r):  λ² + (r−c1)λ + (c2 − c1 r + r²)
+    const A=r-c1;
+    const B=c2-c1*r+r*r;
+    const q=quadRoots(-A,B);              // quadRoots solves t² − a t + b, so a = −A
+    out.push(q[0],q[1]);
+  }else if(Math.abs(qa)<1e-13 && Math.abs(qb)<1e-13){
+    const t=c1/3;
+    out.push({re:t,im:0},{re:t,im:0},{re:t,im:0});
+  }else{
+    // three real roots: trig form, each polished
+    const r=2*Math.sqrt(-third*third*third);
+    const phi=Math.acos(clamp(-half/r,-1,1))/3;
+    for(let k=0;k<3;k++){
+      const t=2*Math.sqrt(-third*third*third)*Math.cos(phi-TAU*k/3)+c1/3;
+      out.push({re:polish(t),im:0});
+    }
+  }
+  out.sort((p,q)=>q.re-p.re || q.mag-p.mag);
+  return out;
+}
+function nullVec3(M, lam){
+  const r=[[M[0][0]-lam,M[0][1],M[0][2]],[M[1][0],M[1][1]-lam,M[1][2]],[M[2][0],M[2][1],M[2][2]-lam]];
+  const cr=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  let best=null,bn=0;
+  for(const p of [[0,1],[0,2],[1,2]]){
+    const v=cr(r[p[0]],r[p[1]]); const n2=Math.hypot(v[0],v[1],v[2]);
+    if(n2>bn){bn=n2;best=v;}
+  }
+  if(!best||bn<1e-12){
+    let bi=0,bn2=-1; for(let i=0;i<3;i++){const n2=Math.hypot(r[0][i],r[1][i],r[2][i]); if(n2>bn2){bn2=n2;bi=i;}}
+    const v=[0,0,0]; v[bi]=1; return v;
+  }
+  return [best[0]/bn,best[1]/bn,best[2]/bn];
+}
+function nullVec2(M, lam){
+  const r0=[M[0][0]-lam,M[0][1]], r1=[M[1][0],M[1][1]-lam];
+  const c=r0[0]*r1[1]-r0[1]*r1[0];
+  if(Math.abs(c)>1e-12) return [r1[1]/c,-r0[1]/c];
+  if(Math.hypot(r0[0],r0[1])>1e-12) return [-r0[1],r0[0]];
+  return [1,0];
+}
+function eigens(M,n){
+  const ev = n===1? [{re:M[0][0],im:0}] : n===2? eig2(M) : eig3(M);
+  const out=ev.map(e=>({re:e.re,im:e.im,mag:Math.hypot(e.re,e.im)}));
+  // sort by real part, descending: the leading eigenvalue comes first
+  out.sort((a,b)=>b.re-a.re || b.im-a.im);
+  out.forEach(e=>{
+    if(e.im!==0 || n===1){ e.v=null; }
+    else e.v = n===2? nullVec2(M,e.re) : nullVec3(M,e.re);
+  });
+  return out;
+}
+/* Stability is decided on the REAL PART of each eigenvalue (growth per unit
+   time), never on |λ| — a spiral with Re<0 is attracting even though |λ|>1. */
+function classify(ev){
+  const near=1e-3;
+  const spiral=ev.some(e=>Math.abs(e.im)>near);
+  // a conjugate pair is ONE eigenvalue: count its real part once
+  const parts=[];
+  for(const e of ev){
+    if(Math.abs(e.im)>near){
+      const twin=parts.find(q=>Math.abs(q.re-e.re)<1e-6);
+      if(!twin) parts.push({re:e.re,im:e.im});
+    } else parts.push({re:e.re,im:0});
+  }
+  let pos=0,neg=0,neu=0;
+  for(const e of parts){
+    if(e.re>  near) pos++;
+    else if(e.re< -near) neg++;
+    else neu++;
+  }
+  if(neu>0) return 'nonhyperbolic';
+  if(pos>0 && neg>0) return 'saddle · '+pos+' unstable, '+neg+' stable';
+  if(pos===parts.length) return spiral?'repelling focus':'repelling node';
+  return spiral?'attracting focus':'attracting node';
+}
+/* Display string.  A conjugate pair is reported as (a ± bi) so the count of
+   eigenvalues always matches the dimension and the real part is never lost. */
+function spectrum(ev){
+  const out=[];
+  let usedPair=false;
+  for(const e of ev){
+    if(Math.abs(e.im)>1e-9){
+      if(usedPair) continue;                 // its conjugate repeats this
+      usedPair=true;
+      out.push('('+(e.re>=0?'+':'')+e.re.toFixed(2)+' ± '+Math.abs(e.im).toFixed(1)+'i)');
+      continue;
+    }
+    out.push((e.re>=0?'+':'')+e.re.toFixed(2));
+  }
+  return out.join('  ');
+}
+
+/* ---------------- equilibrium finder (Newton on F(s)-s) ---------------- */
+function findFixed(){
+  const sys=S.sys, n=sys.dim, B=sys.ref;
+  const g = n===1?9:7;
+  const out=[];
+  const s=new Float64Array(4), d=new Float64Array(4), fv=new Float64Array(4), upv=new Float64Array(4);
+  const NJ=[]; for(let i=0;i<3;i++) NJ.push(new Float64Array(3));
+  const N = Math.pow(g, n);
+  for(let idx=0;idx<N;idx++){
+    let q=idx;
+    for(let i=0;i<n;i++){ const c=q%g; q=(q-c)/g; s[i]=B[i*2]+(B[i*2+1]-B[i*2])*(c+0.5)/g; }
+    let ok=true;
+    for(let it=0; it<70; it++){
+      sys.f(s,S.p,fv);
+      for(let i=0;i<n;i++) d[i]=fv[i]-s[i];
+      let dn=0; for(let i=0;i<n;i++) dn+=d[i]*d[i];
+      if(Math.sqrt(dn)<1e-10){ break; }
+      for(let j=0;j<n;j++){
+        const x=s[j], e=1e-7*Math.max(1,Math.abs(x));
+        s[j]=x+e; sys.f(s,S.p,fv);
+        for(let i=0;i<n;i++) upv[i]=fv[i];
+        s[j]=x-e; sys.f(s,S.p,fv);
+        s[j]=x;
+        // d(F-s)/ds = dF/ds - I
+        for(let i=0;i<n;i++) NJ[i][j]=(upv[i]-fv[i])/(2*e) - (i===j?1:0);
+      }
+      // solve NJ dx = d  (Gaussian elimination with partial pivot)
+      const A=NJ.map(r=>Float64Array.from(r.slice(0,n)));
+      const b=Float64Array.from(d.slice(0,n));
+      let sing=false;
+      for(let c=0;c<n;c++){
+        let piv=c,pm=Math.abs(A[c][c]);
+        for(let r2=c+1;r2<n;r2++){ if(Math.abs(A[r2][c])>pm){pm=Math.abs(A[r2][c]);piv=r2;} }
+        if(pm<1e-14){ sing=true; break; }
+        if(piv!==c){ const t=A[piv];A[piv]=A[c];A[c]=t; const tb=b[piv];b[piv]=b[c];b[c]=tb; }
+        for(let r2=c+1;r2<n;r2++){
+          const fq=A[r2][c]/A[c][c];
+          for(let cc=c;cc<n;cc++) A[r2][cc]-=fq*A[c][cc];
+          b[r2]-=fq*b[c];
+        }
+      }
+      if(sing){ ok=false; break; }
+      const x2=new Float64Array(n);
+      for(let r2=n-1;r2>=0;r2--){ let acc=b[r2]; for(let cc=r2+1;cc<n;cc++) acc-=A[r2][cc]*x2[cc]; x2[r2]=acc/A[r2][r2]; }
+      let step=0; for(let i=0;i<n;i++){ s[i]-=x2[i]; step+=x2[i]*x2[i]; }
+      if(step>64){ ok=false; break; }
+      if(!isFinite(s[0])){ ok=false; break; }
+    }
+    if(!ok) continue;
+    sys.f(s,S.p,fv);
+    let dn=0; for(let i=0;i<n;i++){ const e=fv[i]-s[i]; dn+=e*e; }
+    if(Math.sqrt(dn)>1e-7) continue;
+    let inb=true; for(let i=0;i<n;i++) if(s[i]<B[i*2]-1e-6||s[i]>B[i*2+1]+1e-6) inb=false;
+    if(!inb) continue;
+    let dup=false;
+    for(const o of out){ let dd=0; for(let i=0;i<n;i++) dd+=(o.s[i]-s[i])*(o.s[i]-s[i]); if(Math.sqrt(dd)<1e-4) dup=true; }
+    if(dup) continue;
+    // the stability Jacobian is dF/ds AT the equilibrium, not the Newton
+    // operator of G(s)=F(s)−s: evaluate the vector field by central differences
+    const Ms=[]; for(let i=0;i<n;i++) Ms.push(new Float64Array(n));
+    for(let j=0;j<n;j++){
+      const x=s[j], e=1e-7*Math.max(1,Math.abs(x));
+      s[j]=x+e; sys.f(s,S.p,upv);
+      s[j]=x-e; sys.f(s,S.p,fv);
+      s[j]=x;
+      for(let i2=0;i2<n;i2++) Ms[i2][j]=(upv[i2]-fv[i2])/(2*e);
+    }
+    const ev=eigens(Ms,n);
+    out.push({ s:Float64Array.from(s.slice(0,n)), J:Ms, ev:ev, ty:classify(ev) });
+  }
+  const A=ra(), Bx=rb();
+  out.sort((a,b)=>Math.atan2(a.s[Bx],a.s[A])-Math.atan2(b.s[Bx],b.s[A]));
+  return out;
+}
+function ra(){ return IDX[VIEWS[S.view][0]]; }   // horizontal axis -> component index
+function rb(){ return IDX[VIEWS[S.view][1]]; }   // vertical axis   -> component index
+function raName(){ return VIEWS[S.view][0]; }
+function rbName(){ return VIEWS[S.view][1]; }
+
+/* ---------------- canvas / layout ---------------- */
+const stage=document.getElementById('stage');
+const sctx=stage.getContext('2d',{alpha:false});
+let BW=640, BH=400, plot={bx:0,by:0,bw:1,bh:1}, sPlot={x:0,y:0,w:1,h:1};
+
+const trace=document.createElement('canvas');
+const tctx=trace.getContext('2d');
+const fieldCv=document.createElement('canvas');
+const fctx2=fieldCv.getContext('2d');
+const bifCv=document.createElement('canvas');
+const bctx2=bifCv.getContext('2d');
+const b1=document.createElement('canvas'), c1=b1.getContext('2d');
+const b2=document.createElement('canvas'), c2=b2.getContext('2d');
+
+/* the dense, fully-developed portrait sits underneath the live trace */
+const histCv=document.createElement('canvas');
+const hctx=histCv.getContext('2d');
+
+/* ---- live trace: ring buffer of screen-space samples with an age ramp.
+   A per-tick destination-out fade cannot express very long traces (the alpha
+   quantises to 0/255 below ~0.004), so the trace is redrawn each frame from a
+   ring buffer and faded analytically by sample age.  Length is measured in
+   TICKS of simulation, never frames, so it is machine-independent.        ---- */
+const RING_MAX=11000, RB=3;               // RB = px, py, phase
+const ring=new Float32Array(RING_MAX*RB);
+let ringN=0, ringHead=0;
+function ringPush(px,py,ph){
+  const i=(ringHead%RING_MAX)*RB;
+  ring[i]=px; ring[i+1]=py; ring[i+2]=ph;
+  ringHead++; if(ringN<RING_MAX) ringN++;
+}
+function ringClear(){ ringN=0; ringHead=0; }
+
+const noise=document.createElement('canvas');
+(function(){
+  noise.width=noise.height=128;
+  const g=noise.getContext('2d'), im=g.createImageData(128,128);
+  const r=mulberry32(0xA11CE);
+  for(let i=0;i<128*128;i++){
+    const v=(r()*255)|0;
+    im.data[i*4]=im.data[i*4+1]=im.data[i*4+2]=v; im.data[i*4+3]=255;
+  }
+  g.putImageData(im,0,0);
+})();
+let noisePat=null;
+
+function layout(){
+  const w=window.innerWidth, h=window.innerHeight;
+  BH=400; BW=Math.round(clamp(400*(w/h),512,760));
+  if(BW%2) BW++;
+  stage.width=BW; stage.height=BH;
+  trace.width=BW; trace.height=BH; tctx.clearRect(0,0,BW,BH);
+  b1.width=Math.max(2,BW>>2); b1.height=Math.max(2,BH>>2);
+  b2.width=Math.max(2,BW>>3); b2.height=Math.max(2,BH>>3);
+  plot={bx:Math.round(0.038*BW), by:Math.round(0.085*BH),
+        bw:Math.round(0.664*BW), bh:Math.round(0.810*BH)};
+  sPlot={x:plot.bx*w/BW, y:plot.by*h/BH, w:plot.bw*w/BW, h:plot.bh*h/BH};
+  noisePat=sctx.createPattern(noise,'repeat');
+  fitView(true);
+  bakeField();
+  bakePortrait();
+  if(S.sys.mode==='bifur') bakeBifur();
+}
+const mapX = bx => bx*window.innerWidth/BW;
+const mapY = by => by*window.innerHeight/BH;
+
+/* view state */
+let vb={x:-25,y:-25,w:50,h:50};
+let vbT={x:-25,y:-25,w:50,h:50};
+function sysBounds(){
+  const B=S.sys.ref, n=S.sys.dim;
+  if(n===1) return [B[0],B[1],B[2],B[3]];
+  return [B[ra()*2],B[ra()*2+1],B[rb()*2],B[rb()*2+1]];
+}
+/* Run a throwaway integration to measure the attractor's extent.
+   Operates on a local copy so S.st is never disturbed. */
+function targetBounds(){
+  const n=S.sys.dim;
+  if(n===1){ const B=sysBounds(); return [B[0],B[2],B[1]-B[0],B[3]-B[2]]; }
+  const s=new Float64Array(4);
+  for(let i=0;i<n;i++) s[i]=S.st[i];
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  const N=S.sys.kind==='map'?2600:16000;
+  const SKIP=S.sys.kind==='map'?0:Math.floor(N*0.4);
+  const A=ra(), Bx=rb();
+  for(let i=0;i<N;i++){
+    if(S.sys.kind==='map'){ S.sys.f(s,S.p,cur); for(let j=0;j<n;j++) s[j]=cur[j]; }
+    else{
+      // local RK4 on the copy
+      for(let q=0;q<n;q++) k1[q]=0;
+      S.sys.f(s,S.p,k1);
+      for(let q=0;q<n;q++) tmp[q]=s[q]+0.5*S.sys.dt*k1[q];
+      S.sys.f(tmp,S.p,k2);
+      for(let q=0;q<n;q++) tmp[q]=s[q]+0.5*S.sys.dt*k2[q];
+      S.sys.f(tmp,S.p,k3);
+      for(let q=0;q<n;q++) tmp[q]=s[q]+S.sys.dt*k3[q];
+      S.sys.f(tmp,S.p,k4);
+      for(let q=0;q<n;q++) s[q]+=(S.sys.dt/6)*(k1[q]+2*k2[q]+2*k3[q]+k4[q]);
+    }
+    if(i>=SKIP){
+      const ax=s[A], ay=s[Bx];
+      if(ax<x0)x0=ax; if(ax>x1)x1=ax; if(ay<y0)y0=ay; if(ay>y1)y1=ay;
+    }
+  }
+  // the equilibria belong in frame too
+  for(const f of S.fxp){
+    const ax=f.s[A], ay=f.s[Bx];
+    if(!isFinite(ax)||!isFinite(ay)) continue;
+    if(ax<x0)x0=ax; if(ax>x1)x1=ax; if(ay<y0)y0=ay; if(ay>y1)y1=ay;
+  }
+  // fallback: static domain, converted to the [x, y, w, h] the caller expects
+  if(!isFinite(x0)||x1-x0<1e-6||y1-y0<1e-6){
+    const B=sysBounds(), w=B[1]-B[0], h=B[3]-B[2], ar=plot.bw/plot.bh;
+    let ww=w, hh=h;
+    if(ww/hh<ar) ww=hh*ar; else hh=ww/ar;
+    return [B[0]+w/2-ww/2, B[2]+h/2-hh/2, ww, hh];
+  }
+  let cx=(x0+x1)/2, cy=(y0+y1)/2;
+  let w=Math.max(x1-x0,1e-6)*1.16, h=Math.max(y1-y0,1e-6)*1.16;
+  const ar=plot.bw/plot.bh;
+  if(w/h<ar) w=h*ar; else h=w/ar;
+  return [cx-w/2, cy-h/2, w, h];
+}
+function fitView(snap){
+  const t=targetBounds();
+  vbT={x:t[0],y:t[1],w:t[2],h:t[3]};
+  if(snap){ vb={x:vbT.x,y:vbT.y,w:vbT.w,h:vbT.h}; }
+  syncTicks();
+}
+function toPx(s){
+  return [ (s[ra()]-vb.x)/vb.w*plot.bw,
+           plot.bh - (s[rb()]-vb.y)/vb.h*plot.bh ];
+}
+function toState(px,py){
+  const a=[0,0,0];
+  a[ra()]=vb.x+px/plot.bw*vb.w;
+  a[rb()]=vb.y+(1-py/plot.bh)*vb.h;
+  if(S.sys.dim===3) a[3-ra()-rb()]=0.5*(S.sys.ref[4]+S.sys.ref[5]);  // unused axis
+  return a;
+}
+
+/* ---------------- baked field layer (streamlines / one-iterate) ---------------- */
+function bakeField(){
+  const W=Math.max(8,Math.round(plot.bw)), H=Math.max(8,Math.round(plot.bh));
+  fieldCv.width=W; fieldCv.height=H;
+  const g=fctx2;
+  g.clearRect(0,0,W,H);
+  const n=S.sys.dim;
+  if(n<2) return;
+  const rgb=[0,0,0];
+  const s=new Float64Array(4), fv=new Float64Array(4);
+  const nx=22, ny=Math.max(8,Math.round(22*H/W));
+  const hS=vb.h/(S.sys.kind==='flow'?54:1);
+  for(let i=0;i<nx;i++) for(let j=0;j<ny;j++){
+    const px=W*(i+0.5)/nx, py=H*(j+0.5)/ny;
+    const a=toState(px,py);
+    for(let q=0;q<n;q++) s[q]=a[q];
+    if(S.sys.kind==='map'){
+      S.sys.f(s,S.p,fv);
+      for(let q=0;q<n;q++) s[q]=fv[q];
+      const bx=toPx(s)[0], by=toPx(s)[1];
+      ramp(0.60+0.12*Math.sin(px*0.07+py*0.05), rgb);
+      g.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.13)';
+      g.lineWidth=1; g.beginPath(); g.moveTo(px,py); g.lineTo(bx,by); g.stroke();
+    }else{
+      const back=new Float64Array(4);
+      for(let q=0;q<n;q++) back[q]=s[q];
+      const M=44;
+      // forward streamline, integrated on the local copy `s`
+      g.beginPath(); g.moveTo(px,py);
+      for(let k=0;k<M;k++){ rk4On(s,hS,n); const P=toPx(s); g.lineTo(P[0],P[1]); }
+      for(let k=0;k<2;k++){ rk4On(s,-hS,n); const P=toPx(s); g.lineTo(P[0],P[1]); }
+      g.strokeStyle='rgba(47,216,255,0.085)'; g.lineWidth=1; g.stroke();
+      // backward from seed
+      for(let q=0;q<n;q++) s[q]=back[q];
+      g.beginPath(); g.moveTo(px,py);
+      for(let k=0;k<M;k++){
+        S.sys.f(s,S.p,fv);
+        for(let q=0;q<n;q++) s[q]-=hS*fv[q];
+        const P=toPx(s); g.lineTo(P[0],P[1]);
+      }
+      g.strokeStyle='rgba(120,90,255,0.070)'; g.lineWidth=1; g.stroke();
+    }
+  }
+  // clip-friendly vignette inside the field
+  const grad=g.createRadialGradient(W/2,H/2,Math.min(W,H)*0.25,W/2,H/2,Math.max(W,H)*0.72);
+  grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(4,6,11,0.55)');
+  g.globalCompositeOperation='destination-out';
+  g.fillStyle=grad; g.fillRect(0,0,W,H);
+  g.globalCompositeOperation='source-over';
+}
+
+/* ---------------- bifurcation bake ---------------- */
+function bakeBifur(){
+  const W=Math.max(8,Math.round(plot.bw)), H=Math.max(8,Math.round(plot.bh));
+  bifCv.width=W; bifCv.height=H;
+  const cols=Math.round(S.p.cols), its=Math.round(S.p.its);
+  const keep=Math.floor(its*0.55);
+  const acc=new Float32Array(W*H);
+  const r0=2.4, r1=4.0;
+  let x=0.5;
+  for(let c=0;c<cols;c++){
+    const r=r0+(r1-r0)*(c+0.5)/cols;
+    for(let k=0;k<its;k++){ x=r*x*(1-x); if(x<0||x>1){x=0.5;} }
+    const cxp=Math.min(W-1,Math.round((c+0.5)/cols*W));
+    for(let k=0;k<keep;k++){
+      x=r*x*(1-x); if(x<0||x>1){x=0.5;}
+      const yp=Math.min(H-1,Math.max(0,Math.round((1-x)*H)));
+      acc[yp*W+cxp]+=1;
+    }
+  }
+  const im=bctx2.createImageData(W,H), d=im.data, rgb=[0,0,0];
+  for(let i=0;i<W*H;i++){
+    const a=acc[i];
+    if(a<=0) continue;
+    const x=i%W;
+    const t=(x/W);
+    ramp(t*0.92+0.02, rgb);
+    const v=1-Math.exp(-a*0.42);
+    d[i*4  ]=Math.round(rgb[0]*v);
+    d[i*4+1]=Math.round(rgb[1]*v);
+    d[i*4+2]=Math.round(rgb[2]*v);
+    d[i*4+3]=Math.round(255*clamp(v*1.25,0,1));
+  }
+  bctx2.putImageData(im,0,0);
+}
+
+/* ---------------- ticks (DOM labels) ---------------- */
+const ticksEl=document.getElementById('ticks');
+let tickList=[];
+function fmt(v,range){
+  const d=clamp(Math.ceil(-Math.log10(Math.max(range*0.5,1e-9)))+1,0,4);
+  return v.toFixed(d);
+}
+function niceStep(range,n){
+  const raw=range/n, p=Math.pow(10,Math.floor(Math.log10(raw)));
+  const f=raw/p;
+  return (f<1.5?1:f<3.5?2:f<7.5?5:10)*p;
+}
+function syncTicks(){
+  const A=VIEWS[S.view];
+  const x0=vb.x, y0=vb.y, x1=vb.x+vb.w, y1=vb.y+vb.h;
+  if(!isFinite(x0)||!isFinite(y0)||!isFinite(x1)||!isFinite(y1)||vb.w<=0||vb.h<=0){
+    ticksEl.innerHTML=''; tickList=[]; return;
+  }
+  const sx=niceStep(vb.w,5), sy=niceStep(vb.h,4);
+  const out=[];
+  const ax = S.sys.names ? S.sys.names[IDX[A[0]]] : A[0];
+  const ay = S.sys.names ? S.sys.names[IDX[A[1]]] : A[1];
+  // role: 'bx' bottom-x tick, 'ly' left-y tick, 'axh' axis name (horizontal),
+  //       'axv' axis name (vertical)
+  for(let v=Math.ceil(x0/sx)*sx; v<=x1; v+=sx) out.push({role:'bx',x:v,v:fmt(v,vb.w)});
+  for(let v=Math.ceil(y0/sy)*sy; v<=y1; v+=sy) out.push({role:'ly',y:v,v:fmt(v,vb.h)});
+  out.push({role:'axh',x:x1,y:y0,v:ax});
+  out.push({role:'axv',x:x0,y:y1,v:ay});
+  if(S.sys.mode==='bifur' && 3.5699453>x0 && 3.5699453<x1) out.push({role:'bx',x:3.5699453,v:'r∞',ax:true});
+  ticksEl.innerHTML='';
+  tickList=out.map(t=>{
+    const el=document.createElement('div');
+    el.className='tk'+(t.ax?' ax':'');
+    el.textContent=t.v;
+    ticksEl.appendChild(el);
+    return {el,t};
+  });
+}
+function placeTicks(){
+  for(const {el,t} of tickList){
+    let px,py,tf;
+    if(t.role==='bx'){ px=(t.x-vb.x)/vb.w*plot.bw; py=plot.bh; tf='translate(-50%,-150%)'; }
+    else if(t.role==='ly'){ px=0; py=plot.bh-(t.y-vb.y)/vb.h*plot.bh; tf='translate(-150%,-50%)'; }
+    else if(t.role==='axh'){ px=plot.bw; py=plot.bh; tf='translate(-50%,-150%)'; }
+    else { px=0; py=0; tf='translate(8px,-160%)'; }
+    el.style.transform=tf;
+    el.style.left=(mapX(plot.bx+px))+'px';
+    el.style.top =(mapY(plot.by+py))+'px';
+  }
+}
+
+/* fixed-point chips */
+const chipsEl=document.getElementById('chips');
+let chipEls=[];
+function buildChips(){
+  chipsEl.innerHTML='';
+  chipEls=[];
+  if(S.sys.mode==='bifur'){
+    const mk=(t,cls)=>{ const el=document.createElement('div'); el.className='ch '+cls; el.textContent=t; chipsEl.appendChild(el); chipEls.push({el,at:'curve',t}); };
+    mk('x*=(r−1)/r','k'); mk('period-2','k'); return;
+  }
+  S.fxp.forEach((f,i)=>{
+    const el=document.createElement('div'); el.className='ch';
+    el.textContent='E'+(i+1);
+    chipsEl.appendChild(el); chipEls.push({el,f});
+  });
+}
+function placeChips(){
+  if(S.sys.mode==='bifur'){
+    if(!chipEls.length) return;
+    const put=(el,t)=>{
+      el.style.left=mapX(plot.bx+(t-vb.x)/vb.w*plot.bw)+'px';
+      el.style.top =mapY(plot.by+plot.bh-(0.62-vb.y)/vb.h*vb.h)+'px';
+    };
+    if(chipEls[0]){ const el=chipEls[0].el; el.style.opacity=0.9;
+      el.style.left=mapX(plot.bx+clamp((1-1/S.lastR-vb.x)/vb.w*plot.bw,26,plot.bw-26))+'px';
+      el.style.top =mapY(plot.by+plot.bh-(0.62-vb.y)/vb.h*vb.h)+'px'; }
+    if(chipEls[1]){
+      const r=S.lastR, y= r>3? (r+1+Math.sqrt((r+1)*(r-3)))/(2*r) : 0;
+      const el=chipEls[1].el; el.style.opacity = r>3?1:0.3;
+      el.style.left=mapX(plot.bx+clamp((r-vb.x)/vb.w*plot.bw,26,plot.bw-26))+'px';
+      el.style.top =mapY(plot.by+plot.bh-(y-vb.y)/vb.h*vb.h)+'px';
+    }
+    return;
+  }
+  chipEls.forEach(c=>{
+    const P=toPx(c.f.s);
+    // hide the label if the MARKER itself is off-plot; otherwise keep the
+    // label inside the frame with a short leader offset
+    if(P[0]<-6||P[0]>plot.bw+6||P[1]<-6||P[1]>plot.bh+6){ c.el.style.opacity=0; return; }
+    c.el.style.opacity=1;
+    const x=clamp(P[0], 18, plot.bw-18);
+    const y=clamp(P[1]-16, 11, plot.bh-11);
+    c.el.style.left=mapX(plot.bx+x)+'px';
+    c.el.style.top =mapY(plot.by+y)+'px';
+  });
+}
+
+/* ---------------- static overlays: caption, status ---------------- */
+const capEl=document.getElementById('cap'), statEl=document.getElementById('stat');
+function placeStaticText(){
+  capEl.style.left=mapX(plot.bx)+'px';
+  capEl.style.top=mapY(plot.by+plot.bh+7)+'px';
+  capEl.innerHTML='<b>fixed step</b> RK4 &nbsp;Δt='+S.sys.dt.toFixed(4)+
+    '<br><b>trail</b> phosphor decay / '+TICK+' steps &nbsp;·&nbsp; <b>equilibria</b> Newton on F(s)−s=0<br>'+
+    '<b>λ₁</b> Benettin renormalised tangent &nbsp;·&nbsp; <b>J</b> central-difference eigen-spectrum';
+  statEl.style.left=mapX(plot.bx+plot.bw)+'px';
+  statEl.style.top=mapY(plot.by)+'px';
+  statEl.style.textAlign='right';
+  statEl.style.transform='translateX(0)';
+  statEl.style.marginRight='6px';
+}
+
+/* ---------------- draw ---------------- */
+const rgb=[0,0,0];
+let dTrail=0.008;
+function initFade(){ dTrail = 1 - Math.pow(0.5, 1/Math.max(4,S.traceTicks)); }
+
+function drawBackground(){
+  const g=sctx;
+  const grd=g.createRadialGradient(BW*0.30,BH*0.34,10,BW*0.5,BH*0.5,Math.max(BW,BH)*0.78);
+  grd.addColorStop(0,'#0d1626'); grd.addColorStop(0.45,'#080d18'); grd.addColorStop(1,'#03050a');
+  g.globalCompositeOperation='source-over';
+  g.fillStyle=grd; g.fillRect(0,0,BW,BH);
+  // faint horizon band
+  g.fillStyle='rgba(47,216,255,0.030)';
+  g.fillRect(0,BH*0.5-1,BW,2);
+}
+function drawGrid(){
+  const g=sctx, gx=plot.bx, gy=plot.by, gw=plot.bw, gh=plot.bh;
+  g.fillStyle='rgba(6,10,18,0.55)'; g.fillRect(gx,gy,gw,gh);
+  const nx=8, ny=6;
+  g.lineWidth=1;
+  for(let i=1;i<nx;i++){
+    const x=Math.round(gx+gw*i/nx)+0.5;
+    g.strokeStyle = i===Math.round(nx/2)?'rgba(90,150,200,0.16)':'rgba(70,110,160,0.075)';
+    g.beginPath(); g.moveTo(x,gy); g.lineTo(x,gy+gh); g.stroke();
+  }
+  for(let j=1;j<ny;j++){
+    const y=Math.round(gy+gh*j/ny)+0.5;
+    g.strokeStyle = j===Math.round(ny/2)?'rgba(90,150,200,0.16)':'rgba(70,110,160,0.075)';
+    g.beginPath(); g.moveTo(gx,y); g.lineTo(gx+gw,y); g.stroke();
+  }
+  if(S.sys.mode==='bifur'){
+    const x=gx+(3.5699453-vb.x)/vb.w*gw;
+    g.setLineDash([3,3]); g.strokeStyle='rgba(255,194,74,0.42)';
+    g.beginPath(); g.moveTo(x,gy); g.lineTo(x,gy+gh); g.stroke(); g.setLineDash([]);
+  }
+}
+function drawComposites(){
+  const g=sctx, gx=plot.bx, gy=plot.by, gw=plot.bw, gh=plot.bh;
+  c1.clearRect(0,0,b1.width,b1.height); c1.drawImage(trace,0,0,b1.width,b1.height);
+  c2.clearRect(0,0,b2.width,b2.height); c2.drawImage(b1,0,0,b2.width,b2.height);
+  g.globalCompositeOperation='lighter';
+  g.imageSmoothingEnabled=true;
+  g.globalAlpha=0.46; g.drawImage(b2,gx,gy,gw,gh);
+  g.globalAlpha=0.40; g.drawImage(b1,gx,gy,gw,gh);
+  g.globalAlpha=0.96; g.drawImage(trace,gx,gy,gw,gh);
+  g.globalAlpha=1;
+  g.globalCompositeOperation='source-over';
+}
+function drawBifurOverlay(){
+  if(S.sys.mode!=='bifur') return;
+  const g=sctx;
+  const r=S.lastR;
+  const bx=(r-vb.x)/vb.w*plot.bw;
+  // fixed-point curves
+  g.lineWidth=1;
+  g.strokeStyle='rgba(255,194,74,0.55)';
+  g.beginPath();
+  for(let i=0;i<=120;i++){
+    const rr=2.4+(4.0-2.4)*i/120, yy=1-1/rr;
+    const x=plot.bx+(rr-vb.x)/vb.w*plot.bw, y=plot.bh-(yy-vb.y)/vb.h*vb.h;
+    i?g.lineTo(x,y):g.moveTo(x,y);
+  }
+  g.stroke();
+  g.strokeStyle='rgba(255,194,74,0.42)';
+  g.beginPath();
+  for(let i=0;i<=120;i++){
+    const rr=3.0+(4.0-3.0)*i/120;
+    const s=Math.sqrt((rr+1)*(rr-3));
+    const ym=(rr+1-s)/(2*rr), yp=(rr+1+s)/(2*rr);
+    const x=plot.bx+(rr-vb.x)/vb.w*plot.bw;
+    const ymP=plot.bh-(ym-vb.y)/vb.h*vb.h, ypP=plot.bh-(yp-vb.y)/vb.h*vb.h;
+    i?g.lineTo(x,ypP):g.moveTo(x,ypP);
+    g.lineTo(x,ymP);
+  }
+  g.stroke();
+  // sweep cursor
+  const cx=plot.bx+bx;
+  g.strokeStyle='rgba(255,255,255,0.30)'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(cx,plot.by); g.lineTo(cx,plot.by+plot.bh); g.stroke();
+  g.fillStyle='rgba(255,194,74,0.95)';
+  g.beginPath(); g.arc(cx,plot.bh-(1-1/r-vb.y)/vb.h*vb.h,2.6,0,TAU); g.fill();
+  if(r>3){
+    const s=Math.sqrt((r+1)*(r-3)), yp=(r+1+s)/(2*r);
+    g.beginPath(); g.arc(cx,plot.bh-(yp-vb.y)/vb.h*vb.h,2.0,0,TAU); g.fill();
+  }
+  g.beginPath(); g.arc(cx,plot.bh-(0-vb.y)/vb.h*vb.h,2.0,0,TAU); g.fill();
+}
+function drawFixed(){
+  if(S.sys.mode==='bifur') return;
+  const g=sctx;
+  g.globalCompositeOperation='lighter';
+  S.fxp.forEach((f,i)=>{
+    const P=toPx(f.s);
+    // an equilibrium outside the current view is not drawn at all (no ring
+    // bleeding past the frame, and no label overlapping the footer)
+    if(P[0]<-2||P[0]>plot.bw+2||P[1]<-2||P[1]>plot.bh+2) return;
+    const x=plot.bx+P[0], y=plot.by+P[1];
+    // eigen-directions
+    f.ev.forEach(e=>{
+      if(!e.v) return;
+      const m=Math.hypot(e.v[ra()],e.v[rb()]);
+      if(m<1e-9) return;
+      const ux=e.v[ra()]/m, uy=-e.v[rb()]/m;
+      const L=22, unst=e.mag>1.035;
+      g.strokeStyle= unst?'rgba(255,194,74,0.50)':'rgba(120,200,255,0.42)';
+      g.lineWidth=1;
+      g.beginPath(); g.moveTo(x-ux*L,y-uy*L); g.lineTo(x+ux*L,y+uy*L); g.stroke();
+      if(unst){
+        const a1=Math.atan2(-uy,-ux);
+        g.fillStyle='rgba(255,194,74,0.55)';
+        g.beginPath();
+        g.moveTo(x+ux*L,y+uy*L);
+        g.lineTo(x+ux*L-Math.cos(a1-0.42)*5, y+uy*L-Math.sin(a1-0.42)*5);
+        g.lineTo(x+ux*L-Math.cos(a1+0.42)*5, y+uy*L-Math.sin(a1+0.42)*5);
+        g.closePath(); g.fill();
+      }
+    });
+    // marker: bright ring + halo + crosshair
+    g.strokeStyle='rgba(255,210,120,1)'; g.lineWidth=1.6;
+    g.beginPath(); g.arc(x,y,6.2,0,TAU); g.stroke();
+    g.strokeStyle='rgba(255,194,74,0.45)'; g.lineWidth=1;
+    g.beginPath(); g.arc(x,y,11,0,TAU); g.stroke();
+    g.fillStyle='rgba(255,215,140,0.16)';
+    g.beginPath(); g.arc(x,y,6.2,0,TAU); g.fill();
+    g.strokeStyle='rgba(255,240,205,0.95)'; g.lineWidth=1.1;
+    g.beginPath(); g.moveTo(x-14,y); g.lineTo(x-8.5,y); g.moveTo(x+8.5,y); g.lineTo(x+14,y);
+    g.moveTo(x,y-14); g.lineTo(x,y-8.5); g.moveTo(x,y+8.5); g.lineTo(x,y+14); g.stroke();
+  });
+  g.globalCompositeOperation='source-over';
+}
+function drawLocator(){
+  if(S.sys.dim<2) return;
+  const g=sctx;
+  const W=Math.min(96,plot.bw*0.26), H=W*0.78;
+  const x=plot.bx+plot.bw-W-7, y=plot.by+plot.bh-H-7;
+  const R=sysBounds();
+  g.fillStyle='rgba(5,9,16,0.72)'; g.fillRect(x,y,W,H);
+  g.strokeStyle='rgba(90,130,175,0.30)'; g.lineWidth=1;
+  g.strokeRect(x+0.5,y+0.5,W-1,H-1);
+  const mx=Math.max(R[2]-R[0],1e-9), my=Math.max(R[3]-R[1],1e-9);
+  const sx=(W-10)/mx, sy=(H-10)/my, s=Math.min(sx,sy);
+  const ox=x+5+(W-10-mx*s)/2 - R[0]*s, oy=y+5+(H-10-my*s)/2 + R[3]*s;
+  g.strokeStyle='rgba(47,216,255,0.16)';
+  g.beginPath();
+  g.moveTo(x+W/2,y+4); g.lineTo(x+W/2,y+H-4);
+  g.moveTo(x+4,y+H/2); g.lineTo(x+W-4,y+H/2);
+  g.stroke();
+  // current view, clamped to the inset so it never paints outside the box
+  let vx=ox+vb.x*s, vy=oy-vb.y*s-vb.h*s, vw=vb.w*s, vh=vb.h*s;
+  if(vw>W-10){ vx=x+5; vw=W-10; }
+  if(vh>H-10){ vy=y+5; vh=H-10; }
+  vx=clamp(vx,x+1,x+W-2-vw); vy=clamp(vy,y+1,y+H-2-vh);
+  g.strokeStyle='rgba(255,194,74,0.9)'; g.lineWidth=1;
+  g.strokeRect(vx,vy,Math.max(2,vw),Math.max(2,vh));
+  // mini-map of the attractor's extent so the inset is not an empty box:
+  // draw the developed portrait, scaled into the inset
+  if(histCv.width>4 && histCv.height>4){
+    // histCv already covers the current view rect, so map it straight in
+    g.globalAlpha=0.55;
+    g.drawImage(histCv, x+5, y+5, W-10, H-12);
+    g.globalAlpha=1;
+    // re-dim so the viewport rectangle stays the brightest thing
+    g.fillStyle='rgba(5,9,16,0.45)';
+    g.fillRect(x+5,y+5,W-10,H-12);
+  }
+  g.fillStyle='rgba(127,150,176,0.85)';
+  g.font='7px "DejaVu Sans Mono",monospace';
+  g.textAlign='center';
+  g.fillText('DOMAIN', x+W/2, y+H-3);
+  g.textAlign='left';
+}
+function drawHead(){
+  if(S.sys.dim<2) return;
+  const g=sctx, P=toPx(S.st);
+  if(!isFinite(P[0])||!isFinite(P[1])) return;
+  if(P[0]<0||P[0]>plot.bw||P[1]<0||P[1]>plot.bh) return;
+  const x=plot.bx+P[0], y=plot.by+P[1];
+  g.globalCompositeOperation='lighter';
+  const grd=g.createRadialGradient(x,y,0,x,y,14);
+  grd.addColorStop(0,'rgba(255,255,255,0.55)');
+  grd.addColorStop(0.35,'rgba(190,240,255,0.22)');
+  grd.addColorStop(1,'rgba(120,200,255,0)');
+  g.fillStyle=grd; g.beginPath(); g.arc(x,y,14,0,TAU); g.fill();
+  g.fillStyle='rgba(255,255,255,0.95)';
+  g.beginPath(); g.arc(x,y,1.7,0,TAU); g.fill();
+  g.globalCompositeOperation='source-over';
+}
+function drawSeeds(){
+  if(!S.seedsOn||!S.seeds.length) return;
+  const g=tctx, n=S.sys.dim;
+  g.globalCompositeOperation='source-over';
+  g.lineWidth=1;
+  for(const sd of S.seeds){
+    if(sd.h.length<2) continue;
+    for(let i=1;i<sd.h.length;i++){
+      const a=toPx(sd.h[i-1]), b=toPx(sd.h[i]);
+      if(a[0]<-20||a[0]>plot.bw+20||a[1]<-20||a[1]>plot.bh+20) continue;
+      g.strokeStyle='rgba(150,215,255,'+(0.055+0.075*i/sd.h.length).toFixed(3)+')';
+      g.beginPath(); g.moveTo(plot.bx+a[0],plot.by+a[1]); g.lineTo(plot.bx+b[0],plot.by+b[1]); g.stroke();
+    }
+  }
+}
+function drawFrame(){
+  const g=sctx;
+  // scanlines
+  g.fillStyle='rgba(0,0,0,0.10)';
+  for(let y=plot.by;y<plot.by+plot.bh;y+=3) g.fillRect(plot.bx,y,plot.bw,1);
+  // frame
+  g.strokeStyle='rgba(90,130,175,0.45)'; g.lineWidth=1;
+  g.strokeRect(plot.bx+0.5,plot.by+0.5,plot.bw-1,plot.bh-1);
+  // corner ticks
+  g.strokeStyle='rgba(72,255,192,0.75)';
+  const L=9;
+  const cs=[[plot.bx,plot.by,1,1],[plot.bx+plot.bw,plot.by,-1,1],[plot.bx,plot.by+plot.bh,1,-1],[plot.bx+plot.bw,plot.by+plot.bh,-1,-1]];
+  for(const [x,y,sx,sy] of cs){
+    g.beginPath(); g.moveTo(x+sx*0.5,y+sy*L); g.lineTo(x+sx*0.5,y+sy*0.5); g.lineTo(x+sx*L,y+sy*0.5); g.stroke();
+  }
+  // vignette + grain
+  const vg=g.createRadialGradient(BW/2,BH/2,Math.min(BW,BH)*0.30,BW/2,BH/2,Math.max(BW,BH)*0.72);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(2,3,7,0.78)');
+  g.fillStyle=vg; g.fillRect(0,0,BW,BH);
+  if(noisePat){
+    g.globalCompositeOperation='overlay'; g.globalAlpha=0.055;
+    g.fillStyle=noisePat; g.fillRect(0,0,BW,BH);
+    g.globalAlpha=1; g.globalCompositeOperation='source-over';
+  }
+}
+
+/* ---------------- trail: analytic age ramp over the ring buffer ------------
+   Alpha per segment is a^age, where a = 0.5^(1/L) and L is the trace length
+   in ticks.  Rebuilding the whole trail each frame is affordable at 640x400
+   (a few thousand 1px segments) and is exactly reproducible.              */
+function drawTrace(){
+  tctx.clearRect(0,0,BW,BH);
+  const L=Math.max(6, S.traceTicks*2);
+  const a=Math.pow(0.5, 1/L);
+  const n=ringN;
+  if(n<2) return;
+  const gx=plot.bx, gy=plot.by, gw=plot.bw, gh=plot.bh;
+  // walk oldest -> newest
+  const start=ringHead-n;
+  let acc=1;
+  tctx.lineWidth=1;
+  let prevX=0, prevY=0, prevOk=false;
+  for(let k=0;k<n;k++){
+    const idx=((start+k)%RING_MAX+RING_MAX)%RING_MAX;
+    const i=idx*RB;
+    const x=gx+ring[i], y=gy+ring[i+1], ph=ring[i+2];
+    const inb = ring[i]>=-2 && ring[i]<=gw+2 && ring[i+1]>=-2 && ring[i+1]<=gh+2;
+    if(prevOk && inb){
+      ramp(ph, rgb);
+      tctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+acc.toFixed(3)+')';
+      tctx.beginPath();
+      tctx.moveTo(prevX,prevY); tctx.lineTo(x,y);
+      tctx.stroke();
+    }
+    prevX=x; prevY=y; prevOk=inb;
+    acc*=a;                       // age ramp: newest = 1, oldest -> 0
+  }
+}
+/* the developed portrait: one long integration, kept on its own canvas so it
+   persists at full density while the live trace flickers over it */
+function bakePortrait(){
+  if(S.sys.dim<2){ histCv.width=2; histCv.height=2; return; }
+  const n=S.sys.dim, isMap=S.sys.kind==='map';
+  const H=Math.max(8,Math.round(plot.bh)), W=Math.max(8,Math.round(plot.bw));
+  histCv.width=W; histCv.height=H;
+  hctx.clearRect(0,0,W,H);
+  const s=new Float64Array(4), fv=new Float64Array(4);
+  const st=S.sys.start();
+  for(let i=0;i<n;i++) s[i]=st[i]||0;
+  const K1=new Float64Array(4),K2=new Float64Array(4),K3=new Float64Array(4),K4=new Float64Array(4),TT=new Float64Array(4);
+  const A=ra(), Bx=rb();
+  const map = isMap;
+  // The portrait must be fully DEVELOPED, not a warm-up: Lorenz needs a few
+  // hundred time units before the manifold fills in.  Integrate with a larger
+  // step (still well inside RK4 stability) and discard the transient.
+  const hP = isMap? 0 : (S.sys.dt*3);
+  const N = map? 3200 : 12000;
+  const SKIP = map? 0 : Math.floor(N*0.40);
+  const base = map? 0.10 : 0.028;
+  hctx.lineWidth=1;
+  hctx.globalCompositeOperation='lighter';
+  let prevOk=false, prevPx=0, prevPy=0, prevVx=0, prevVy=0;
+  for(let i=0;i<N;i++){
+    if(map){ S.sys.f(s,S.p,fv); for(let q=0;q<n;q++) s[q]=fv[q]; }
+    else{
+      S.sys.f(s,S.p,K1);
+      for(let q=0;q<n;q++) TT[q]=s[q]+0.5*hP*K1[q];
+      S.sys.f(TT,S.p,K2);
+      for(let q=0;q<n;q++) TT[q]=s[q]+0.5*hP*K2[q];
+      S.sys.f(TT,S.p,K3);
+      for(let q=0;q<n;q++) TT[q]=s[q]+hP*K3[q];
+      S.sys.f(TT,S.p,K4);
+      for(let q=0;q<n;q++) s[q]+=(hP/6)*(K1[q]+2*K2[q]+2*K3[q]+K4[q]);
+    }
+    if(!isFinite(s[0])) break;
+    if(i<SKIP){ continue; }
+    const x=(s[A]-vb.x)/vb.w*W, y=H-(s[Bx]-vb.y)/vb.h*H;
+    const inb=x>=-2&&x<=W+2&&y>=-2&&y<=H+2;
+    if(prevOk&&inb){
+      // hue follows the local direction of travel in the projected plane
+      const vx=x-prevVx, vy=y-prevVy;
+      const ang=Math.atan2(vy,vx);
+      const t=ang/TAU+0.5;
+      ramp(t,rgb);
+      const al=base+0.085*Math.min(1,Math.hypot(vx,vy)*0.6);
+      hctx.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al.toFixed(3)+')';
+      hctx.beginPath(); hctx.moveTo(prevPx,prevPy); hctx.lineTo(x,y); hctx.stroke();
+    }
+    prevPx=x; prevPy=y; prevVx=x; prevVy=y; prevOk=inb;
+  }
+  hctx.globalCompositeOperation='source-over';
+}
+
+/* ---------------- simulation driver ---------------- */
+function phaseAndNorm(){
+  const n=S.sys.dim;
+  if(n<2) return [0,0];
+  if(S.sys.phaseKind==='vel' && S.sys.kind==='flow'){
+    fwd();
+    const vx=cur[ra()], vy=cur[rb()];
+    const m=Math.hypot(vx,vy);
+    return [(Math.atan2(vy,vx)/TAU)+0.5, m];
+  }
+  const vx=S.st[ra()], vy=S.st[rb()];
+  return [(Math.atan2(vy,vx)/TAU)+0.5, Math.hypot(vx,vy)];
+}
+function advanceTick(){
+  const sys=S.sys, n=sys.dim, isMap=sys.kind==='map';
+  for(let k=0;k<TICK;k++){
+    const before=toPx(S.st);
+    if(isMap){
+      sys.f(S.st,S.p,cur);
+      for(let j=0;j<n;j++) S.st[j]=cur[j];
+    }else rk4(sys.dt);
+    stepCount++;
+    const after=toPx(S.st);
+    const pp=phaseAndNorm();
+    ringPush(before[0],before[1],pp[0]);
+    ringPush(after[0],after[1],pp[0]);
+    lyapStep();                       // one Benettin sample per simulation step
+  }
+  tickCount++;
+  // seed particles: a second, independent set of orbits.  They are integrated
+  // with a self-contained RK4 so the primary trajectory state is never touched.
+  if(S.seedsOn){
+    for(const sd of S.seeds){
+      if(isMap){ sys.f(sd.s,S.p,cur); for(let q=0;q<n;q++) sd.s[q]=cur[q]; }
+      else rk4On(sd.s, sys.dt, n);
+      sd.h.push(Float64Array.from(sd.s.slice(0,n)));
+      if(sd.h.length>5) sd.h.shift();
+    }
+  }
+}
+/* RK4 on an arbitrary state array, with its own scratch.
+   out defaults to s (in-place).  Reads are always taken from s, so passing
+   out===s is safe: every component is read before being written.          */
+const sK=[new Float64Array(4),new Float64Array(4),new Float64Array(4),new Float64Array(4)];
+const sTmp=new Float64Array(4);
+function rk4On(s,h,n,out){
+  const p=S.p, f=S.sys.f, o=out||s;
+  f(s,p,sK[0]);
+  for(let q=0;q<n;q++) sTmp[q]=s[q]+0.5*h*sK[0][q];
+  f(sTmp,p,sK[1]);
+  for(let q=0;q<n;q++) sTmp[q]=s[q]+0.5*h*sK[1][q];
+  f(sTmp,p,sK[2]);
+  for(let q=0;q<n;q++) sTmp[q]=s[q]+h*sK[2][q];
+  f(sTmp,p,sK[3]);
+  for(let q=0;q<n;q++) o[q]=s[q]+(h/6)*(sK[0][q]+2*sK[1][q]+2*sK[2][q]+sK[3][q]);
+}
+/* the sweep is drawn as a dense carpet on the right-hand side of the plot */
+function sweepStep(){
+  S.lastR += 0.0022;
+  if(S.lastR>3.97){ S.lastR=3.97; S.sweepDir=-1; }
+  if(S.lastR<2.43){ S.lastR=2.43; S.sweepDir=1; }
+  S.p.r=S.lastR;
+  const x0=S.seedX, x1=S.p.r*x0*(1-x0);
+  S.seedX=(x1<0||x1>1)?0.5:x1;
+  const y0=plot.bh-(x0-vb.y)/vb.h*vb.h, y1=plot.bh-(S.seedX-vb.y)/vb.h*vb.h;
+  if(y0>=-2&&y0<=plot.bh+2&&y1>=-2&&y1<=plot.bh+2){
+    ringPush(plot.bw-1.5, y0, x0*0.7);
+    ringPush(plot.bw-1.5, y1, S.seedX*0.7);
+  }
+  // the bifurcation diagram itself is re-baked lazily as r advances
+  bifCount++;
+  if(bifCount%90===0) bakeBifur();
+}
+let bifCount=0;
+function lyapNGuard(){ /* logistic: no tangent operator, keep readout honest */ S.lyapHist.push(0); if(S.lyapHist.length>S.lyapSpan) S.lyapHist.shift(); }
+
+/* ---------------- UI ---------------- */
+const colParams=document.getElementById('params'), colMotion=document.getElementById('motion');
+const sysbtnsEl=document.getElementById('sysbtns'), viewbtnsEl=document.getElementById('viewbtns');
+const fpsEl=document.getElementById('fps'), lyapEl=document.getElementById('lyapv');
+const spark=document.getElementById('spark'), sctxS=spark.getContext('2d');
+const bProj=document.getElementById('bProj'), bFit=document.getElementById('bFit'),
+      bField=document.getElementById('bField'), bSeeds=document.getElementById('bSeeds'),
+      bPause=document.getElementById('bPause'), bClear=document.getElementById('bClear'),
+      bRe=document.getElementById('bRe');
+
+function slider(host,cfg,get,set,fmtV){
+  const d=document.createElement('div'); d.className='sl';
+  const lb=document.createElement('div'); lb.className='lb';
+  const nm=document.createElement('i'); nm.textContent=cfg.lb;
+  const vl=document.createElement('b');
+  lb.appendChild(nm); lb.appendChild(vl);
+  const inp=document.createElement('input');
+  inp.type='range'; inp.min=cfg.min; inp.max=cfg.max; inp.step=cfg.st;
+  inp.value=get();
+  d.appendChild(lb); d.appendChild(inp);
+  if(cfg.n){ const nb=document.createElement('div'); nb.className='nb'; nb.textContent=cfg.n; d.appendChild(nb); }
+  host.appendChild(d);
+  const show=()=>{ vl.textContent=fmtV?fmtV(+inp.value):(+inp.value).toFixed(cfg.st<0.05?3:(cfg.st<1?2:0)); };
+  inp.addEventListener('input',()=>{ set(cfg.int?Math.round(+inp.value):+inp.value); show(); });
+  show();
+  return {inp,show};
+}
+function buildParams(){
+  colParams.innerHTML='';
+  document.getElementById('prname').textContent = S.sys.label;
+  S.sys.ps.forEach(p=>{
+    slider(colParams,p,()=>S.p[p.k],(v)=>{ S.p[p.k]=v; onParamChange(); },
+      p.int?(v=>String(v)):(v=>v.toFixed(p.st<0.05?3:(p.st<1?2:0))));
+  });
+}
+function buildMotion(){
+  colMotion.innerHTML='';
+  slider(colMotion,{lb:'speed',min:1,max:48,st:1},()=>S.speed,v=>{S.speed=v;},v=>v+' ×'+(TICK)+' st');
+  slider(colMotion,{lb:'trace',min:12,max:420,st:2},()=>S.traceTicks,v=>{S.traceTicks=v;},v=>v+' tk · '+(v*TICK)+' st');
+}
+function buildSysBtns(){
+  sysbtnsEl.innerHTML='';
+  ORDER.forEach(id=>{
+    const b=document.createElement('button');
+    b.textContent=SYS[id].label;
+    b.className=(id===S.id?'on':'');
+    b.onclick=()=>selectSystem(id);
+    sysbtnsEl.appendChild(b);
+  });
+}
+function buildViewBtns(){
+  viewbtnsEl.innerHTML='';
+  const n=S.sys.dim===3?3:1;
+  if(n===1){
+    const b=document.createElement('button'); b.textContent='state space'; b.className='on'; b.disabled=true;
+    viewbtnsEl.appendChild(b); bProj.textContent='proj —';
+    return;
+  }
+  for(let v=0;v<3;v++){
+    const b=document.createElement('button');
+    // label with the system's own component names (e.g. van der Pol: x / ẋ)
+    const nm=i=> S.sys.names ? S.sys.names[IDX[VIEWS[v][i]]] : VIEWS[v][i];
+    b.textContent=nm(0)+'–'+nm(1);
+    b.className=(v===S.view?'on':'');
+    b.onclick=()=>{ S.view=v; S.viewBtn=v; buildViewBtns(); buildChips(); fitView(true); bakeField(); bakePortrait(); renderFx(); };
+    viewbtnsEl.appendChild(b);
+  }
+}
+function renderFx(){
+  fpsEl.innerHTML='';
+  if(S.sys.mode==='bifur'){
+    fpsEl.innerHTML='<div class="fx"><span class="dot"></span><span class="nm">x*</span>'+
+      '<span class="ty">unstable branch (r−1)/r</span></div>'+
+      '<div class="fx"><span class="dot"></span><span class="nm">2ω</span>'+
+      '<span class="ty">period-2, born at r=3</span></div>'+
+      '<div class="fx dimmed"><span class="dot"></span><span class="nm">r∞</span>'+
+      '<span class="ty">Feigenbaum 3.569945</span></div>';
+    return;
+  }
+  if(!S.fxp.length){
+    fpsEl.innerHTML='<div class="none">no equilibria in box<br>'+
+      '<span style="opacity:.7">Newton on F(s)−s from a '+
+      (S.sys.dim===3?'7³':'7²')+'-seed lattice, tol 1e−7</span></div>';
+    return;
+  }
+  S.fxp.forEach((f,i)=>{
+    const d=document.createElement('div'); d.className='fx';
+    const sc=Array.from(f.s).map(v=>(v>=0?'+':'')+v.toFixed(1)).join(' ');
+    d.innerHTML='<div class="r1"><span class="dot"></span><span class="nm">E'+(i+1)+'</span>'+
+      '<span class="sp">('+sc+')</span></div>'+
+      '<div class="r2"><span class="ty">'+f.ty+'</span>'+
+      '<span class="lam">λ '+spectrum(f.ev)+'</span></div>';
+    fpsEl.appendChild(d);
+  });
+}
+let debTimer=0;
+function onParamChange(){
+  if(S.sys.mode==='bifur'){
+    clearTimeout(debTimer);
+    debTimer=setTimeout(()=>{ bakeBifur(); },160);
+  }else{
+    clearTimeout(debTimer);
+    debTimer=setTimeout(()=>{ fitView(false); bakeField(); bakePortrait(); renderFx(); },180);
+    renderFx();
+  }
+}
+function resetTrails(){
+  tctx.clearRect(0,0,BW,BH); ringClear();
+  S.lyap=0; S.lyapN=0; S.lyapHist.length=0;
+  const n=S.sys.dim;
+  if(S.sys.mode==='bifur'){ S.seedX=0.5; S.lastR=2.42; S.sweepDir=1; S.p.r=2.42; return; }
+  const st=S.sys.start();
+  for(let i=0;i<n;i++) S.st[i]=st[i]||0;
+  S.tan=new Array(n).fill(0);
+  S.seeds=[];
+  for(let i=0;i<18;i++){
+    const sd={h:[], s:new Float64Array(4)};
+    for(let j=0;j<n;j++){
+      const B=S.sys.ref;
+      sd.s[j]=B[j*2]+(B[j*2+1]-B[j*2])*(0.12+0.76*rng());
+    }
+    S.seeds.push(sd);
+  }
+}
+function selectSystem(id){
+  if(S.id===id) return;
+  S.id=id; S.sys=SYS[id];
+  S.p=Object.assign({},S.sys.def,{r:2.42});
+  S.speed=20; S.traceTicks=110;
+  S.st=new Float64Array([0,0,0,0]);
+  const st=S.sys.start();
+  for(let i=0;i<st.length;i++) S.st[i]=st[i];
+  S.tan=[0,0,0];
+  ringClear();
+  document.getElementById('syskind').textContent = S.sys.mode==='bifur'?'sweep':(S.sys.kind==='flow'?'flow · rk4':'map · iterate');
+  document.getElementById('tsub').textContent = S.sys.note;
+  S.view=0;
+  bProj.textContent='proj —';
+  buildSysBtns(); buildParams(); buildMotion(); buildViewBtns();
+  if(S.sys.mode==='bifur'){
+    S.seedX=0.5; S.lastR=2.42; S.sweepDir=1; S.fxp=[];
+    fitView(true); bakeBifur(); renderFx(); buildChips();
+  }
+  else { S.fxp=findFixed(); fitView(true); bakeField(); bakePortrait(); renderFx(); buildChips(); }
+  resetTrails();
+  bField.classList.toggle('on',!!S.field);
+  bSeeds.classList.toggle('on',!!S.seedsOn);
+}
+bProj.onclick=()=>{ if(S.sys.dim!==3) return; S.view=(S.view+1)%3; buildViewBtns(); buildChips(); fitView(true); bakeField(); bakePortrait(); renderFx(); };
+bFit.onclick=()=>{ fitView(false); bakeField(); bakePortrait(); };
+bField.onclick=()=>{ S.field=S.field?0:1; bField.classList.toggle('on',!!S.field); bakeField(); };
+bSeeds.onclick=()=>{ S.seedsOn=S.seedsOn?0:1; bSeeds.classList.toggle('on',!!S.seedsOn); resetTrails(); };
+bPause.onclick=()=>{ S.pause=S.pause?0:1; bPause.textContent=S.pause?'run':'pause'; bPause.classList.toggle('on',!!S.pause); };
+bClear.onclick=()=>{ tctx.clearRect(0,0,BW,BH); ringClear(); };
+bRe.onclick=()=>{ seedCount++; rng=mulberry32(SEED0+seedCount*7919); resetTrails(); };
+/* programmatic selection hook (also used by the demo's own smoke tests) */
+window.ppSelect = function(id){ if(SYS[id]) selectSystem(id); return S.id; };
+
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT') return;
+  const k=e.key.toLowerCase();
+  if(k===' '){ bPause.onclick(); e.preventDefault(); }
+  else if(k==='c') bClear.onclick();
+  else if(k==='r') bRe.onclick();
+  else if(k==='f') bField.onclick();
+  else if(k==='s') bSeeds.onclick();
+  else if(k==='p') bProj.onclick();
+});
+
+/* pan / zoom */
+let drag=null;
+stage.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY,vb:{...vb}}; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove',e=>{
+  if(!drag) return;
+  const kx=mapX(1)-mapX(0), ky=mapY(1)-mapY(0);
+  const dx=(e.clientX-drag.x)/kx, dy=(e.clientY-drag.y)/ky;
+  vb.x=drag.vb.x-dx; vb.y=drag.vb.y+dy;
+  vbT={x:vb.x,y:vb.y,w:vb.w,h:vb.h};
+});
+stage.addEventListener('pointerup',e=>{ if(drag){ drag=null; clearTimeout(debTimer); debTimer=setTimeout(()=>{ bakeField(); bakePortrait(); },180);} });
+stage.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const f=Math.exp(e.deltaY*0.0013);
+  const mx=(mapX(e.clientX)-plot.bx)/plot.bw, my=(mapY(e.clientY)-plot.by)/plot.bh;
+  const cx=vb.x+mx*vb.w, cy=vb.y+(1-my)*vb.h;
+  vb.w=clamp(vb.w*f, plot.bw*0.04, 1e5);
+  vb.h=clamp(vb.h*f, plot.bh*0.04, 1e5);
+  vb.x=cx-mx*vb.w; vb.y=cy-(1-my)*vb.h;
+  vbT={x:vb.x,y:vb.y,w:vb.w,h:vb.h};
+  clearTimeout(debTimer); debTimer=setTimeout(()=>{ bakeField(); bakePortrait(); },200);
+},{passive:false});
+
+/* ---------------- lyapunov sparkline ---------------- */
+function drawSpark(){
+  const w=spark.width, h=spark.height;
+  sctxS.clearRect(0,0,w,h);
+  const H=S.lyapHist;
+  sctxS.strokeStyle='rgba(90,130,175,0.22)'; sctxS.lineWidth=1;
+  sctxS.beginPath(); sctxS.moveTo(0,h*0.5); sctxS.lineTo(w,h*0.5); sctxS.stroke();
+  if(H.length<2){
+    sctxS.fillStyle='rgba(84,104,127,0.9)'; sctxS.font='22px "DejaVu Sans Mono",monospace';
+    sctxS.fillText('acquiring…',6,h*0.5+8); return;
+  }
+  let lo=1e9,hi=-1e9;
+  for(const v of H){ if(v<lo)lo=v; if(v>hi)hi=v; }
+  lo=Math.min(lo,0); hi=Math.max(hi,0.05);
+  if(hi-lo<0.05){ hi=lo+0.05; }
+  const px=i=>(i/(H.length-1))*w, py=v=>h-4-((v-lo)/(hi-lo))*(h-12);
+  sctxS.beginPath();
+  sctxS.moveTo(px(0),h);
+  for(let i=0;i<H.length;i++) sctxS.lineTo(px(i),py(H[i]));
+  sctxS.lineTo(px(H.length-1),h); sctxS.closePath();
+  const gr=sctxS.createLinearGradient(0,0,0,h);
+  gr.addColorStop(0,'rgba(72,255,192,0.30)'); gr.addColorStop(1,'rgba(72,255,192,0.02)');
+  sctxS.fillStyle=gr; sctxS.fill();
+  sctxS.beginPath();
+  for(let i=0;i<H.length;i++){ const x=px(i),y=py(H[i]); i?sctxS.lineTo(x,y):sctxS.moveTo(x,y); }
+  sctxS.strokeStyle='#48ffc0'; sctxS.lineWidth=2.2; sctxS.stroke();
+  sctxS.fillStyle='rgba(84,104,127,0.9)'; sctxS.font='17px "DejaVu Sans Mono",monospace';
+  sctxS.fillText('0',3,h-2); sctxS.fillText(hi.toFixed(2),w-34,16);
+}
+
+/* ---------------- main loop ---------------- */
+let frames=0, fps=0, lastT=performance.now(), probeT=0, warmed=false;
+const WARM_TICKS=124;
+
+function frame(){
+  if(!S.pause){
+    if(S.sys.mode==='bifur'){ for(let k=0;k<Math.max(1,Math.round(S.speed/2));k++) sweepStep(); }
+    else for(let k=0;k<Math.max(1,Math.round(S.speed/TICK));k++) advanceTick();
+  }
+  // camera lerp
+  if(Math.abs(vbT.x-vb.x)>1e-9||Math.abs(vbT.w-vb.w)>1e-9){
+    const e=0.14;
+    vb.x=mix(vb.x,vbT.x,e); vb.y=mix(vb.y,vbT.y,e);
+    vb.w=mix(vb.w,vbT.w,e); vb.h=mix(vb.h,vbT.h,e);
+  }
+  // draw
+  drawBackground();
+  drawGrid();
+  if(S.sys.mode==='bifur') sctx.drawImage(bifCv,plot.bx,plot.by,plot.bw,plot.bh);
+  if(S.field) sctx.drawImage(fieldCv,plot.bx,plot.by,plot.bw,plot.bh);
+  if(S.sys.mode!=='bifur'){ sctx.drawImage(histCv,plot.bx,plot.by,plot.bw,plot.bh); drawTrace(); }
+  drawComposites();
+  drawBifurOverlay();
+  drawFixed();
+  drawHead();
+  drawLocator();
+  drawFrame();
+  placeTicks();
+  placeChips();
+  drawSpark();
+
+  frames++;
+  const now=performance.now();
+  if(now-lastT>500){ fps=frames/((now-lastT)/1000); frames=0; lastT=now; }
+  if(S.sys.mode!=='bifur'){
+    const perStep=S.lyapN>48?S.lyap/S.lyapN:NaN;
+    // J is a one-step Jacobian, so convert to "per unit time" with the step h.
+    const h=S.sys.kind==='map'?1:S.sys.dt;
+    const v=isFinite(perStep)?perStep/h:NaN;
+    lyapEl.innerHTML=(isFinite(v)?(v>=0?'+':'')+v.toFixed(3):'—')+
+      '<small>BENETTIN · per unit t'+(S.sys.kind==='map'?' (per iterate)':'')+'</small>';
+  }else{
+    lyapEl.innerHTML='r = '+S.lastR.toFixed(3)+'<small>SWEEP DIRECTION '+(S.sweepDir>0?'▸':'◂')+'</small>';
+  }
+  window.__probe={fps:Math.round(fps*10)/10,frames:frameNo,system:S.id,steps:stepCount,ticks:tickCount,
+    speed:S.speed,trace:S.traceTicks,
+    lyap:S.sys.mode==='bifur'?0:Math.round((S.lyapN>48?S.lyap/S.lyapN/(S.sys.kind==='map'?1:S.sys.dt):0)*1000)/1000,
+    fixed:S.sys.mode==='bifur'?0:S.fxp.length,
+    view:S.sys.mode==='bifur'?'r-x':(S.sys.dim===1?'state':VIEWS[S.view].join('-')),
+    internal:BW+'x'+BH,seq:frameNo,
+    vb:[+vb.x.toFixed(2),+vb.y.toFixed(2),+vb.w.toFixed(2),+vb.h.toFixed(2)],
+    head:(S.sys.dim>1?[+toPx(S.st)[0].toFixed(1),+toPx(S.st)[1].toFixed(1)]:[0,0]),
+    plot:[plot.bx,plot.by,plot.bw,plot.bh], st:Array.from(S.st.slice(0,S.sys.dim)).map(v=>+v.toFixed(2)),
+    fade:+dTrail.toFixed(4)};
+  if(!warmed){ warmed=true; window.__ready=true; }
+  frameNo++;
+  requestAnimationFrame(frame);
+}
+let frameNo=0;
+
+/* ---------------- boot ---------------- */
+function boot(){
+  S.p=Object.assign({},S.sys.def,{r:2.42});
+  S.tan=[0,0,0];
+  document.getElementById('syskind').textContent='flow · rk4';
+  document.getElementById('prname').textContent=S.sys.label;
+  bField.classList.add('on');
+  bSeeds.classList.add('on');
+  buildSysBtns(); buildParams(); buildMotion(); buildViewBtns();
+  layout();
+  initFade();
+  resetTrails();
+  S.fxp=findFixed();
+  fitView(true);
+  bakeField();
+  bakePortrait();
+  renderFx(); buildChips();
+  placeStaticText();
+  // deterministic warm-up: fixed number of ticks regardless of machine speed
+  for(let i=0;i<WARM_TICKS;i++) advanceTick();
+  if(S.sys.mode==='bifur'){ S.p.cols=S.p.cols||420; bakeBifur(); }
+  requestAnimationFrame(frame);
+}
+let rsT=0;
+window.addEventListener('resize',()=>{ clearTimeout(rsT); rsT=setTimeout(()=>{ layout(); placeStaticText(); syncTicks(); },140); });
+boot();
+</script>
+</body>
+</html>

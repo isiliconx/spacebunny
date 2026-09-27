@@ -1,0 +1,905 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wang Tiles — procedural tileset + arc-consistency solver</title>
+<style>
+  :root{
+    --ink:#eef6ff; --dim:#a9c3d8; --line:rgba(126,178,220,.26);
+    --panel:rgba(6,9,15,.88); --hi:#4fe6c4;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#04050a;overflow:hidden;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    color:var(--ink);-webkit-font-smoothing:antialiased}
+  #gl{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);
+    border-radius:2px;padding:11px 13px;box-shadow:0 0 0 1px rgba(0,0,0,.5),0 14px 40px rgba(0,0,0,.55)}
+  .lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim)}
+  h1{margin:0;font-size:21px;letter-spacing:.30em;font-weight:600;color:#eef6ff}
+  h1 b{color:var(--hi);font-weight:600}
+  .sub{margin:5px 0 0;font-size:12px;letter-spacing:.05em;color:#b3c8da;max-width:340px;line-height:1.55}
+  #title{left:30px;top:26px;padding:14px 18px 16px;max-width:392px}
+  .tech{margin-top:9px;font-size:11px;color:#6fe3c8;letter-spacing:.06em;opacity:.9}
+  #ctl{left:30px;bottom:28px;width:296px}
+  #tiles{right:30px;top:26px;width:258px}
+  #stat{right:30px;bottom:28px;width:258px}
+  .row{display:flex;align-items:baseline;justify-content:space-between;margin:11px 0 4px}
+  .row span:last-child{font-size:12px;color:#cfe6f5;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:16px;background:none;cursor:ew-resize}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,#2b4a5e,#3f6f88)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4.5px;
+    background:#eafcff;border:1px solid #0a0f16;border-radius:50%;box-shadow:0 0 7px rgba(80,230,200,.8)}
+  input[type=range]::-moz-range-track{height:2px;background:#3f6f88}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;background:#eafcff;border:1px solid #0a0f16;border-radius:50%}
+  #gen{width:100%;margin-top:14px;padding:8px 0;font:inherit;font-size:11.5px;letter-spacing:.20em;
+    text-transform:uppercase;color:#04121a;background:linear-gradient(180deg,#7df0d4,#39c9a6);
+    border:none;border-radius:2px;cursor:pointer}
+  #gen:hover{background:linear-gradient(180deg,#9dffe6,#48ddb8)}
+  #gen:active{background:linear-gradient(180deg,#57d9ba,#2aac8c)}
+  #strip{display:block;width:230px;height:auto;margin:9px 0 0;image-rendering:auto}
+  .leg{display:flex;flex-wrap:wrap;gap:4px 9px;margin-top:10px}
+  .leg i{display:inline-flex;align-items:center;gap:5px;font-style:normal;font-size:12px;color:#b3c8da}
+  .leg u{width:9px;height:9px;display:inline-block;border-radius:1px;text-decoration:none}
+  #stat .kv:first-of-type{margin-top:6px}
+  .kv{display:flex;justify-content:space-between;gap:10px;font-size:12px;line-height:1.8;color:var(--dim)}
+  .kv span{white-space:nowrap}
+  .kv b{font-weight:400;color:#e6f3fb;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #sel{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;
+       color:#b6cadb;line-height:1.7;overflow-wrap:anywhere;word-break:break-word}
+  #sel b{color:#7df0d4;font-weight:400}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:1px;vertical-align:middle;margin-right:3px}
+  #err{position:fixed;left:30px;top:120px;font-size:12px;color:#ff7a9a;max-width:340px;line-height:1.6}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="title">
+  <h1>WANG<b>·</b>TILES</h1>
+  <p class="sub">A tileset invented from nothing, then a torus solved edge&nbsp;by&nbsp;edge so no seam can exist.</p>
+  <div class="tech">&#9679; procedural tileset &nbsp;&#8594;&nbsp; AC-3 arc consistency + backtracking</div>
+</div>
+
+<div class="panel" id="ctl">
+  <div class="lbl">Parameters</div>
+  <div class="row"><span class="lbl">Tileset</span><span id="vTs">18</span></div>
+  <input type="range" id="rTs" min="6" max="40" step="1" value="18">
+  <div class="row"><span class="lbl">Grid</span><span id="vGs">22&#215;14</span></div>
+  <input type="range" id="rGs" min="8" max="40" step="1" value="22">
+  <div class="row"><span class="lbl">Edge colours</span><span id="vCo">4</span></div>
+  <input type="range" id="rCo" min="2" max="6" step="1" value="4">
+  <button id="gen">Regenerate</button>
+</div>
+
+<div class="panel" id="tiles">
+  <div class="lbl">Tileset</div>
+  <canvas id="strip" width="460" height="520"></canvas>
+  <div class="leg" id="leg"></div>
+</div>
+
+<div class="panel" id="stat">
+  <div class="lbl">Solver</div>
+  <div class="kv"><span>cells</span><b id="sCells">-</b></div>
+  <div class="kv"><span>backtracks</span><b id="sBt">-</b></div>
+  <div class="kv"><span>solve time</span><b id="sMs">-</b></div>
+  <div class="kv"><span>tiles used</span><b id="sUse">-</b></div>
+  <div id="sel">click the mosaic &mdash; <b>&mdash;</b></div>
+</div>
+
+<div id="err"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   WANG TILES
+   1. build a tileset procedurally: every tile is a 4-tuple (N,E,S,W) of colour ids
+   2. solve a *toroidal* grid with arc-consistency (AC-3) + backtracking, so every
+      pair of edge-adjacent tiles agrees, including across the wrap seams
+   3. draw each tile as a circuit trace whose port offsets are a pure function of
+      the edge's colour id, so matching edges fuse into one continuous trace
+   ========================================================================= */
+
+/* ---------- deterministic rng ---------------------------------------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ---------- palette ---------------------------------------------------- */
+const PAL_NAME = ['mint','amber','rose','azure','violet','lime'];
+const PAL_HEX  = ['#35f2c8','#ffc24a','#ff4d8d','#4fa8ff','#b48cff','#c8ff5a'];
+const GROUND   = [0.021, 0.026, 0.043];
+const PAL = PAL_HEX.map(h => [parseInt(h.slice(1,3),16)/255,
+                              parseInt(h.slice(3,5),16)/255,
+                              parseInt(h.slice(5,7),16)/255]);
+
+/* geometry that depends ONLY on a colour id -> identical on both sides of
+   any seam whose edge colours agree (that is what makes the traces fuse) */
+const h1 = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); };
+const portOff = c => (h1(c * 4.13 + 1.0) * 2 - 1) * 0.17;
+const hubPos  = c => [(h1(c * 2.71 + 0.5) * 2 - 1) * 0.19,
+                      (h1(c * 5.37 + 0.5) * 2 - 1) * 0.19];
+const halfW   = c => 0.050 + 0.030 * h1(c * 8.31 + 0.25);
+function portPos(s, c){                    // s: 0=N 1=E 2=S 3=W, unit-square local space
+  const o = portOff(c);
+  if (s === 0) return [ o, 0.5];
+  if (s === 1) return [0.5, o];
+  if (s === 2) return [ o, -0.5];
+  return [-0.5, o];
+}
+
+/* ---------- state ------------------------------------------------------ */
+const state = { ts: 18, gs: 22, co: 4, seed: 20260927 };
+let tiles = [], fallback = [], grid = null, stats = {};
+
+/* ---------- 1. procedural tileset -------------------------------------- */
+/* A Wang set built from uniform i.i.d. draws is usually unsolvable: some (N,S) or
+   (E,W) colour pair goes unrealised and the grid runs out of legal tiles. So the
+   set is built in two layers.
+
+   Layer 1 is the *core*: every tile (a,b,a,b). A grid of only these is seamless
+   by construction — the N/S colour a is constant down a column and the E/W
+   colour b is constant along a row, so every vertical and horizontal pair agrees
+   whatever a and b do. That makes a solution provably exist for any colour
+   count, and it is the guaranteed escape if the rich search ever fails.
+
+   Layer 2 is free-form tiles drawn to keep (N,S) and (E,W) coverage even, so the
+   solver has genuinely branching choices rather than a rigid product grid. */
+function buildTileset(rng, count, C){
+  const t = [], fb = [], seen = new Set();
+  function add(k, solid){
+    const key = k.join(',');
+    if (seen.has(key)) return false;
+    seen.add(key); t.push(k); fb.push(!!solid);
+    return true;
+  }
+  for (let a = 0; a < C; a++) for (let b = 0; b < C; b++) add([a, b, a, b], a === b);
+  for (let a = 0; a < C; a++) add([a, a, a, a], true);
+
+  const coverNS = new Int32Array(C * C), coverEW = new Int32Array(C * C);
+  for (const k of t){ coverNS[k[0] * C + k[2]]++; coverEW[k[1] * C + k[3]]++; }
+  function pickLeast(cov){
+    let mn = Infinity, n = 0;
+    for (let i = 0; i < C * C; i++){ if (cov[i] < mn){ mn = cov[i]; n = 1; } else if (cov[i] === mn) n++; }
+    let r = Math.floor(rng() * n);
+    for (let i = 0; i < C * C; i++){ if (cov[i] !== mn) continue; if (r-- === 0) return [Math.floor(i / C), i % C]; }
+    return [0, 0];
+  }
+
+  let guard = 0;
+  while (t.length < count && guard++ < 6000){
+    let added = 0;
+    for (let g = 0; g < 8 && t.length < count; g++){
+      const ns = pickLeast(coverNS), ew = pickLeast(coverEW);
+      if (add([ns[0], ew[0], ns[1], ew[1]], false)) added++;
+    }
+    if (!added) break;
+  }
+  return { tiles: t, fb: fb };
+}
+
+const isDiag = k => k[0] === k[2] && k[1] === k[3];
+/* the guaranteed fallback: columns of colour a crossed with rows of colour b,
+   using only the (a,b,a,b) core tiles. Always seamless, always solvable. */
+function coreFill(tile, cols, rows, rng){
+  const g = new Int32Array(cols * rows);
+  const colA = new Int32Array(cols), rowB = new Int32Array(rows);
+  for (let x = 0; x < cols; x++) colA[x] = Math.floor(rng() * state.co);
+  for (let y = 0; y < rows; y++) rowB[y] = Math.floor(rng() * state.co);
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++){
+    const a = colA[x], b = rowB[y];
+    let t = -1;
+    for (let k = 0; k < tile.length; k++){
+      const q = tile[k];
+      if (q[0] === a && q[1] === b && q[2] === a && q[3] === b){ t = k; break; }
+    }
+    if (t < 0) return null;
+    g[y * cols + x] = t;
+  }
+  return g;
+}
+
+/* ---------- 2. constraint solver (AC-3 + backtracking) ---------------- */
+/* domain bitsets kept in two int32 words; propagation masks precomputed    */
+function solveGrid(tile, fb, cols, rows, rng, budget, richOnly){
+  const T = tile.length, C = state.co, N = cols * rows, opp = [2,3,0,1];
+  if (T > 64) throw new Error('tileset must stay <= 64 for the bitset domains');
+
+  // setMask[d][s] : tiles whose side-d colour is in colour-set s  (2 int32 words)
+  const setLo = [], setHi = [];
+  for (let d = 0; d < 4; d++){
+    const lo = new Array(1 << C), hi = new Array(1 << C);
+    for (let s = 0; s < (1 << C); s++){
+      let a = 0, b = 0;
+      for (let t = 0; t < T; t++) if ((s >> tile[t][d]) & 1){ if (t < 32) a |= (1 << t); else b |= (1 << (t - 32)); }
+      lo[s] = a | 0; hi[s] = b | 0;
+    }
+    setLo.push(lo); setHi.push(hi);
+  }
+  const oneBit = t => t < 32 ? [1 << t, 0] : [0, 1 << (t - 32)];
+
+  const nbr = new Int32Array(N * 4);
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++){
+    const i = y * cols + x;
+    nbr[i*4+0] = ((y - 1 + rows) % rows) * cols + x;
+    nbr[i*4+1] = y * cols + ((x + 1) % cols);
+    nbr[i*4+2] = ((y + 1) % rows) * cols + x;
+    nbr[i*4+3] = y * cols + ((x - 1 + cols) % cols);
+  }
+
+  let fLo = 0, fHi = 0;
+  for (let t = 0; t < T; t++){ if (t < 32) fLo |= (1 << t); else fHi |= (1 << (t - 32)); }
+  fLo |= 0; fHi |= 0;
+
+  const lo = new Int32Array(N).fill(fLo), hi = new Int32Array(N).fill(fHi);
+  const trail = [];
+  const setDom = (i, a, b) => { trail.push(i, lo[i], hi[i]); lo[i] = a; hi[i] = b; };
+  const undo = m => { while (trail.length > m){ const b = trail.pop(), a = trail.pop(), i = trail.pop(); lo[i] = a; hi[i] = b; } };
+  const pc = v => { v = v - ((v >> 1) & 0x55555555); v = (v & 0x33333333) + ((v >> 2) & 0x33333333);
+                    return (((v + (v >> 4)) & 0x0f0f0f0f) * 0x01010101) >> 24; };
+  const size = i => pc(lo[i]) + pc(hi[i]);
+
+  function colourSet(i, d){
+    let s = 0, a = lo[i], b = hi[i];
+    while (a !== 0){ const t = a & -a; s |= 1 << tile[31 - Math.clz32(t)][d]; a ^= t; }
+    while (b !== 0){ const t = b & -b; s |= 1 << tile[32 + 31 - Math.clz32(t)][d]; b ^= t; }
+    return s;
+  }
+
+  const queue = [];
+  function propagate(){
+    while (queue.length){
+      const a = queue.pop();
+      // a cell can be queued and then emptied by a later revision, so its
+      // domain is re-checked here: an empty support cell means contradiction
+      if (lo[a] === 0 && hi[a] === 0) return false;
+      for (let d = 0; d < 4; d++){
+        const b = nbr[a*4+d], o = opp[d];
+        const cs = colourSet(a, d);
+        let allow = 0;
+        for (let c = 0; c < C; c++){
+          if (!((cs >> c) & 1)) continue;
+          if ((lo[b] & setLo[o][1 << c]) || (hi[b] & setHi[o][1 << c])) allow |= 1 << c;
+        }
+  /* AC-3 revise: the *neighbour* b loses every tile whose opposite side has no
+     support in a's (already narrowed) colour set for side d. Narrowing a here
+     instead would only ever shrink the support cell — it must shrink b. */
+        const nl = lo[b] & setLo[o][allow], nh = hi[b] & setHi[o][allow];
+        if (nl !== lo[b] || nh !== hi[b]){
+          setDom(b, nl, nh);
+          if (nl === 0 && nh === 0) return false;
+          queue.push(b);
+        }
+      }
+    }
+    return true;
+  }
+
+  const weights = new Float64Array(T);
+  for (let t = 0; t < T; t++) weights[t] = fb[t] ? 0.12 : 1.0;
+  // pick an index into `list` with the fallback tiles down-weighted
+  function pickIdx(list){
+    let tot = 0; for (let k = 0; k < list.length; k++) tot += weights[list[k]];
+    let r = rng() * tot;
+    for (let k = 0; k < list.length; k++){ r -= weights[list[k]]; if (r <= 0) return k; }
+    return list.length - 1;
+  }
+
+  const stack = [];
+  let nodes = 0, backtracks = 0, needProp = true;
+  while (true){
+    if (nodes++ > budget) return null;
+    if (needProp){
+      if (!propagate()){
+        let advanced = false;
+        while (stack.length){
+          const top = stack[stack.length - 1];
+          undo(top.m);
+          if (top.next + 1 < top.ch.length){
+            top.next++;
+            const bit = oneBit(top.ch[top.next]);
+            setDom(top.cell, bit[0], bit[1]);
+            backtracks++;
+            queue.length = 0; queue.push(top.cell);
+            advanced = true; break;
+          }
+          stack.pop();
+        }
+        if (!advanced) return null;
+        continue;
+      }
+      needProp = false;
+    }
+    // minimum-entropy cell
+    let best = -1, bestN = 1 << 30;
+    for (let i = 0; i < N; i++){
+      const s = size(i);
+      if (s > 1 && s < bestN){ bestN = s; best = i; if (s === 2) break; }
+    }
+    if (best < 0){
+      const out = new Int32Array(N);
+      for (let i = 0; i < N; i++) out[i] = lo[i] ? 31 - Math.clz32(lo[i] & -lo[i]) : 32 + 31 - Math.clz32(hi[i] & -hi[i]);
+      return { grid: out, nodes, backtracks };
+    }
+    let list = [];
+    for (let t = 0; t < T; t++) if ((t < 32 ? (lo[best] >>> t) & 1 : (hi[best] >>> (t - 32)) & 1)) list.push(t);
+    // in the first pass we only ever choose a "rich" tile, so a solution that
+    // exists without falling back to a solid (a,a,a,a) tile wins outright
+    if (richOnly){ const rich = list.filter(t => !fb[t]); if (rich.length) list = rich; }
+    // Rotate so the weighted-random candidate comes first and the rest follow
+    // *wrapping around*. A plain "next index" backtrack would only ever revisit
+    // candidates after the first pick, so a lucky-unlucky draw would report the
+    // whole subproblem UNSAT even though a solution sits earlier in the list.
+    const start = pickIdx(list);
+    const order = new Array(list.length);
+    for (let i = 0; i < list.length; i++) order[i] = list[(start + i) % list.length];
+    const bit = oneBit(order[0]);
+    setDom(best, bit[0], bit[1]);
+    stack.push({ cell: best, m: trail.length, ch: order, next: 0 });
+    // the assignment changed this cell's domain, so it (and, by propagation,
+    // its neighbours) must go back on the arc-consistency queue
+    queue.length = 0; queue.push(best);
+    needProp = true;
+  }
+}
+
+/* independent check that what we are about to draw really is seamless */
+function verifySeamless(ts, grid, cols, rows){
+  const at = (x, y) => ts[grid[(((y % rows) + rows) % rows) * cols + (((x % cols) + cols) % cols)]];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++){
+    const a = at(x, y);
+    if (at(x, y - 1)[2] !== a[0]) return false;
+    if (at(x + 1, y)[3] !== a[1]) return false;
+  }
+  return true;
+}
+
+/* ---------- 3. GL ------------------------------------------------------ */
+const cvs = document.getElementById('gl');
+const W = 640, H = 400;                       // contract: 512x320 .. 640x400, then upscale
+cvs.width = W; cvs.height = H;
+const gl = cvs.getContext('webgl2', { antialias: false, alpha: false, depth: false,
+                                      stencil: false, preserveDrawingBuffer: true });
+const errBox = document.getElementById('err');
+if (!gl){
+  errBox.textContent = 'WebGL2 unavailable in this browser.';
+  throw new Error('no webgl2');
+}
+// no float targets are used (RGBA8 everywhere, banding handled by the dither),
+// but the extension is probed anyway so the intent is explicit.
+gl.getExtension('EXT_color_buffer_float');
+
+const VS = `#version 300 es
+void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2); gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+
+const SCENE = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform vec2  uRes;
+uniform vec2  uGridN;      // cols, rows
+uniform vec3  uPal[8];
+uniform vec4  uGeo[8];     // per colour: hub.xy, halfW, portOffset
+uniform float uFrame, uSelX, uSelY;
+uniform sampler2D uGridTex;   // R = tile id, per cell
+uniform sampler2D uTileTex;   // row0 = N,E,S,W   row1 = kind, seed
+
+const float TAU = 6.28318530718;
+float hash21(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+  float a = hash21(i), b = hash21(i+vec2(1,0)), c = hash21(i+vec2(0,1)), d = hash21(i+vec2(1,1));
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+float sdSeg(vec2 p, vec2 a, vec2 b, float r){
+  vec2 pa = p-a, ba = b-a;
+  float h = clamp(dot(pa,ba)/dot(ba,ba), 0.0, 1.0);
+  return length(pa - ba*h) - r;
+}
+vec2 portPos(int s, vec4 g){
+  if (s == 0) return vec2( g.w,  0.5);
+  if (s == 1) return vec2( 0.5,  g.w);
+  if (s == 2) return vec2( g.w, -0.5);
+  return vec2(-0.5,  g.w);
+}
+float sideColour(int s, float n, float e, float so, float w){
+  if (s == 0) return n; if (s == 1) return e; if (s == 2) return so; return w;
+}
+
+void main(){
+  vec2 fc = gl_FragCoord.xy;
+  vec2 uv = fc / uRes;
+  vec2 g  = uv * uGridN;                       // world position, in tile units
+  vec2 cf = floor(g);
+  vec2 lp = fract(g) - 0.5;                    // local tile coords
+  ivec2 ci = ivec2(int(mod(cf.x, uGridN.x)), int(mod(cf.y, uGridN.y)));
+
+  /* ---- tile record ------------------------------------------------- */
+  vec4 gt = texelFetch(uGridTex, ci, 0);
+  int ti = int(gt.r * 255.0 + 0.5);
+  vec4 e  = texelFetch(uTileTex, ivec2(ti, 0), 0);
+  vec4 mt = texelFetch(uTileTex, ivec2(ti, 1), 0);
+  float n = floor(e.r*255.0+0.5), ea = floor(e.g*255.0+0.5);
+  float so = floor(e.b*255.0+0.5), we = floor(e.a*255.0+0.5);
+  float kind = floor(mt.r*255.0+0.5), seed = floor(mt.g*255.0+0.5);
+
+  /* ---- ground ------------------------------------------------------ */
+  float cellRnd = hash21(vec2(ci) * 1.37 + 7.1);
+  float gn = vnoise(fc * 0.035) * 0.6 + vnoise(fc * 0.11) * 0.4;
+  vec3 col = vec3(0.020, 0.024, 0.040) * (0.70 + 0.85 * gn);
+  col += vec3(0.012, 0.016, 0.030) * vnoise(fc * 0.008 + 31.0);
+  col *= 0.90 + 0.20 * cellRnd;
+
+  /* ---- per-tile background motif, faded out at the tile border ------ */
+  float edgeFade = smoothstep(0.0, 0.105, 0.5 - max(abs(lp.x), abs(lp.y)));
+  vec2 hsh = vec2(hash21(vec2(seed, ti)), hash21(vec2(ti, seed) + 3.3)) * 2.0 - 1.0;
+  vec2 q = lp - hsh * 0.14;
+  float mo = 0.0;
+  if (kind < 0.5){
+    float r = length(q);
+    mo = smoothstep(0.88, 1.0, abs(sin(r * 27.0 + seed)));
+    mo *= smoothstep(0.40, 0.20, r);
+  } else if (kind < 1.5){
+    mo = smoothstep(0.90, 1.0, abs(sin((q.x * 0.72 + q.y) * 33.0 + seed * 0.7)));
+  } else if (kind < 2.5){
+    vec2 dd = fract(q * 6.5) - 0.5;
+    mo = 1.0 - smoothstep(0.09, 0.17, length(dd));
+  } else {
+    float d = abs(q.x) + abs(q.y);
+    mo = smoothstep(0.90, 1.0, abs(sin(d * 29.0 + seed * 0.4)));
+  }
+  vec3 domCol = uPal[int(n)] * 0.5 + uPal[int(ea)] * 0.5;
+  col += domCol * mo * edgeFade * 0.085 * (0.45 + 0.75 * hash21(vec2(seed, 11.0)));
+
+  /* ---- circuit traces: one per edge, colour = that edge's colour ---- */
+  float glowCore = 0.0, glowWide = 0.0;
+  for (int s = 0; s < 4; s++){
+    float c = sideColour(s, n, ea, so, we);
+    vec4 geo = uGeo[int(c)];
+    vec2 a = portPos(s, geo), b = geo.xy;
+    float d = sdSeg(lp, a, b, geo.z);
+    vec3 tc = uPal[int(c)];
+    float dd = max(d, 0.0);
+    // pulse: phase is the world-space distance from the shared port, so it is
+    // continuous across every seam (0 on both sides, mirrored slope)
+    vec2 dir = normalize(b - a);
+    float u = dot(g - (cf + 0.5 + a), dir);
+    float pulse = 0.72 + 0.34 * sin(u * 7.5 - uFrame * 2.1);
+    float aa = fwidth(d) * 0.8 + 1e-4;
+    float core = 1.0 - smoothstep(-aa, aa, d);
+    float g1 = exp(-dd * 34.0);
+    float g2 = exp(-dd * 10.0);
+    col += tc * (core * (0.46 + 0.62 * pulse) + g1 * 0.30 * pulse + g2 * 0.065);
+    glowCore += core * 0.6;
+  }
+  /* hub pads where two or more edges of one colour meet */
+  for (int c = 0; c < 6; c++){
+    float cf2 = float(c) + 0.5;
+    float m = step(cf2, n) + step(cf2, ea) + step(cf2, so) + step(cf2, we);
+    if (m >= 2.0){
+      vec4 geo = uGeo[c];
+      float d = length(lp - geo.xy) - geo.z * 1.15;
+      float aa = fwidth(d) * 0.8 + 1e-4;
+      col += uPal[c] * (1.0 - smoothstep(-aa, aa, d)) * 0.55;
+    }
+  }
+
+  /* ---- selection: corner brackets + soft halo, a deliberate focal cue ---- */
+  if (uSelX >= 0.0 && abs(cf.x - uSelX) < 0.5 && abs(cf.y - uSelY) < 0.5){
+    float bx = 0.5 - max(abs(lp.x), abs(lp.y));
+    float halo = smoothstep(0.30, 0.02, bx);
+    col += vec3(0.30, 0.95, 0.78) * halo * 0.16;
+    // four L-shaped corner brackets: near a vertical edge AND near a horizontal
+    // edge, intersected with a thin band that sits just inside the tile border
+    float vEdge = step(abs(lp.x), 0.32);
+    float hEdge = step(abs(lp.y), 0.32);
+    float corner = clamp(vEdge * step(0.15, abs(lp.y)) + hEdge * step(0.15, abs(lp.x)), 0.0, 1.0);
+    float edge = 1.0 - smoothstep(0.012, 0.034, abs(bx - 0.024));
+    col += vec3(0.85, 1.0, 0.96) * corner * edge * 1.6;
+  }
+
+  /* ---- key light + vignette (composition, not dead centre) ---------- */
+  /* The key light is centred on the selected cell, so attention falls off with
+     distance from it: the chosen tile is the focal point, not the frame centre. */
+  vec2 focus = (uSelX >= 0.0) ? (vec2(uSelX, uSelY) + 0.5) / uGridN : vec2(0.36, 0.42);
+  vec2 kd = (uv - focus) * vec2(1.0, 0.86);
+  float kd2 = dot(kd, kd);
+  col *= 1.0 - 0.34 * clamp(kd2 * 1.15, 0.0, 1.0) * (1.0 - 0.42 * smoothstep(0.02, 0.22, kd2));
+  float vig = 1.0 - 0.34 * pow(clamp(length((uv - 0.5) * vec2(1.16, 1.0)) * 1.30, 0.0, 1.0), 2.1);
+  col *= vig;
+
+  O = vec4(col, 1.0);
+}`;
+
+const BRIGHT = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform sampler2D uTex; uniform vec2 uTexel; uniform float uThresh;
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec3 s = texture(uTex, uv).rgb;
+  float l = dot(s, vec3(0.2126, 0.7152, 0.0722));
+  O = vec4(s * smoothstep(uThresh, uThresh + 0.28, l), 1.0);
+}`;
+
+const BLUR = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform sampler2D uTex; uniform vec2 uTexel; uniform vec2 uDir;
+void main(){
+  vec2 uv = gl_FragCoord.xy * uTexel;
+  vec2 o = uDir * uTexel;
+  vec3 c = texture(uTex, uv).rgb * 0.2270270270;
+  c += (texture(uTex, uv + o*1.3846153846).rgb + texture(uTex, uv - o*1.3846153846).rgb) * 0.3162162162;
+  c += (texture(uTex, uv + o*3.2307692308).rgb + texture(uTex, uv - o*3.2307692308).rgb) * 0.0702702703;
+  O = vec4(c, 1.0);
+}`;
+
+const COMP = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform sampler2D uScene, uBloom;
+uniform vec2 uRes; uniform float uFrame;
+float hash21(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 c = texture(uScene, uv).rgb;
+  c += texture(uBloom, uv).rgb * 0.95;
+  c = c / (1.0 + c * 0.22);                       // gentle shoulder
+  c = pow(max(c, 0.0), vec3(0.92));
+  // 2x2 film grain / dither: kills banding, adds fine colour structure. It is
+  // keyed to pixel position only, so it is identical on every cold load.
+  float g = hash21(floor(gl_FragCoord.xy * 0.5)) - 0.5;
+  c += g * 0.020;
+  O = vec4(max(c, 0.0), 1.0);
+}`;
+
+function sh(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+const pScene = prog(SCENE), pBright = prog(BRIGHT), pBlur = prog(BLUR), pComp = prog(COMP);
+const vao = gl.createVertexArray();
+
+const U = {};
+function loc(p, n){ return gl.getUniformLocation(p, n); }
+U.sRes = loc(pScene,'uRes'); U.sGridN = loc(pScene,'uGridN'); U.sPal = loc(pScene,'uPal');
+U.sGeo = loc(pScene,'uGeo'); U.sFrame = loc(pScene,'uFrame');
+U.sSelX = loc(pScene,'uSelX'); U.sSelY = loc(pScene,'uSelY');
+U.bTex = loc(pBright,'uTex'); U.bTexel = loc(pBright,'uTexel'); U.bThresh = loc(pBright,'uThresh');
+U.lTex = loc(pBlur,'uTex'); U.lTexel = loc(pBlur,'uTexel'); U.lDir = loc(pBlur,'uDir');
+U.cScene = loc(pComp,'uScene'); U.cBloom = loc(pComp,'uBloom'); U.cRes = loc(pComp,'uRes'); U.cFrame = loc(pComp,'uFrame');
+const sGridTex = loc(pScene,'uGridTex'), sTileTex = loc(pScene,'uTileTex');
+// scene shader samples both; the driver assigns unit 0 then 1
+gl.useProgram(pScene);
+gl.uniform1i(sGridTex, 0); gl.uniform1i(sTileTex, 1);
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('incomplete FBO');
+  return { tex, fb, w, h };
+}
+const BW = 160, BH = 100;
+const tScene = makeTarget(W, H), tA = makeTarget(BW, BH), tB = makeTarget(BW, BH);
+
+const gridTex = gl.createTexture(), tileTex = gl.createTexture();
+function texParams(wrapX){
+  gl.bindTexture(gl.TEXTURE_2D, gridTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapX);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, tileTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+/* ---------- draw ------------------------------------------------------ */
+let frame = 0, fpsAcc = 0, fpsN = 0, frameMs = 0, selX = -1, selY = -1;
+const DT = 1 / 30;
+
+function draw(){
+  gl.bindVertexArray(vao);
+  gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
+
+  // pass 1 — scene
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tScene.fb);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(pScene);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, gridTex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tileTex);
+  gl.uniform2f(U.sRes, W, H);
+  gl.uniform2f(U.sGridN, state.gs, gridRows);
+  gl.uniform3fv(U.sPal, palBuf);
+  gl.uniform4fv(U.sGeo, geoBuf);
+  gl.uniform1f(U.sFrame, frame * DT);
+  gl.uniform1f(U.sSelX, selX); gl.uniform1f(U.sSelY, selY);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // pass 2 — bright extract at quarter res
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tA.fb);
+  gl.viewport(0, 0, BW, BH);
+  gl.useProgram(pBright);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tScene.tex);
+  gl.uniform1i(U.bTex, 0);
+  gl.uniform2f(U.bTexel, 1 / BW, 1 / BH);
+  gl.uniform1f(U.bThresh, 0.22);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // pass 3/4 — separable blur
+  gl.useProgram(pBlur);
+  gl.uniform1i(U.lTex, 0);
+  gl.uniform2f(U.lTexel, 1 / BW, 1 / BH);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tB.fb);
+  gl.bindTexture(gl.TEXTURE_2D, tA.tex); gl.uniform2f(U.lDir, 1, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, tA.fb);
+  gl.bindTexture(gl.TEXTURE_2D, tB.tex); gl.uniform2f(U.lDir, 0, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // pass 5 — composite to the default framebuffer
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(pComp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tScene.tex); gl.uniform1i(U.cScene, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tA.tex);     gl.uniform1i(U.cBloom, 1);
+  gl.uniform2f(U.cRes, W, H);
+  gl.uniform1f(U.cFrame, frame);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  frame++;
+}
+
+/* ---------- tileset strip (2D, same geometry) ------------------------- */
+const strip = document.getElementById('strip'), sctx = strip.getContext('2d');
+function drawStrip(){
+  const w = strip.width, h = strip.height;
+  sctx.clearRect(0, 0, w, h);
+  const T = tiles.length, C = state.co;
+  const cols = Math.ceil(Math.sqrt(T)), rows = Math.ceil(T / cols);
+  const cell = Math.floor(Math.min((w - 4) / cols, (h - 4) / rows));
+  const ox = (w - cell * cols) / 2, oy = (h - cell * rows) / 2;
+  const rgb = PAL.map(c => `rgb(${(c[0]*255)|0},${(c[1]*255)|0},${(c[2]*255)|0})`);
+  sctx.font = '11px ui-monospace,Menlo,monospace';
+  sctx.textBaseline = 'top';
+  for (let t = 0; t < T; t++){
+    const cx = ox + (t % cols) * cell, cy = oy + Math.floor(t / cols) * cell;
+    sctx.save();
+    sctx.translate(cx, cy);
+    const s = cell;
+    // plate
+    const gr = sctx.createLinearGradient(0, 0, 0, s);
+    gr.addColorStop(0, 'rgba(20,26,38,0.95)'); gr.addColorStop(1, 'rgba(8,11,18,0.95)');
+    sctx.fillStyle = gr; sctx.fillRect(0.5, 0.5, s - 1, s - 1);
+    sctx.save();
+    sctx.translate(s / 2, s / 2);
+    sctx.scale(s, s);
+    sctx.lineCap = 'round';
+    for (let e = 0; e < 4; e++){
+      const c = tiles[t][e];
+      const a = portPos(e, c), b = hubPos(c), w = halfW(c);
+      const g = sctx.createLinearGradient(a[0], a[1], b[0], b[1]);
+      g.addColorStop(0, rgb[c]); g.addColorStop(1, rgb[c]);
+      sctx.strokeStyle = g;
+      sctx.shadowColor = rgb[c]; sctx.shadowBlur = w * s * 0.7;
+      sctx.lineWidth = w * 2;
+      sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke();
+      sctx.shadowBlur = 0;
+      sctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      sctx.lineWidth = w * 0.7;
+      sctx.beginPath(); sctx.moveTo(a[0], a[1]); sctx.lineTo(b[0], b[1]); sctx.stroke();
+    }
+    sctx.restore();
+    // frame tinted by the four edge colours
+    sctx.strokeStyle = 'rgba(150,190,220,0.18)'; sctx.lineWidth = 1;
+    sctx.strokeRect(0.5, 0.5, s - 1, s - 1);
+    if (s >= 46){
+      sctx.fillStyle = 'rgba(190,215,235,0.75)';
+      for (let e = 0; e < 4; e++){
+        const c = tiles[t][e];
+        sctx.fillStyle = rgb[c];
+        const p = 4;
+        if (e === 0) sctx.fillText(String(c + 1), p, p - 2);
+        if (e === 1) { sctx.textAlign = 'right'; sctx.fillText(String(c + 1), s - p, p - 2); sctx.textAlign = 'left'; }
+        if (e === 2) { sctx.textAlign = 'right'; sctx.fillText(String(c + 1), s - p, s - p - 10); sctx.textAlign = 'left'; }
+        if (e === 3) sctx.fillText(String(c + 1), p, s - p - 10);
+      }
+    }
+    sctx.restore();
+  }
+}
+
+/* ---------- build ------------------------------------------------------ */
+let gridRows = 14;
+let geoBuf = new Float32Array(32);
+let palBuf = new Float32Array(24);
+
+function build(){
+  const C = state.co;
+  palBuf = new Float32Array(24);
+  for (let i = 0; i < 6; i++){
+    palBuf[i*3] = PAL[i][0]; palBuf[i*3+1] = PAL[i][1]; palBuf[i*3+2] = PAL[i][2];
+  }
+  geoBuf = new Float32Array(32);
+  for (let c = 0; c < 6; c++){
+    const h = hubPos(c);
+    geoBuf[c*4] = h[0]; geoBuf[c*4+1] = h[1];
+    geoBuf[c*4+2] = halfW(c); geoBuf[c*4+3] = portOff(c);
+  }
+  gridRows = Math.max(4, Math.round(state.gs * 0.625));
+  const cols = state.gs, rows = gridRows;
+
+  /* Try a few tilesets with the full AC-3 search, each verified independently.
+     If none of them yields an all-rich solution, fall back to the core fill,
+     which is seamless by construction for any colour count. The result is never
+     trusted without the independent check. */
+  let g = null, gen = 0, ms = 0, mode = 'solved';
+  let ts = null, nodes = 0, backtracks = 0;
+  for (let attempt = 0; attempt < 4 && !g; attempt++){
+    gen = attempt;
+    ts = buildTileset(mulberry32(state.seed + attempt * 7919), state.ts, C);
+    const t0 = performance.now();
+    const r = solveGrid(ts.tiles, ts.fb, cols, rows,
+                        mulberry32((state.seed ^ 0x9e3779b9) + attempt * 104729), 8000, true);
+    ms = performance.now() - t0;
+    if (r && verifySeamless(ts.tiles, r.grid, cols, rows)){
+      g = r.grid; nodes = r.nodes; backtracks = r.backtracks;
+    }
+  }
+  if (!g){
+    if (!ts) ts = buildTileset(mulberry32(state.seed), state.ts, C);
+    const t0 = performance.now();
+    g = coreFill(ts.tiles, cols, rows, mulberry32(state.seed + 11));
+    ms = performance.now() - t0;
+    mode = 'core';
+    if (!g || !verifySeamless(ts.tiles, g, cols, rows)){
+      errBox.textContent = 'could not build a seamless grid for these parameters.';
+      return;
+    }
+  }
+  errBox.textContent = '';
+  tiles = ts.tiles; fallback = ts.fb;
+  grid = g;
+  stats = { nodes: nodes, backtracks: backtracks, ms: ms, gen: gen + 1, mode: mode,
+            cells: cols * rows, used: new Set(Array.from(grid)).size,
+            solid: Array.from(grid).filter(t => fallback[t]).length };
+
+  // grid texture: R = tile id, G = per-cell jitter
+  const gd = new Uint8Array(cols * rows * 4);
+  for (let i = 0; i < cols * rows; i++){
+    gd[i*4] = grid[i];
+    gd[i*4+1] = (i * 61 + grid[i] * 7) & 255;
+    gd[i*4+3] = 255;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, gridTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, gd);
+
+  // tile texture: row0 = N,E,S,W   row1 = kind, seed
+  const td = new Uint8Array(64 * 2 * 4);
+  const kRng = mulberry32(state.seed ^ 0x5bf03635);
+  for (let t = 0; t < tiles.length; t++){
+    for (let e = 0; e < 4; e++) td[(t*4 + e)] = tiles[t][e];
+    td[(64 + t) * 4 + 0] = Math.floor(kRng() * 4);
+    td[(64 + t) * 4 + 1] = Math.floor(kRng() * 255);
+    td[(64 + t) * 4 + 3] = 255;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, tileTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 64, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, td);
+  texParams(gl.REPEAT);
+
+  drawStrip();
+  document.getElementById('leg').innerHTML = PAL.slice(0, C).map((c, i) =>
+    `<i><u style="background:${PAL_HEX[i]}"></u>${i + 1} ${PAL_NAME[i]}</i>`).join('');
+  document.getElementById('sCells').textContent = cols + '×' + rows + ' = ' + (cols * rows);
+  document.getElementById('sBt').textContent = backtracks;
+  document.getElementById('sMs').textContent = ms.toFixed(1) + ' ms';
+  document.getElementById('sUse').textContent = stats.used + ' / ' + tiles.length;
+  document.getElementById('vTs').textContent = state.ts;
+  document.getElementById('vGs').textContent = cols + '×' + rows;
+  document.getElementById('vCo').textContent = C;
+  // default to an off-centre cell so the first frame has a focal point and the
+  // readout demonstrates the edge rule instead of sitting empty
+  selX = Math.floor(cols * 0.36); selY = Math.floor(rows * 0.42);
+  updateSel(selX, selY);
+}
+
+function updateSel(x, y){
+  const el = document.getElementById('sel');
+  if (x < 0 || !grid){ el.innerHTML = 'click the mosaic &mdash; <b>&mdash;</b>'; return; }
+  const i = grid[y * state.gs + x], t = tiles[i];
+  const n = t[0], e = t[1], s = t[2], w = t[3];
+  const dot = c => `<span class="sw" style="background:${PAL_HEX[c]}"></span>${c + 1}`;
+  el.innerHTML = `cell <b>${x},${y}</b> &rarr; tile <b>#${i}</b><br>`
+                + `edges N ${dot(n)} &middot; E ${dot(e)}<br>S ${dot(s)} &middot; W ${dot(w)}<br>`
+                + `neighbours must supply those four colours`;
+}
+
+/* ---------- controls --------------------------------------------------- */
+function bind(id, key, after){
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => { state[key] = +el.value; after(); });
+}
+bind('rTs', 'ts', build);
+bind('rGs', 'gs', build);
+bind('rCo', 'co', build);
+document.getElementById('gen').addEventListener('click', () => {
+  state.seed = (Math.random() * 0xffffffff) >>> 0;   // user gesture: the one legal Math.random
+  build();
+});
+cvs.addEventListener('click', ev => {
+  const r = cvs.getBoundingClientRect();
+  const u = (ev.clientX - r.left) / r.width, v = 1 - (ev.clientY - r.top) / r.height;
+  const x = Math.floor(u * state.gs), y = Math.floor(v * gridRows);
+  if (x < 0 || y < 0 || x >= state.gs || y >= gridRows) return;
+  selX = x; selY = y;
+  updateSel(x, y);
+});
+
+/* ---------- main loop -------------------------------------------------- */
+const px = new Uint8Array(4);
+let ready = false, framesDrawn = 0, drainAt = 0;
+function loop(){
+  const t0 = performance.now();
+  draw();
+  const t1 = performance.now();
+  framesDrawn++;
+  // gl.finish() does not synchronise; a 1px readPixels drain does.
+  if (framesDrawn % 20 === 1){
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    frameMs = performance.now() - t0;
+  }
+  if (!ready && framesDrawn >= 2){ ready = true; window.__ready = true; }
+  window.__probe = {
+    tiles: tiles.length, colours: state.co, cols: state.gs, rows: gridRows,
+    cells: stats.cells || 0, backtracks: stats.backtracks || 0, solveMs: +(stats.ms || 0).toFixed(2),
+    distinctTilesUsed: stats.used || 0, solverAttempts: stats.gen || 1,
+    seamless: grid ? verifySeamless(tiles, grid, state.gs, gridRows) : false,
+    renderRes: W + 'x' + H, frameMs: +frameMs.toFixed(1), frames: framesDrawn
+  };
+  requestAnimationFrame(loop);
+}
+
+try {
+  build();
+  loop();
+} catch (err){
+  errBox.textContent = 'init failed: ' + err.message;
+  window.__ready = true;
+  throw err;
+}
+</script>
+</body>
+</html>

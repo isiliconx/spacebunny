@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chaos Game — Iterated Function Systems</title>
+<style>
+  :root{
+    --ink:#bcd6e4; --ink-dim:#6f8b9d; --ink-faint:#4a6272;
+    --accent:#7fe0ae; --accent-dim:#3f8f74;
+    --panel:rgba(5,9,17,.82); --line:rgba(126,196,222,.16);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#04060d;overflow:hidden}
+  body{
+    font:12px/1.45 ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    color:var(--ink); -webkit-font-smoothing:antialiased;
+  }
+  #vis{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;inset:0;pointer-events:none;z-index:2}
+  .panel{
+    position:absolute;pointer-events:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:3px;
+    padding:9px 11px;box-shadow:0 6px 22px rgba(0,0,0,.6);
+  }
+  .tl{top:14px;left:14px;max-width:340px}
+  .tr{top:14px;right:14px;min-width:190px}
+  .bl{bottom:14px;left:14px;width:266px}
+  .br{bottom:14px;right:14px;width:268px}
+
+  h1{margin:0;font-size:13px;letter-spacing:.14em;font-weight:600;color:#e8f4fb;text-transform:uppercase}
+  .sub{margin:2px 0 7px;font-size:11px;color:var(--accent);letter-spacing:.04em}
+  .tech{margin:0;font-size:11px;color:var(--ink-dim)}
+  .tech b{color:var(--ink);font-weight:500}
+  .blurb{margin:7px 0 0;font-size:11px;color:var(--ink-faint);border-top:1px solid var(--line);padding-top:6px}
+  .blurb b{color:var(--ink-dim);font-weight:500}
+
+  .row{display:flex;align-items:center;gap:8px;margin:7px 0 0}
+  .row label{flex:0 0 84px;font-size:11px;color:var(--ink-dim);letter-spacing:.05em}
+  .row .val{flex:0 0 60px;text-align:right;font-size:11px;color:var(--accent);font-variant-numeric:tabular-nums}
+  select,input[type=range]{font:inherit;font-size:11px}
+  select{
+    flex:1 1 auto;min-width:0;background:#0a1524;color:var(--ink);
+    border:1px solid rgba(126,196,222,.22);border-radius:2px;padding:2px 4px;
+  }
+  select:focus{outline:1px solid var(--accent-dim)}
+  option{background:#0a1524;color:var(--ink)}
+  input[type=range]{flex:1 1 auto;min-width:0;accent-color:var(--accent);height:16px;background:transparent}
+  input[type=range]:focus{outline:1px solid var(--accent-dim)}
+  button{
+    font:inherit;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    background:#0d1e2c;color:var(--accent);border:1px solid rgba(126,196,222,.3);
+    border-radius:2px;padding:5px 8px;cursor:pointer;width:100%;
+  }
+  button:hover{background:#14303f;border-color:var(--accent-dim)}
+  button:active{background:#0a1524}
+
+  .stat{display:flex;justify-content:space-between;gap:10px;font-size:11px}
+  .stat span:first-child{color:var(--ink-faint);letter-spacing:.05em}
+  .stat span:last-child{color:var(--ink);font-variant-numeric:tabular-nums}
+  .state{margin-top:6px;padding-top:6px;border-top:1px solid var(--line);font-size:11px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase}
+  .bar{height:5px;margin-top:7px;background:rgba(126,196,222,.1);border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#1f7f8c,var(--accent));transition:width .12s linear}
+
+  .ramp{height:9px;border-radius:2px;border:1px solid var(--line);
+    background:linear-gradient(90deg,#06121f,#0e4056,#3a9696,#96dcbe,#ffd696,#fff6e4)}
+  .rmeta{display:flex;justify-content:space-between;margin-top:4px;font-size:11px;color:var(--ink-faint);letter-spacing:.04em}
+  .rnote{margin-top:6px;font-size:11px;color:var(--ink-dim)}
+  .hint{margin-top:6px;font-size:11px;color:var(--ink-faint);border-top:1px solid var(--line);padding-top:6px}
+  .hint b{color:var(--ink-dim);font-weight:500}
+</style>
+</head>
+<body>
+<canvas id="vis"></canvas>
+
+<div id="ui">
+
+  <section class="panel tl">
+    <h1>Chaos Game</h1>
+    <div class="sub">iterated function systems &middot; affine attractors</div>
+    <p class="tech"><b>p</b><sub>n+1</sub> = <b>f</b><sub>σ(n)</sub>(<b>p</b><sub>n</sub>) &nbsp;&middot;&nbsp;
+      σ(n) ~ <b>w</b> &nbsp;&middot;&nbsp; ‖p<sub>n</sub>&minus;attractor‖ &le; <b>λ</b><sup>n</sup>d<sub>0</sub></p>
+    <p class="blurb" id="blurb">&nbsp;</p>
+  </section>
+
+  <section class="panel tr">
+    <div class="stat"><span>maps</span><span id="sMaps">&mdash;</span></div>
+    <div class="stat"><span>&lambda; max</span><span id="sLam">&mdash;</span></div>
+    <div class="stat"><span>1 / &lambda;</span><span id="sInv">&mdash;</span></div>
+    <div class="stat"><span>points</span><span id="sPts">&mdash;</span></div>
+    <div class="stat"><span>orbit n</span><span id="sTrail">&mdash;</span></div>
+    <div class="stat"><span>seed</span><span id="sSeed">&mdash;</span></div>
+    <div class="stat"><span>fps</span><span id="sFps">&mdash;</span></div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="state" id="sState">integrating</div>
+  </section>
+
+  <section class="panel bl">
+    <div class="row"><label for="preset">fractal</label><select id="preset"></select></div>
+    <div class="row"><label for="mode">colour</label><select id="mode">
+      <option value="density">density ramp</option>
+      <option value="map">map index</option>
+      <option value="angle">map rotation</option>
+      <option value="radial">radius</option>
+    </select></div>
+    <div class="row"><label for="budget">point budget</label><input type="range" id="budget" min="40000" max="900000" step="20000" value="240000"><span class="val" id="vBudget">&mdash;</span></div>
+    <div class="row"><label for="rate">rate / frame</label><input type="range" id="rate" min="250" max="12000" step="250" value="4000"><span class="val" id="vRate">&mdash;</span></div>
+    <div class="row"><label for="trail">orbit n</label><input type="range" id="trail" min="60" max="4000" step="20" value="700"><span class="val" id="vTrail">&mdash;</span></div>
+    <div class="row"><label for="expo">exposure</label><input type="range" id="expo" min="40" max="300" step="5" value="100"><span class="val" id="vExpo">&mdash;</span></div>
+    <div class="row" style="margin-top:10px"><button id="reseed">reseed</button></div>
+  </section>
+
+  <section class="panel br">
+    <div class="ramp"></div>
+    <div class="rmeta"><span id="rLo">low</span><span id="rMid">hue</span><span id="rHi">high</span></div>
+    <p class="rnote" id="rnote">&nbsp;</p>
+    <p class="hint">Every iterate is splatted into a <b>float density buffer</b> and tone-mapped through a <b>log</b> ramp, so four decades of density resolve without clipping. The thin line is the live orbit &mdash; the most recent <b>n</b> iterates.</p>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Chaos game for 2-D affine iterated function systems.
+
+       p(n+1) = f_sigma(n)( p(n) ),   sigma(n) ~ Categorical(w)
+       f_i(x) = A_i x + b_i,   A_i a 2x2 (usually a contraction)
+
+   Each iterate is splatted as a unit-energy Gaussian into a float32 density
+   buffer.  The attractor is then read straight out of the density through a
+   log ramp with a percentile-driven auto-exposure, so several decades of
+   density resolve instead of clipping to white.
+
+   Fully seeded and frame-count driven: point index k always lands on the
+   same pixel, so a slow machine and a fast one produce the same image.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------- rng ---- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const SEED_BASE = 0x5eed1a7 >>> 0;
+let reseedCount = 0, rng = mulberry32(SEED_BASE);
+const seedNow = () => (SEED_BASE + reseedCount * 7919) >>> 0;
+
+/* ------------------------------------------------------- affine utils ---- */
+/* [a,b,c,d,e,f] : linear [[a,b],[d,e]] at 0,1,3,4 ; translation (c,f) at 2,5 */
+function rotM(deg){
+  const r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return [c, -s, s, c];
+}
+function compose(O, I){                       /* O after I */
+  return [ O[0]*I[0] + O[1]*I[3],  O[0]*I[1] + O[1]*I[4],  O[0]*I[2] + O[1]*I[5] + O[2],
+           O[3]*I[0] + O[4]*I[3],  O[3]*I[1] + O[4]*I[4],  O[3]*I[2] + O[4]*I[5] + O[5] ];
+}
+/* largest singular value of the linear part = worst-case contraction */
+function linRatio(m){
+  const a = m[0], b = m[1], d = m[3], e = m[4];
+  const s = a*a + b*b + d*d + e*e;
+  const t = (a*a + b*b) * (d*d + e*e) - (a*d + b*e)*(a*d + b*e);
+  const det = t > 0 ? t : 0;
+  return Math.sqrt(Math.max(0, (s + Math.sqrt(Math.max(0, s*s - 4*det))) / 2));
+}
+const S3 = Math.sqrt(3) / 2;
+
+/* ---------------------------------------------------------- the IFSs ----- */
+/* Koch curve along +x with the apex pushed to -y: the peak sits OUTSIDE the
+   equilateral triangle, so wrapping the curve onto the three sides of that
+   triangle gives the classic outward-pointing Koch snowflake. */
+function kochArcs(){
+  const h = S3 / 3;                            /* sqrt(3)/6 for a unit segment */
+  return [ {deg:0,tx:0,ty:0}, {deg:-60,tx:1/3,ty:0},
+           {deg:60,tx:0.5,ty:-h}, {deg:0,tx:2/3,ty:0} ];
+}
+function snowflakeMaps(){
+  const V = [[0,0], [1,0], [0.5, S3]], out = [];
+  for (let e = 0; e < 3; e++){
+    const R = rotM(120 * e);
+    const A = [R[0], R[1], V[e][0], R[2], R[3], V[e][1]];
+    for (const arc of kochArcs()){
+      const r = rotM(arc.deg);
+      /* the arc's own offset is the translation of this sub-curve */
+      out.push({ m: compose(A, [r[0]/3, r[1]/3, arc.tx, r[2]/3, r[3]/3, arc.ty]),
+                 deg: 120 * e + arc.deg, w: 1 / 12 });
+    }
+  }
+  return out;
+}
+
+/* A preset carries its maps, a start point, a post-transform that places the
+   attractor in the frame, and framing numbers. */
+function snowflake(){
+  return {
+    name: 'Koch snowflake', maps: snowflakeMaps(),
+    start: [0.5, S3 / 3], transient: 24,
+    post: [1, 0, 0, 0, 1, 0],
+    zoom: 0.90, pan: [0.00, 0.015], ev: 1.00, dec: 2.8, mode: 'angle', budget: 260000,
+    blurb: '<b>12 maps</b> &mdash; four Koch arcs (ratio <b>1/3</b>, turns <b>0&deg;, &minus;60&deg;, +60&deg;</b>) wrapped onto the three sides of an equilateral triangle. One continuous Jordan curve: every segment becomes four, so length diverges as (4/3)<sup>n</sup> while the enclosed area stays finite.'
+  };
+}
+function sierpinski(){
+  const V = [[0,0], [1,0], [0.5, S3]];
+  return {
+    name: 'Sierpinski gasket',
+    maps: V.map(v => ({ m: [0.5, 0, v[0]*0.5, 0, 0.5, v[1]*0.5], deg: 0, w: 1/3 })),
+    start: [0.5, S3 / 3], transient: 20,
+    post: [1, 0, 0, 0, 1, 0],
+    zoom: 0.90, pan: [-0.045, 0.01], ev: 1.00, dec: 3.3, mode: 'map', budget: 220000,
+    blurb: '<b>3 maps</b> &mdash; each corner copy scaled by <b>1/2</b> and translated to a vertex. Area is 3&middot;(1/2)<sup>2</sup> = <b>3/4 &lt; 1</b>: the gasket has infinite length but <b>zero</b> area. Those holes are missing, not merely unlit.'
+  };
+}
+function fern(){
+  /* the classic fern is 2.5 wide and 10 tall; lay it on its side so it fills
+     a landscape frame instead of standing as a thin vertical smear */
+  return {
+    name: 'Barnsley fern',
+    maps: [
+      { m: [0,    0,    0,     0,    0.16, 0   ], deg:  90, w: 0.01 },
+      { m: [0.85, 0.04, 0,    -0.04, 0.86, 1.6 ], deg:  -3, w: 0.85 },
+      { m: [0.85,-0.04, 0,     0.04, 0.86, 1.6 ], deg:   3, w: 0.07 },
+      { m: [0.3,  0.26, 0,    -0.28, 0.24, 0.44], deg: -43, w: 0.07 }
+    ],
+    start: [0, 0], transient: 18,
+    post: [0, 1, 0, -1, 0, 0],                 /* (x,y) -> (y,-x) */
+    zoom: 0.94, pan: [0.02, 0.00], ev: 1.00, dec: 5.0, mode: 'density', budget: 400000,
+    blurb: '<b>4 maps</b> &mdash; Barnsley 1983, weights <b>.01 / .85 / .07 / .07</b>. The only piece here that is genuinely <em>affine</em> rather than similar: the leaflets are sheared, which is why it needs a few hundred thousand points before the self-similarity reads.'
+  };
+}
+function cantor(){
+  const out = [];
+  for (let k = 0; k < 2; k++) for (let l = 0; l < 2; l++)
+    out.push({ m: [1/3, 0, 2*k/3, 0, 1/3, 2*l/3], deg: 0, w: 1/4 });
+  return {
+    name: 'Cantor set (dust)',
+    maps: out, start: [0.5, 0.5], transient: 20,
+    post: [1, 0, 0, 0, 1, 0],
+    zoom: 0.86, pan: [0.055, 0.00], ev: 1.00, dec: 2.7, mode: 'map', budget: 260000,
+    blurb: '<b>4 maps</b> &mdash; the middle-third construction run on both axes at once: the product set <b>C &times; C</b>. Each generation discards the middle third of what is left, so the surviving measure is <b>(2/3)<sup>n</sup> &rarr; 0</b>. Almost every point of the plane is missing.'
+  };
+}
+function dragon(){
+  return {
+    name: 'Heighway dragon',
+    maps: [
+      { m: [0.5, -0.5, 0, 0.5,  0.5, 0], deg:  45, w: 0.5 },
+      { m: [0.5,  0.5, 1, -0.5, 0.5, 0], deg: -45, w: 0.5 }
+    ],
+    start: [1, 0], transient: 24,
+    post: [1, 0, 0, 0, 1, 0],
+    zoom: 0.93, pan: [-0.015, 0.015], ev: 1.00, dec: 2.9, mode: 'density', budget: 260000,
+    blurb: '<b>2 maps</b> &mdash; over the complex plane, <b>z &rarr; (1+i)z/2</b> and <b>z &rarr; (1&minus;i)z/2 + 1</b>. Two rotations of &plusmn;45&deg; at ratio 1/&radic;2: each segment is doubled, one copy flipped, and the tiles it lays down cover the plane twice over.'
+  };
+}
+const PRESETS = { snowflake, sierpinski, fern, cantor, dragon };
+const ORDER = ['snowflake', 'fern', 'dragon', 'sierpinski', 'cantor'];
+
+/* ------------------------------------------------------------ palette ---- */
+/* one arc: deep sea -> teal -> mint -> amber -> cream */
+const RAMP = [[6,18,31], [14,64,86], [58,150,150], [150,220,190], [255,214,150], [255,246,228]];
+const NSTOP = RAMP.length;
+function rampAt(t){
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const f = t * (NSTOP - 1), i = Math.min(NSTOP - 2, Math.floor(f)), u = f - i;
+  const a = RAMP[i], b = RAMP[i + 1], o = [0, 0, 0];
+  for (let k = 0; k < 3; k++) o[k] = a[k] + (b[k] - a[k]) * u;
+  return o;
+}
+const LUTN = 128;
+const LUT = new Float32Array(LUTN * 3);
+for (let i = 0; i < LUTN; i++){
+  const c = rampAt(i / (LUTN - 1));
+  LUT[i*3] = c[0]; LUT[i*3+1] = c[1]; LUT[i*3+2] = c[2];
+}
+const HOT = [255, 250, 238];
+
+/* ------------------------------------------------------------ canvases --- */
+const vis  = document.getElementById('vis');
+const vctx = vis.getContext('2d', { alpha: false });
+const acc  = document.createElement('canvas'); const actx = acc.getContext('2d');
+const bg   = document.createElement('canvas'); const bctx = bg.getContext('2d');
+const scn  = document.createElement('canvas'); const sctx = scn.getContext('2d');
+
+let VW = 0, VH = 0, AW = 640, AH = 400;
+let dens = new Float32Array(AW * AH), hsum = new Float32Array(AW * AH);
+let KERN = new Float32Array(49), KS = 7, KHALF = 3;
+let P = null, maps = null, lamMax = 0, mapHue = null, angHue = null;
+let fitCx = 0, fitCy = 0, fitR = 1, SCALE = 1, OX = 0, OY = 0;
+let px = 0, py = 0, total = 0, frames = 0, accumulating = true, dirty = true;
+let mode = 'angle', budget = 240000, rate = 4000, exposure = 1, trailLen = 700;
+let expLo = 1e-6, expHi = 1;
+
+const MAXT = 4000;
+const tX = new Float32Array(MAXT), tY = new Float32Array(MAXT), tC = new Float32Array(MAXT);
+let tHead = 0, tCount = 0;
+const buckets = new Map();
+
+/* -------------------------------------------------------- kernel build --- */
+function buildKernel(){
+  KS = 7; KHALF = 3;
+  KERN = new Float32Array(KS * KS);
+  /* 7-tap, sigma 1.25.  Wide enough that a one-pixel curve never breaks into
+     dashes, tight enough that the boundary stays a line and not a bloom. */
+  const sig = 1.25, inv = 1 / (2 * sig * sig);
+  let sum = 0;
+  for (let y = 0; y < KS; y++) for (let x = 0; x < KS; x++){
+    const dx = x - KHALF, dy = y - KHALF;
+    const w = Math.exp(-(dx*dx + dy*dy) * inv);
+    KERN[y*KS + x] = w; sum += w;
+  }
+  for (let i = 0; i < KERN.length; i++) KERN[i] /= sum;   /* unit energy */
+}
+
+/* --------------------------------------------------------- background ---- */
+function buildBG(){
+  bctx.fillStyle = '#050a13'; bctx.fillRect(0, 0, VW, VH);
+  const g = bctx.createRadialGradient(VW * 0.50, VH * 0.46, 0,
+                                      VW * 0.50, VH * 0.46, Math.hypot(VW, VH) * 0.60);
+  g.addColorStop(0, '#0d1c2c'); g.addColorStop(0.55, '#08111e'); g.addColorStop(1, '#04070e');
+  bctx.fillStyle = g; bctx.fillRect(0, 0, VW, VH);
+}
+
+/* ------------------------------------------------------------- sizing ---- */
+function resize(){
+  VW = Math.max(360, window.innerWidth  | 0);
+  VH = Math.max(280, window.innerHeight | 0);
+  vis.width = VW; vis.height = VH;
+  bg.width = VW; bg.height = VH;
+  scn.width = VW; scn.height = VH;
+  vctx.imageSmoothingEnabled = true;      /* bilinear upscale, no blocky pixels */
+  const aspect = VW / VH;
+  let w = Math.round(400 * aspect);
+  w = Math.max(512, Math.min(640, w));
+  const h = Math.max(300, Math.min(400, Math.round(w / aspect)));
+  AW = w; AH = h;
+  acc.width = AW; acc.height = AH;
+  actx.imageSmoothingEnabled = true;
+  dens = new Float32Array(AW * AH);
+  hsum = new Float32Array(AW * AH);
+  buildBG(); buildKernel(); reset();
+}
+
+/* --------------------------------------------------------- map picking --- */
+function pick(r){
+  const t = r * maps.length, i = t | 0;
+  return i >= maps.length ? maps.length - 1 : i;
+}
+/* the post-transform (usually a rotation) is folded into the maps, so the
+   hot loop never sees it */
+let MA = null, MB = null;
+function foldPost(){
+  const q = P.post;                            /* same 6-tuple as compose() */
+  MA = maps.map(o => {
+    const m = o.m;
+    return [ q[0]*m[0] + q[1]*m[3],  q[0]*m[1] + q[1]*m[4],  q[0]*m[2] + q[1]*m[5] + q[2],
+             q[3]*m[0] + q[4]*m[3],  q[3]*m[1] + q[4]*m[4],  q[3]*m[2] + q[4]*m[5] + q[5] ];
+  });
+  MB = [ q[0]*P.start[0] + q[1]*P.start[1] + q[2], q[3]*P.start[0] + q[4]*P.start[1] + q[5] ];
+}
+function step(m){
+  const nx = m[0]*px + m[1]*py + m[2];
+  py = m[3]*px + m[4]*py + m[5]; px = nx;
+}
+
+/* ------------------------------------------------------------- the fit --- */
+function fit(){
+  const r = mulberry32((seedNow() ^ 0x9e3779b9) >>> 0);
+  const n = MA.length;
+  let x = MB[0], y = MB[1];
+  for (let i = 0; i < 600; i++){                 /* burn the transient */
+    const m = MA[Math.min(n - 1, (r() * n) | 0)];
+    const nx = m[0]*x + m[1]*y + m[2]; y = m[3]*x + m[4]*y + m[5]; x = nx;
+  }
+  let x0 = 1e30, y0 = 1e30, x1 = -1e30, y1 = -1e30;
+  for (let i = 0; i < 90000; i++){
+    const m = MA[Math.min(n - 1, (r() * n) | 0)];
+    const nx = m[0]*x + m[1]*y + m[2]; y = m[3]*x + m[4]*y + m[5]; x = nx;
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (!(x1 - x0 > 1e-9) || !(y1 - y0 > 1e-9)){ x0 = -1; y0 = -1; x1 = 1; y1 = 1; }
+  const bw = x1 - x0, bh = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const padX = bw * 0.055, padY = bh * 0.055;
+  SCALE = Math.min((AW * 0.5) / (bw * 0.5 + padX), (AH * 0.5) / (bh * 0.5 + padY)) * P.zoom;
+  OX = AW * 0.5 + P.pan[0] * AW - cx * SCALE;
+  OY = AH * 0.5 + P.pan[1] * AH - cy * SCALE;
+  fitCx = cx; fitCy = cy; fitR = Math.max(1e-9, 0.5 * Math.hypot(bw, bh));
+}
+
+function setMode(m){
+  mode = m;
+  const n = maps.length;
+  mapHue = new Float32Array(n); angHue = new Float32Array(n);
+  for (let i = 0; i < n; i++){
+    mapHue[i] = n > 1 ? 0.06 + 0.92 * i / (n - 1) : 0.5;
+    let a = maps[i].deg * Math.PI / 180;
+    a -= Math.floor(a / (2 * Math.PI)) * (2 * Math.PI);
+    angHue[i] = 0.06 + 0.92 * (a / (2 * Math.PI));
+  }
+}
+
+/* -------------------------------------------------------------- reset ---- */
+function reset(){
+  foldPost();
+  px = MB[0]; py = MB[1];
+  fit();
+  dens.fill(0); hsum.fill(0);
+  total = 0; tHead = 0; tCount = 0; accumulating = true;
+  rng = mulberry32(seedNow());
+  /* burn the transient on the real rng, so the orbit is already on the
+     attractor by the first plotted point (map[0] alone would starve it) */
+  for (let i = 0; i < P.transient; i++) step(MA[pick(rng())]);
+  const want = document.getElementById('budget').valueAsNumber || 0;
+  if (want) budget = want;
+  setMode(mode);
+  expLo = 1e-6; expHi = 1;
+  /* warm-up burst: the first painted frame already has structure */
+  for (let i = 0; i < 40000 && total < budget; i++) tick();
+  dirty = true;
+}
+
+/* ------------------------------------------------------------ stepping --- */
+function hueOf(i, x, y){
+  if (mode === 'map')    return mapHue[i];
+  if (mode === 'angle')  return angHue[i];
+  if (mode === 'radial'){
+    const d = Math.hypot(x - fitCx, y - fitCy) / fitR;
+    return 0.06 + 0.92 * (d > 1 ? 1 : d);
+  }
+  return -1;                                     /* density mode: unused */
+}
+
+function tick(){
+  const i = pick(rng());
+  step(MA[i]);
+  if (!accumulating){
+    tX[tHead] = px * SCALE + OX; tY[tHead] = py * SCALE + OY; tC[tHead] = 0;
+    tHead = (tHead + 1) % MAXT;
+    if (tCount < MAXT) tCount++;
+    return;
+  }
+  const h = hueOf(i, px, py);
+  const X = px * SCALE + OX, Y = py * SCALE + OY;
+  const xi = Math.round(X), yi = Math.round(Y);
+  if (xi > -KS && xi < AW + KS && yi > -KS && yi < AH + KS){
+    const x0 = Math.max(0, xi - KHALF), x1 = Math.min(AW - 1, xi + KHALF);
+    const y0 = Math.max(0, yi - KHALF), y1 = Math.min(AH - 1, yi + KHALF);
+    for (let y = y0; y <= y1; y++){
+      const ky = y - yi + KHALF, row = y * AW;
+      for (let x = x0; x <= x1; x++){
+        const k = KERN[ky * KS + (x - xi + KHALF)];
+        const p = row + x;
+        dens[p] += k;
+        if (h >= 0) hsum[p] += h * k;
+      }
+    }
+  }
+  total++;
+  if (total >= budget) accumulating = false;
+  tX[tHead] = X; tY[tHead] = Y; tC[tHead] = h;
+  tHead = (tHead + 1) % MAXT;
+  if (tCount < MAXT) tCount++;
+}
+
+/* ---------------------------------------------------------- tonemap ------ */
+const HN = 512;
+const hist = new Int32Array(HN);
+const LN_K = Math.log(3000);        /* ~3.5 decades of density across the ramp */
+
+/* Auto-level the ramp to the density range the attractor ACTUALLY occupies.
+   A curve fractal only spans a narrow density band, so a fixed log window
+   puts the whole shape at the top of the ramp and it reads flat.  Instead:
+   black point = low percentile of the support, white point = high percentile,
+   both in log space, with a fixed guard band on either side. */
+function autoExpose(){
+  let mx = 0;
+  for (let y = 0; y < AH; y += 2) for (let x = 0; x < AW; x += 2){
+    const d = dens[y * AW + x];
+    if (d > mx) mx = d;
+  }
+  if (mx <= 1e-7){ expLo = 1e-7; expHi = 1e-6; return; }
+  const lmx = Math.log(mx), lmin = lmx - LN_K, inv = HN / (lmx - lmin);
+  hist.fill(0);
+  let live = 0;
+  for (let y = 0; y < AH; y += 2) for (let x = 0; x < AW; x += 2){
+    const d = dens[y * AW + x];
+    if (d <= 1e-5) continue;
+    let b = ((Math.log(d) - lmin) * inv) | 0;
+    if (b < 0) b = 0; else if (b >= HN) b = HN - 1;
+    hist[b]++; live++;
+  }
+  if (!live){ expLo = 1e-7; expHi = mx; return; }
+  /* white point: the 98.8th percentile of the support, so the densest
+     1.2% of the curve saturates and the rest keeps its gradation */
+  const fromTop = live * 0.012;
+  let c = 0, hi = HN - 1;
+  for (; hi > 0; hi--){ c += hist[hi]; if (c >= fromTop) break; }
+  const w = Math.exp(lmin + (hi + 0.5) / inv);
+  /* black point: a fixed number of decades below it.  How many depends on
+     the attractor -- the fern spans five decades of density, the snowflake
+     under three, and a single fixed window would crush one or blow the other */
+  expHi = w * P.ev;
+  expLo = w * Math.pow(10, -P.dec);
+}
+
+function tonemap(){
+  autoExpose();
+  const img = actx.createImageData(AW, AH), d8 = img.data;
+  const lhi = Math.log(expHi / exposure > 1e-9 ? expHi / exposure : 1e-9);
+  const llo = Math.log(expLo);
+  const invR = 1 / Math.max(1e-6, lhi - llo);
+  const densMode = mode === 'density';
+  for (let p = 0, q = 0; p < dens.length; p++, q += 4){
+    const dv = dens[p];
+    if (dv <= 1e-5){ d8[q+3] = 0; continue; }
+    let t = (Math.log(dv) - llo) * invR;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    const hi3 = t * t * t * t;
+    let hu;
+    if (densMode){ hu = t; }
+    else { hu = hsum[p] / dv; }
+    let li = (hu * (LUTN - 1) + 0.5) | 0;
+    if (li < 0) li = 0; else if (li >= LUTN) li = LUTN - 1;
+    const o = li * 3, bmul = densMode ? 1 : 0.10 + 0.90 * t;
+    d8[q]   = LUT[o]   * bmul + HOT[0] * hi3 * 0.40;
+    d8[q+1] = LUT[o+1] * bmul + HOT[1] * hi3 * 0.40;
+    d8[q+2] = LUT[o+2] * bmul + HOT[2] * hi3 * 0.40;
+    d8[q+3] = 255;
+  }
+  actx.putImageData(img, 0, 0);
+  sctx.globalAlpha = 1;
+  sctx.drawImage(bg, 0, 0);
+  sctx.drawImage(acc, 0, 0, VW, VH);
+  dirty = false;
+}
+
+/* ------------------------------------------------------------- trails ---- */
+function drawTrail(){
+  const n = Math.min(tCount, trailLen);
+  if (n < 2) return;
+  const sx = VW / AW, sy = VH / AH;
+  buckets.forEach(a => { a.length = 0; });
+  const start = (tHead - n + MAXT) % MAXT;
+  for (let k = 1; k < n; k++){
+    const a = (start + k - 1) % MAXT, b = (start + k) % MAXT;
+    const q = tC[b] < 0 ? 63 : Math.max(0, Math.min(63, Math.round(tC[b] * 63)));
+    let arr = buckets.get(q);
+    if (!arr){ arr = []; buckets.set(q, arr); }
+    arr.push(tX[a]*sx, tY[a]*sy, tX[b]*sx, tY[b]*sy);
+  }
+  vctx.lineCap = 'round'; vctx.lineJoin = 'round';
+  vctx.globalCompositeOperation = 'lighter';
+  for (let p = 0; p < 2; p++){
+    vctx.globalAlpha = p ? 0.60 : 0.11;
+    vctx.lineWidth  = p ? 1.0 : 3.2;
+    buckets.forEach((arr, q) => {
+      if (arr.length < 4) return;
+      vctx.strokeStyle = 'rgb(' + Math.round(LUT[q*3]) + ',' + Math.round(LUT[q*3+1]) + ',' + Math.round(LUT[q*3+2]) + ')';
+      vctx.beginPath();
+      for (let i = 0; i < arr.length; i += 4){ vctx.moveTo(arr[i], arr[i+1]); vctx.lineTo(arr[i+2], arr[i+3]); }
+      vctx.stroke();
+    });
+  }
+  vctx.globalCompositeOperation = 'source-over';
+  vctx.globalAlpha = 1;
+  const h2 = (tHead - 1 + MAXT) % MAXT;
+  const hx = tX[h2] * sx, hy = tY[h2] * sy;
+  const g = vctx.createRadialGradient(hx, hy, 0, hx, hy, 6);
+  g.addColorStop(0, 'rgba(255,252,240,0.85)');
+  g.addColorStop(0.4, 'rgba(190,240,215,0.30)');
+  g.addColorStop(1, 'rgba(190,240,215,0)');
+  vctx.fillStyle = g; vctx.beginPath(); vctx.arc(hx, hy, 6, 0, 6.2832); vctx.fill();
+  vctx.fillStyle = 'rgba(255,255,250,0.8)';
+  vctx.beginPath(); vctx.arc(hx, hy, 1.1, 0, 6.2832); vctx.fill();
+}
+
+/* -------------------------------------------------------------- frame ---- */
+let fps = 0, lastT = 0, fc = 0, fpsT = 0;
+const el = id => document.getElementById(id);
+const fmt = n => n >= 1000 ? (n/1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n | 0);
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if (lastT){ fc++; if (now - fpsT > 500){ fps = fc * 1000 / (now - fpsT); fc = 0; fpsT = now; } }
+  lastT = now;
+
+  const n = accumulating ? Math.min(rate, Math.max(0, budget - total)) : 460;
+  for (let i = 0; i < n; i++) tick();
+  if (accumulating) dirty = true;
+  if (dirty) tonemap();
+
+  vctx.globalAlpha = 1;
+  vctx.drawImage(scn, 0, 0);
+  drawTrail();
+
+  frames++;
+  if ((frames & 3) === 0) updateStats();
+  if (!window.__ready && !accumulating && frames > 3){
+    window.__probe = { preset: P.name, points: total, budget, frames, fps: +fps.toFixed(1),
+                       maps: maps.length, lambda: +lamMax.toFixed(4), seed: seedNow(),
+                       mode, orbit: trailLen, expHi: +expHi.toFixed(2), expLo: +expLo.toFixed(3),
+                       internal: AW + 'x' + AH, state: 'converged' };
+    window.__ready = true;
+  }
+}
+function updateStats(){
+  const t = total / budget;
+  el('sPts').textContent = total.toLocaleString('en-US');
+  el('sFps').textContent = fps.toFixed(1);
+  el('sTrail').textContent = fmt(trailLen);
+  el('prog').style.width = (Math.min(1, t) * 100).toFixed(1) + '%';
+  el('sState').textContent = accumulating ? 'integrating' : 'converged';
+}
+
+/* --------------------------------------------------------------- ui ------ */
+function applyPreset(key){
+  P = PRESETS[key]();
+  maps = P.maps;
+  lamMax = 0; for (const o of maps) lamMax = Math.max(lamMax, linRatio(o.m));
+  mode = P.mode; budget = P.budget;
+  el('preset').value = key;
+  el('mode').value = mode;
+  el('budget').value = String(budget);
+  el('blurb').innerHTML = P.blurb;
+  el('sMaps').textContent = maps.length;
+  el('sLam').textContent = lamMax.toFixed(4);
+  el('sInv').textContent = (1 / lamMax).toFixed(2) + '×';
+  el('sSeed').textContent = '0x' + seedNow().toString(16);
+  el('rMid').textContent = mode;
+  el('rnote').innerHTML = modeNote(mode);
+  resize();
+}
+function modeNote(m){
+  return m === 'map'    ? 'hue = which of the ' + maps.length + ' maps fired, averaged per pixel; brightness still density'
+       : m === 'angle'  ? 'hue = that map&rsquo;s rotation angle, averaged per pixel; brightness still density'
+       : m === 'radial' ? 'hue = distance from the attractor&rsquo;s centre; brightness still density'
+       : 'one lamp: hue <em>is</em> log density, deep teal through mint to cream';
+}
+function syncLabels(){
+  el('vBudget').textContent = fmt(budget);
+  el('vRate').textContent  = fmt(rate);
+  el('vTrail').textContent = fmt(trailLen);
+  el('vExpo').textContent  = exposure.toFixed(2) + '×';
+}
+
+for (const k of ORDER){
+  const o = document.createElement('option');
+  o.value = k; o.textContent = PRESETS[k]().name;
+  el('preset').appendChild(o);
+}
+el('preset').addEventListener('change', e => applyPreset(e.target.value));
+el('mode').addEventListener('change', e => {
+  mode = e.target.value; setMode(mode); dirty = true;
+  el('rMid').textContent = mode; el('rnote').innerHTML = modeNote(mode);
+});
+el('budget').addEventListener('input', e => { budget = e.target.valueAsNumber; syncLabels(); reset(); });
+el('rate').addEventListener('input',   e => { rate = e.target.valueAsNumber; syncLabels(); });
+el('trail').addEventListener('input',  e => { trailLen = e.target.valueAsNumber; syncLabels(); });
+el('expo').addEventListener('input',   e => { exposure = e.target.valueAsNumber / 100; dirty = true; syncLabels(); });
+el('reseed').addEventListener('click', () => {
+  reseedCount++;
+  el('sSeed').textContent = '0x' + seedNow().toString(16);
+  reset();
+});
+
+let rt = 0;
+window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resize, 140); });
+
+applyPreset('snowflake');
+syncLabels();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

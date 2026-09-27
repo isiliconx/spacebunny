@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>41 · Generative Poster — modular grid solver</title>
+<style>
+  /* ============================================================
+     41 · GENERATIVE POSTER
+     One seeded candidate stream, reshaped by nine declarative
+     masks: modular grid → rhythm ladder → collision/void solve →
+     mass-balance pass → SVG sheet (print-exact, A2).
+     ============================================================ */
+  :root{
+    --sans:'Inter','Helvetica Neue',Helvetica,Arial,'Liberation Sans',sans-serif;
+    --mono:'JetBrains Mono','DejaVu Sans Mono',ui-monospace,monospace;
+    --room-0:#171a20;      /* room centre */
+    --room-1:#0a0b0e;      /* room edge  */
+    --ink:#e9edf3;
+    --dim:#8b95a6;
+    --line:rgba(190,205,225,.14);
+    --line-2:rgba(190,205,225,.28);
+    --panel:rgba(12,14,18,.72);
+    --accent:#7ee0c0;
+    --grain:none;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#07080a; color:var(--ink);
+    font-family:var(--sans);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* --- the room: a gallery wall, not a flat fill --- */
+  #room{position:fixed;inset:0;z-index:0;overflow:hidden;
+    background:
+      radial-gradient(120% 95% at 42% 6%, #232a36 0%, #141821 38%, #0a0c10 72%, #06070a 100%),
+      linear-gradient(180deg,#0d1015 0%,#07080b 100%);
+  }
+  #room::before{ /* faint wall grid: 40px module, barely there */
+    content:'';position:absolute;inset:-40px;
+    background-image:
+      linear-gradient(rgba(160,190,230,.045) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(160,190,230,.045) 1px,transparent 1px);
+    background-size:40px 40px;
+    mask-image:radial-gradient(90% 80% at 45% 35%,#000 0%,transparent 78%);
+  }
+  #room::after{ /* film grain — kills flat banding, adds the paper feel */
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background-image:var(--grain);background-repeat:repeat;
+    opacity:.055;mix-blend-mode:overlay;
+  }
+
+  #app{position:relative;z-index:1;display:grid;
+    grid-template-columns:1fr 372px;height:100%}
+
+  /* ---------------- stage ---------------- */
+  #stage{position:relative;display:flex;align-items:center;justify-content:center;
+    padding:26px 22px 22px;min-width:0}
+  #plate{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px}
+  #sheetWrap{position:relative;background:#fff;
+    box-shadow:0 1px 0 rgba(255,255,255,.10), 0 26px 54px -18px rgba(0,0,0,.86),
+               0 4px 14px rgba(0,0,0,.5);
+    outline:1px solid rgba(255,255,255,.07);
+  }
+  #sheetWrap::after{ /* cast light onto the wall behind the sheet */
+    content:'';position:absolute;inset:-14px;z-index:-1;pointer-events:none;
+    background:radial-gradient(60% 50% at 50% 50%,rgba(150,180,225,.10),transparent 72%);
+  }
+  #sheet{display:block;width:100%;height:100%}
+  #caption{display:flex;gap:14px;align-items:baseline;font-family:var(--mono);
+    font-size:11px;letter-spacing:.10em;color:var(--dim);text-transform:uppercase}
+  #caption b{color:var(--ink);font-weight:500}
+  #caption .dot{color:var(--line-2)}
+
+  /* ---------------- panel ---------------- */
+  #panel{
+    background:linear-gradient(180deg,rgba(16,19,25,.88),rgba(9,11,14,.92));
+    border-left:1px solid var(--line);
+    overflow-y:auto;overflow-x:hidden;
+    display:flex;flex-direction:column;
+  }
+  #panel::-webkit-scrollbar{width:8px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(180,200,230,.16)}
+  .hd{padding:16px 16px 12px;border-bottom:1px solid var(--line)}
+  .hd h1{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.16em;
+    text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+  .hd h1 span{color:var(--dim);font-weight:400}
+  .hd p{margin-top:7px;font-family:var(--mono);font-size:10.5px;line-height:1.55;
+    color:var(--dim);letter-spacing:.02em}
+  .hd p em{color:var(--accent);font-style:normal}
+  .sec{padding:12px 16px 14px;border-bottom:1px solid var(--line)}
+  .sec>.lbl{font-family:var(--mono);font-size:10px;letter-spacing:.20em;color:var(--dim);
+    text-transform:uppercase;margin-bottom:9px;display:flex;justify-content:space-between}
+  .sec>.lbl b{color:var(--ink);font-weight:500;letter-spacing:.10em}
+
+  .row{margin-bottom:11px}
+  .row:last-child{margin-bottom:0}
+  .row .top{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.10em;
+    text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+  .row .top b{color:var(--ink);font-weight:500;letter-spacing:.06em;font-size:11px}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;
+    background:transparent;cursor:ew-resize;display:block}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line-2)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
+    margin-top:-4.5px;background:var(--ink);border-radius:0;transform:rotate(45deg);
+    box-shadow:0 0 0 3px rgba(126,224,192,0)}
+  input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(126,224,192,.28)}
+  select,input[type=number]{
+    width:100%;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+    color:var(--ink);background:rgba(255,255,255,.045);
+    border:1px solid var(--line);border-radius:0;padding:6px 7px;outline:none;
+    text-transform:uppercase;cursor:pointer;appearance:none;
+  }
+  select{background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+    linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 13px) 12px,calc(100% - 8px) 12px;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:24px}
+  select:focus,input:focus{border-color:var(--accent)}
+  option{background:#10131a;color:var(--ink)}
+
+  .btnrow{display:flex;gap:7px}
+  button{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);
+    border:1px solid var(--line);padding:8px 9px;cursor:pointer;flex:1;
+    transition:background .13s,border-color .13s,color .13s}
+  button:hover{background:rgba(255,255,255,.11);border-color:var(--line-2)}
+  button.primary{background:var(--accent);color:#06110d;border-color:var(--accent);font-weight:700}
+  button.primary:hover{filter:brightness(1.12)}
+  button[aria-pressed=true]{background:rgba(126,224,192,.16);border-color:var(--accent);color:var(--accent)}
+  .toggles{display:flex;gap:7px;flex-wrap:wrap}
+  .toggles button{flex:1 1 30%}
+
+  #spec{padding:12px 16px 14px;font-family:var(--mono);font-size:10.5px;
+    line-height:1.75;color:var(--dim);letter-spacing:.04em}
+  #spec .k{color:#5f697a;display:inline-block;width:88px}
+  #spec .v{color:var(--ink)}
+  #spec .ok{color:var(--accent)}
+  #ft{padding:11px 16px 16px;border-top:1px solid var(--line);font-family:var(--mono);
+    font-size:10px;line-height:1.7;color:#5f697a;letter-spacing:.06em}
+  #ft kbd{border:1px solid var(--line);padding:1px 4px;color:var(--dim);font-size:9.5px}
+  .swatches{display:flex;gap:4px;margin-top:7px}
+  .swatches i{flex:1;height:16px;display:block}
+
+  /* print-only artwork (crop marks, reg targets, colour bar) */
+  @media screen{ .print-only{display:none} }
+  body.pv .print-only{display:inline}
+
+  /* ---------------- print: exactly one A2 sheet ---------------- */
+  @page{size:A2 portrait;margin:0}
+  @media print{
+    html,body{width:420mm;height:594mm;background:#fff;overflow:visible}
+    #room{display:none}
+    #app{display:block;height:auto}
+    #panel,#caption{display:none!important}
+    #stage{padding:0;display:block;position:static}
+    #plate{gap:0}
+    #sheetWrap{position:static;width:420mm!important;height:594mm!important;
+      box-shadow:none!important;outline:none!important;background:#fff}
+    #sheetWrap::after{display:none}
+    .print-only{display:inline!important}
+  }
+  @media (max-width:940px){
+    body{overflow:auto}
+    #app{grid-template-columns:1fr;height:auto}
+    #stage{min-height:72vh}
+    #panel{border-left:0;border-top:1px solid var(--line);max-height:none}
+  }
+</style>
+</head>
+<body>
+<div id="room"></div>
+<div id="app">
+  <div id="stage">
+    <div id="plate">
+      <div id="sheetWrap"><svg id="sheet" viewBox="0 0 420 594"
+           preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"></svg></div>
+      <div id="caption"></div>
+    </div>
+  </div>
+
+  <aside id="panel">
+    <div class="hd">
+      <h1>41 · Generative Poster <span>seed <b id="seedEcho">4104</b></span></h1>
+      <p><em>mulberry32</em> stream, forked per seed → <em>modular grid solver</em>
+         (column + 6&nbsp;mm baseline snapping, rhythm ladder, void mirror) →
+         <em>mass-balance pass</em> → SVG sheet, print-exact A2.</p>
+    </div>
+
+    <div class="sec">
+      <div class="lbl">Seed <b id="vSeed">4104</b></div>
+      <div class="btnrow" style="margin-bottom:7px">
+        <button class="primary" id="bReseed">Reseed ↻</button>
+        <button id="bStep">Next plate</button>
+      </div>
+      <input type="number" id="iSeed" min="0" step="1" value="4104">
+    </div>
+
+    <div class="sec">
+      <div class="lbl">Parameters <b id="vCount">9 active</b></div>
+
+      <div class="row">
+        <div class="top"><label for="iCols">Grid density</label><b id="vCols">6 col</b></div>
+        <input type="range" id="iCols" min="4" max="12" step="1" value="6">
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iVocab">Shape vocabulary</label><b id="vVocab">Bauhaus</b></div>
+        <select id="iVocab">
+          <option value="0">Bauhaus primaries</option>
+          <option value="1">Swiss modules</option>
+          <option value="2">Constructivist diagonals</option>
+          <option value="3">Arc system</option>
+          <option value="4">Modular weave</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iPal">Palette</label><b id="vPal">Ultramarine</b></div>
+        <select id="iPal"></select>
+        <div class="swatches" id="sw"></div>
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iRot">Rotation</label><b id="vRot">0° orthogonal</b></div>
+        <input type="range" id="iRot" min="0" max="34" step="1" value="0">
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iRhythm">Scale rhythm</label><b id="vRhythm">ratio 1.62</b></div>
+        <input type="range" id="iRhythm" min="120" max="200" step="1" value="162">
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iDens">Ink density</label><b id="vDens">31%</b></div>
+        <input type="range" id="iDens" min="8" max="46" step="1" value="31">
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iFocal">Focal point</label><b id="vFocal">Rule of thirds</b></div>
+        <select id="iFocal">
+          <option value="0">Upper third</option>
+          <option value="1">Golden section</option>
+          <option value="2">Centre / axis</option>
+          <option value="3">Lower third, right</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <div class="top"><label for="iType">Type block</label><b id="vType">Top left</b></div>
+        <select id="iType">
+          <option value="0">Top left</option>
+          <option value="1">Top right</option>
+          <option value="2">Bottom left</option>
+          <option value="3">Bottom right</option>
+          <option value="4">Bottom band</option>
+          <option value="5">Vertical rail, left</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="lbl">Inspect</div>
+      <div class="toggles">
+        <button id="bGrid" aria-pressed="false">Grid</button>
+        <button id="bAnchor" aria-pressed="false">Anchors</button>
+        <button id="bPrint" aria-pressed="false">Print marks</button>
+      </div>
+    </div>
+
+    <div id="spec"></div>
+    <div id="ft">
+      <kbd>R</kbd> reseed &nbsp; <kbd>G</kbd> grid &nbsp; <kbd>A</kbd> anchors &nbsp; <kbd>P</kbd> marks<br>
+      No network, no fonts fetched, no canvas: every rule is solved in JS and emitted
+      as vector geometry. Print → A2 at 100%.
+    </div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* ===================================================================
+   0 · deterministic PRNG — one stream, forked by name
+   =================================================================== */
+function mulberry32(a){
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s){
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function stream(seed, name){
+  return mulberry32((hashStr(name) ^ Math.imul(seed >>> 0, 0x9E3779B1)) >>> 0);
+}
+const rr = (r,a,b) => a + (b-a)*r();
+const ri = (r,a,b) => Math.floor(a + (b-a+1)*r()) ;
+const pick = (r,arr) => arr[Math.min(arr.length-1, Math.floor(r()*arr.length))];
+
+/* ===================================================================
+   1 · colour — curated harmonies, hue-jittered per seed
+   =================================================================== */
+const PALETTES = [
+  {name:"Ultramarine",      ground:"#0F1220", ink:"#F2EFE6", a:"#3149F0", b:"#E0B94A"},
+  {name:"Signal red",       ground:"#151110", ink:"#F4EFE6", a:"#E0392A", b:"#EFBE45"},
+  {name:"Bone / ink",       ground:"#E9E3D6", ink:"#14161A", a:"#1B4DC1", b:"#CE3B26"},
+  {name:"Forest",           ground:"#0D1411", ink:"#ECEADF", a:"#2FA36B", b:"#DCCF9C"},
+  {name:"Plum",             ground:"#150F16", ink:"#EFE7EE", a:"#A047C2", b:"#EA5674"},
+  {name:"Citrus",           ground:"#11130F", ink:"#F2F0E4", a:"#CFDD22", b:"#F5643A"},
+  {name:"Kupfer",           ground:"#12100D", ink:"#F0EADF", a:"#C2703C", b:"#74869F"},
+  {name:"Graphite",         ground:"#131417", ink:"#E8E9EB", a:"#F1EFEA", b:"#5C6675"}
+];
+function hex2rgb(h){ const n = parseInt(h.slice(1),16);
+  return [n>>16 & 255, n>>8 & 255, n & 255]; }
+function rgb2hex(c){ return "#" + c.map(v =>
+  Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join(""); }
+function rgb2hsl(c){
+  c = c.map(v => v/255);
+  const mx = Math.max(...c), mn = Math.min(...c), l = (mx+mn)/2;
+  let h = 0, s = 0;
+  if (mx !== mn){
+    const d = mx-mn;
+    s = l > .5 ? d/(2-mx-mn) : d/(mx+mn);
+    h = mx === c[0] ? (c[1]-c[2])/d + (c[1] < c[2] ? 6 : 0)
+        : mx === c[1] ? (c[2]-c[0])/d + 2 : (c[0]-c[1])/d + 4;
+    h *= 60;
+  }
+  return [h,s,l];
+}
+function hsl2rgb(h,s,l){
+  h = ((h%360)+360)%360; s = Math.max(0,Math.min(1,s)); l = Math.max(0,Math.min(1,l));
+  const c = (1-Math.abs(2*l-1))*s, x = c*(1-Math.abs((h/60)%2-1)), m = l-c/2;
+  let t = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]
+        :h<300?[x,0,c]:[c,0,x];
+  return t.map(v => (v+m)*255);
+}
+/* small, bounded jitter: same family, never a different palette */
+function jitter(hex, dh, ds, dl){
+  const [h,s,l] = rgb2hsl(hex2rgb(hex));
+  return rgb2hex(hsl2rgb(h+dh, s+ds, l+dl));
+}
+function mix(a,b,t){ const A = hex2rgb(a), B = hex2rgb(b);
+  return rgb2hex([0,1,2].map(i => A[i] + (B[i]-A[i])*t)); }
+function makePalette(idx, seed){
+  const p = PALETTES[idx];
+  const j = jitter; // alias for brevity
+  const dh = (stream(seed,"pal")() - .5) * 16;
+  return {
+    name: p.name,
+    ground: j(p.ground, dh, 0, -.012 + stream(seed,"pg")()*.03),
+    ink:    j(p.ink,    dh*.5, -.02, .004),
+    a:      j(p.a,      dh, .01, .006),
+    b:      j(p.b,      dh*1.4, .01, -.004),
+    get muted(){ return mix(this.ink, this.ground, .46); },
+    get soft(){  return mix(this.ink, this.ground, .18); }
+  };
+}
+
+/* ===================================================================
+   2 · the sheet — modular grid, baseline, rhythm ladder
+   =================================================================== */
+const W = 420, H = 594;            // A2 portrait, in millimetres
+const MG = 34, BU = 6, GUT = 6;     // margin, baseline unit, column gutter
+const CT = {x: MG, y: MG, w: W - 2*MG, h: H - 2*MG};
+const CT_R = CT.x + CT.w, CT_B = CT.y + CT.h;
+const qb = v => Math.round(v / BU) * BU;              // snap to baseline
+const qh = v => Math.max(1.5, Math.round(v / 1.5) * 1.5);
+const GLYPH_C = 0.45;      // fraction of a type box that is actual ink
+
+function makeGrid(cols){
+  const cw = (CT.w - GUT * (cols - 1)) / cols;
+  return {
+    cols, cw,
+    x: i => CT.x + i * (cw + GUT),
+    right: i => CT.x + i * (cw + GUT) + cw,
+    /* largest index whose column still fits */
+    maxSpan: n => Math.max(1, Math.min(cols - n + 1, Math.floor((CT.w + GUT) / (n * cw + (n-1)*GUT))))
+  };
+}
+/* rhythm ladder: modular scale with a seeded, strictly-decreasing ratio so
+   neighbouring steps always relate. Quantised to half-baselines.            */
+function makeLadder(ratio){
+  const out = [];
+  let v = BU;
+  for (let i = 0; i < 9; i++){
+    const s = qh(v);
+    if (s > CT.w * 0.46) break;
+    if (!out.length || s >= out[out.length-1] + 1.5) out.push(s);   // strictly ascending
+    v *= ratio;
+  }
+  while (out.length < 6) out.push(qh(out[out.length-1] * 1.34));
+  return out;                     // ascending
+}
+
+/* ===================================================================
+   3 · shape vocabulary — five motif systems, authored in a 0..1 box
+   =================================================================== */
+const VOCABS = [
+  {name:"Bauhaus", ratio:.40, kinds:5},
+  {name:"Swiss",   ratio:.34, kinds:5},
+  {name:"Constr.", ratio:.30, kinds:5},
+  {name:"Arc",     ratio:.44, kinds:4},
+  {name:"Weave",   ratio:.38, kinds:5}
+];
+function motif(vocab, kind, fill, sw, solid){
+  /* returns svg in the unit box 0..1, centred */
+  const st = `stroke="${fill}" stroke-width="${sw}" fill="none"`;
+  const fi = `fill="${fill}"`;
+  const solidKind = [1, 0, 0, 0, 1][kind];      // fallback when a stroke is wanted
+  const f = solid ? fi : (solidKind ? fi : st);
+  switch (vocab){
+    case 0: /* Bauhaus */
+      switch (kind){
+        case 0: return `<path d="M0 0H1A1 1 0 0 1 0 1Z" ${f}/>`;               /* quarter disc */
+        case 1: return `<path d="M0 1H1A1 1 0 0 1 0 0Z" ${f}/>`;               /* half disc    */
+        case 2: return `<circle cx=".5" cy=".5" r=".5" ${f}/>`;                 /* disc         */
+        case 3: return `<path d="M0 1L1 1L.5 0Z" ${f}/>`;                       /* triangle     */
+        default:return `<rect x="0" y="0" width="1" height="1" ${f}/>`;        /* slab         */
+      }
+    case 1: /* Swiss modules */
+      switch (kind){
+        case 0: return `<rect x="0" y="0" width="1" height="1" ${f}/>`;
+        case 1: return `<path d="M0 .5H1" ${st} stroke-linecap="butt"/>`;
+        case 2: return `<circle cx=".5" cy=".5" r=".26" ${f}/>`;
+        case 3: return `<path d="M.42 0H.58V.42H1V.58H.58V1H.42V.58H0V.42H.42Z" ${f}/>`;
+        default:return `<rect x="0" y="0" width="1" height="1" ${f}/>`;
+      }
+    case 2: /* Constructivist */
+      switch (kind){
+        case 0: return `<path d="M0 1L1 0H1Z" ${f}/>`;
+        case 1: return `<path d="M0 1L.5 .40L1 1L.80 1L.5 .60L.20 1Z" ${f}/>`;
+        case 2: return `<path d="M0 1L1 .18V.40L0 1.22Z" ${f}/>`;
+        case 3: return `<path d="M0 .86L1 .06V.24L0 1.04Z" ${f}/>`;
+        default:return `<path d="M0 1L1 0V.34L.34 1Z" ${f}/>`;
+      }
+    case 3: /* Arc system */
+      switch (kind){
+        case 0: return `<circle cx=".5" cy=".5" r=".5" ${st}/>`;
+        case 1: return `<path d="M.5 0A.5 .5 0 1 1 .5 1" ${st} fill="none"/>
+                       <path d="M.5 0A.5 .5 0 1 0 .5 1" ${st} fill="none"
+                             stroke-dasharray="1.6 1.6" opacity=".55"/>`;
+        case 2: return `<path d="M.5 0V.34M.5 .66V1M0 .5H.34M.66 .5H1"
+                          ${st} stroke-width="${sw*1.6}"/>`;
+        default:return `<circle cx=".5" cy=".5" r=".5" ${st}/>
+                      <circle cx=".5" cy=".5" r="${Math.max(.02,.16/sw*0.12)}" ${fi}/>`;
+      }
+    default: /* Modular weave */
+      switch (kind){
+        case 0: return `<rect x="0" y="0" width="1" height="1" ${f}/>`;
+        case 1: return `<rect x="0" y="0" width="1" height="1" ${st}/>`;
+        case 2: return `<rect x="0" y="0" width="1" height=".46" ${f}/>
+                       <rect x="0" y=".54" width=".46" height=".46" ${f}/>`;
+        case 3: return `<path d="M.44 0H.56V.44H1V.56H.56V1H.44V.56H0V.44H.44Z" ${f}/>`;
+        default:return `<path d="M0 0H.46V.46H0ZM.54 .54H1V1H.54Z" ${f}/>`;
+      }
+  }
+}
+/* strip a stroke-only vocabulary down to a solid hero shape */
+const HERO_KIND = [2, 0, 0, 0, 0];
+
+/* ===================================================================
+   4 · candidate pool — fixed draw order, sorted hero-first
+   Every parameter below is a MASK on this list, not a reshuffle, so
+   moving one slider never re-rolls the others.
+   =================================================================== */
+const POOL_N = 64;
+function makePool(seed){
+  const r = stream(seed, "pool");
+  const cand = [];
+  /* size-index histogram: strict rhythm — one apex, a repeated mid,
+     a quiet base. Counts come from the stream but the ORDER is fixed.   */
+  const weights = [1, 2, 3, 4, 3, 2, 1];
+  const total = weights.reduce((a,b)=>a+b,0);
+  for (let i = 0; i < POOL_N; i++){
+    let u = r() * total, k = 0;
+    while (k < weights.length-1 && u >= weights[k]) { u -= weights[k]; k++; }
+    cand.push({
+      sizeIdx: k,
+      kind: ri(r, 0, 4),
+      col: r(),                        // 0..1 colour-ink propensity
+      bar: r() < .26,                  // bar/rule variant
+      alignRight: r() < .42,           // left- or right-edge grid snap
+      tilt: r(),                       // 0..1 → rotation jitter
+      spin: r() < .5 ? 0 : 1,          // 0 / 180
+      jitterX: r(), jitterY: r(),      // 0..1 → sub-cell placement
+      thin: r() < .3
+    });
+  }
+  cand.sort((a,b) => a.sizeIdx - b.sizeIdx || 0);   // stable, hero first
+  return cand;
+}
+
+/* ===================================================================
+   5 · type — canvas-measured, so the void/bounds solve is exact
+   =================================================================== */
+const SANS = "'Inter','Helvetica Neue',Helvetica,Arial,'Liberation Sans',sans-serif";
+const MONO = "'JetBrains Mono','DejaVu Sans Mono',ui-monospace,monospace";
+const mctx = document.createElement("canvas").getContext("2d");
+function textW(t, font, ls){ mctx.font = font; return mctx.measureText(t).width + ls * t.length; }
+
+const TITLES = ["ORDNUNG","RAUM","FORM","KONTRAST","SYSTEM","SIGNAL","FLÄCHE","LINIE",
+  "PUNKT","TAKT","MODUL","RIHMUS","STRUKTUR","BEWEGUNG","GLEICHGEWICHT","MASS","SERIE",
+  "FELD","ZONE","HORIZONT","ARCHIV","STUDIE","ZEICHEN","KÖRPER","FARBE","KLANG","NORM",
+  "SPUR","TIEFE","LICHT","DICHTE","ACHSE","KANTE"];
+const KICKERS = ["KUNSTHALLE BASEL","WERKSCHAU","NEUE GRAFIK","SPEICHER","HALLE 7",
+  "AUSSTELLUNG","STUDIENREIHE","INSTITUT FÜR FORM","GALERIE OST","ATELIER 12",
+  "SCHAU 04","ARCHIVAUSSTELLUNG","WERKSTATT","MUSEUM FÜR GESTALTUNG"];
+const METAS = ["420 × 594 MM","SIEBDRUCK AUF 120 G","PLATE 07 / 24","28.IV – 12.VII",
+  "EINTritt frei","10 – 19 Uhr","täglich, ausser Montag","Auflage 300",
+  "Bauhaus Archiv","Schrift: Inter","Raster 6 mm","Papier: Offsetweiss",
+  "Öffnungszeiten 11–18","Verlag · Zürich","Handabzug 1:1"];
+
+function buildType(p, pal, grid, focal, rng){
+  const pos = p.type;
+  const colX = i => grid.x(i);
+  const wide = Math.min(grid.cols - 1, p.type === 4 ? grid.cols : Math.max(2, Math.round(grid.cols * .52)));
+  let x0, boxW, topLimit, botLimit;
+
+  if (pos === 5){                                    // vertical rail
+    x0 = colX(0); boxW = grid.cw;
+    topLimit = CT.y + CT.h * .18; botLimit = CT.y + CT.h * .96;
+  } else if (pos === 4){                             // bottom band
+    x0 = colX(0); boxW = CT.w;
+    topLimit = CT.y + CT.h * .52; botLimit = CT_B;
+  } else {
+    const rightSide = (pos === 1 || pos === 3);
+    const c0 = rightSide ? Math.max(0, grid.cols - wide) : 0;
+    x0 = colX(c0); boxW = colX(c0 + wide) - colX(c0);
+    if (pos === 0 || pos === 1){ topLimit = CT.y; botLimit = CT.y + CT.h * .40; }
+    else { topLimit = CT.y + CT.h * .60; botLimit = CT_B; }
+  }
+
+  const title = pick(rng, TITLES);
+  const kick  = pick(rng, KICKERS);
+  const metas = [];
+  const mset = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+  for (let i = mset.length-1; i>0; i--){ const j = ri(rng,0,i); [mset[i],mset[j]]=[mset[j],mset[i]]; }
+  for (let i = 0; i < 3; i++) metas.push(METAS[mset[i]]);
+
+  const out = [];
+  let x = x0, y = 0, boxH = 0;
+
+  if (pos === 5){
+    /* rail: kicker, then the title rotated −90°, then a hairline */
+    const maxLen = (botLimit - topLimit);
+    let size = 30;
+    while (size > 13 && textW(title, `700 ${size}px ${SANS}`, -0.02*size) > maxLen) size -= 1;
+    const lead = Math.round(size * 1.02);
+    const railW = Math.max(size * .84, 24);
+    const kickS = 8.5;
+    const kickTxt = kick + " · " + title;
+    const kLead = 11;
+    const total = kLead + size * 1.1 + 16 + metas.length * 10;
+    const yTop = CT.y + (CT.h - total) / 2;
+    const gx = x0, gy = yTop + total;
+    out.push(txt(kickTxt, gx + 2, gy - 6, kickS, pal.muted, MONO, 0.14, "start", 0, "start"));
+    out.push(`<g transform="translate(${r2(gx)},${r2(yTop + kLead + size*.55)}) rotate(-90)">` +
+      txt(title, 0, 0, size, pal.ink, SANS, -0.022, "start", size*0.020, "start") + `</g>`);
+    out.push(`<rect x="${r2(gx)}" y="${r2(yTop + kLead + size*1.30)}" width="${r2(railW)}" height="1.2" fill="${pal.a}"/>`);
+    let my = yTop + kLead + size*1.30 + 13;
+    for (const m of metas){ out.push(txt(m, gx, my, 7.6, pal.muted, MONO, .12, "start", 0, "start")); my += 10; }
+    x = gx; y = yTop; boxW = railW; boxH = total;
+  } else if (pos === 4){
+    /* band: kicker row, one enormous title line, rule, meta row */
+    const kickS = 9;
+    let size = 108;
+    while (size > 30 && textW(title, `700 ${size}px ${SANS}`, -0.03*size) > boxW) size -= 2;
+    size = Math.max(size, 26);
+    const lead = size * .88;
+    let y0 = botLimit - (metas.length * 12 + 14 + lead + 10 + kickS * 1.9);
+    y0 = Math.max(topLimit, y0);
+    out.push(txt(kick, x, y0 + kickS, kickS, pal.muted, MONO, .24, "start", 0, "start"));
+    out.push(txt(title, x, y0 + kickS * 1.9 + lead, size, pal.ink, SANS, -0.03, "start", size*0.016, "start"));
+    const ry = y0 + kickS * 1.9 + lead + 9;
+    out.push(`<rect x="${r2(x)}" y="${r2(ry)}" width="${r2(boxW)}" height="1.6" fill="${pal.a}"/>`);
+    let mx = x;
+    const mtxt = metas.join("   ·   ");
+    out.push(txt(mtxt, mx, ry + 12, 7.8, pal.muted, MONO, .13, "start", 0, "start"));
+    y = y0; boxH = ry + 12 - y0 + 4;
+  } else {
+    /* corner block: kicker, wrapped title, rule, meta stack */
+    const kickS = 9;
+    let size = 52;
+    let lines = wrap(title, `700 ${size}px ${SANS}`, -0.028*size, boxW, 2);
+    while (size > 15 && (lines.length > 2 || lines.length * size * 0.94 > (botLimit - topLimit) * .78)){
+      size -= 2; lines = wrap(title, `700 ${size}px ${SANS}`, -0.028*size, boxW, 3);
+    }
+    const lead = size * 0.96;
+    let y0 = (pos === 0 || pos === 1) ? CT.y + kickS + 4
+                                          : botLimit - (metas.length*10.5 + 12 + lines.length*lead + 10 + kickS*1.9);
+    y0 = Math.max(topLimit, Math.min(y0, botLimit - 40));
+    out.push(txt(kick, x, y0 + kickS, kickS, pal.muted, MONO, .24, "start", 0, "start"));
+    let ty = y0 + kickS * 1.95;
+    for (const ln of lines){
+      out.push(txt(ln, x, ty + lead*0.80, size, pal.ink, SANS, -0.028, "start", size*0.016, "start"));
+      ty += lead;
+    }
+    const ry = ty + 3;
+    out.push(`<rect x="${r2(x)}" y="${r2(ry)}" width="${r2(Math.min(boxW, grid.cw*1.6))}" height="1.4" fill="${pal.a}"/>`);
+    let my = ry + 12;
+    for (const m of metas){
+      out.push(txt(m, x, my, 7.8, pal.muted, MONO, .12, "start", 0, "start"));
+      my += 10.5;
+    }
+    y = y0; boxH = my - y0;
+  }
+  return { g: out.join(""), rect: { x, y, w: boxW, h: boxH }, title, kick, metas };
+}
+function wrap(t, font, ls, maxW, maxLines){
+  const w = s => textW(s, font, ls);
+  if (w(t) <= maxW) return [t];
+  const parts = t.split(/\s+/); const lines = []; let cur = "";
+  for (const wd of parts){
+    const trial = cur ? cur + " " + wd : wd;
+    if (w(trial) > maxW && cur){ lines.push(cur); cur = wd; } else cur = trial;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines){
+    const keep = lines.slice(0, maxLines);
+    keep[maxLines-1] = keep[maxLines-1].slice(0, Math.max(3, keep[maxLines-1].length - 1));
+    return keep;
+  }
+  return lines;
+}
+const r2 = v => Math.round(v * 100) / 100;
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function txt(str, x, y, size, fill, fam, ls, anchor, fat, baseline){
+  const attrs = `x="${r2(x)}" y="${r2(y)}" font-size="${r2(size)}" fill="${fill}" ` +
+    `font-family="${fam}" letter-spacing="${r2(ls)}" text-anchor="${anchor}"` +
+    (baseline ? ` dominant-baseline="${baseline}"` : "");
+  const stroke = fat ? ` stroke="${fill}" stroke-width="${r2(fat)}" stroke-linejoin="round" paint-order="stroke fill"` : "";
+  return `<text ${attrs} xml:space="preserve"${stroke}>${esc(str)}</text>`;
+}
+
+/* ===================================================================
+   6 · collision / void / mass-balance helpers
+   =================================================================== */
+const overlap = (a,b) => {
+  const w = Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y+a.h, b.y+b.h) - Math.max(a.y, b.y);
+  return (w > .5 && h > .5) ? w*h : 0;
+};
+const inside = (b, m) => b.x >= m.x-.5 && b.y >= m.y-.5 && b.x+b.w <= m.x+m.w+.5 && b.y+b.h <= m.y+m.h+.5;
+function rectAround(x, y, w, h){ return {x, y, w, h}; }
+function pad(r, p){ return {x:r.x-p, y:r.y-p, w:r.w+2*p, h:r.h+2*p}; }
+
+/* ===================================================================
+   7 · compose — the actual poster
+   =================================================================== */
+function compose(p, seed){
+  const pal   = makePalette(p.pal, seed);
+  const grid  = makeGrid(p.cols);
+  const lad   = makeLadder(p.ratio);
+  const voc   = p.vocab;
+  const vr    = VOCABS[voc];
+  const rot   = p.rot * Math.PI / 180;
+  const pool  = makePool(seed);
+  const cr    = stream(seed, "compose");
+  const tr    = stream(seed, "type");
+
+  /* ---- type block, solved before the modules so it owns its void ---- */
+  const type = buildType(p, pal, grid, {x:0, y:0}, tr);
+  const typeGuard = pad(type.rect, 9);   // the word is never crossed by geometry
+
+  /* ---- HERO MASS : the type block is pinned by design and usually sits
+     in a corner, so it drags the sheet's centroid off-centre. The hero is
+     the one large mass whose SCALE we control, so we size it to
+     counterweight the title: a big title gets a big hero (and vice
+     versa), which is exactly the proportional relationship a designer
+     would choose by hand. Solved, not drawn.                             */
+  const typeInk = GLYPH_C * type.rect.w * type.rect.h;
+  let heroS = Math.min(lad[lad.length-1], grid.cw * (p.cols > 8 ? 2.2 : 1.9), CT.w * .40, CT.h * .34);
+  const heroWant = CT.h * Math.max(0.18, Math.min(0.42,
+      0.16 + Math.sqrt(typeInk / (CT.w * CT.h)) * 0.95));
+  heroS = Math.max(heroS * 0.72, Math.min(heroS * 1.55, heroWant));
+  heroS = Math.max(9, heroS);
+  /* the hero sits opposite the type block, on the requested focal axis */
+  const F = [[.32,.30],[.382,.382],[.50,.44],[.70,.66]][p.focal];
+  const typeRight = type.rect.x + type.rect.w/2 > CT.x + CT.w/2;
+  const typeLow   = type.rect.y + type.rect.h/2 > CT.y + CT.h/2;
+  const cxFrac = (p.focal === 2) ? F[0] : (typeRight ? F[0] : 1 - F[0]);
+  const cyFrac = (p.focal === 2) ? F[1] : (typeLow  ? F[1] : 1 - F[1]);
+  let fx = grid.x(Math.max(0, Math.min(grid.cols-1, Math.round((grid.cols-1)*cxFrac))));
+  let fy = qb(CT.y + CT.h * cyFrac);
+  fx = Math.max(CT.x, Math.min(fx, CT_R - heroS));
+  fy = Math.max(CT.y, Math.min(fy, CT_B - heroS));
+  /* keep the hero clear of the title: if they would collide, slide the
+     hero along the diagonal away from the word (never shrink it) */
+  {
+    const hb = rectAround(fx, fy, heroS, heroS);
+    if (overlap(hb, typeGuard) > heroS*heroS*0.05){
+      const sx = typeRight ? -1 : 1, sy = typeLow ? -1 : 1;
+      for (let k = 1; k <= 12; k++){
+        const nx = Math.max(CT.x, Math.min(fx + sx * k * BU * 2, CT_R - heroS));
+        const ny = Math.max(CT.y, Math.min(fy + sy * k * BU * 2, CT_B - heroS));
+        if (overlap(rectAround(nx, ny, heroS, heroS), typeGuard) <= heroS*heroS*0.05){
+          fx = nx; fy = ny; break;
+        }
+      }
+    }
+  }
+
+  /* ---- THE VOID : the type block mirrored through the hero's centre.
+     It is the sheet's deliberate empty zone, and it MOVES with the hero,
+     so it is derived from the hero's current position rather than baked
+     once — otherwise the balance pass would slide the hero out of its own
+     negative space. Always clamped to a positive, on-sheet rect.      --- */
+  let heroRef = null;
+  const voidRect = () => {
+    const hx = heroRef ? heroRef.box.x + heroRef.box.w/2 : fx + heroS/2;
+    const hy = heroRef ? heroRef.box.y + heroRef.box.h/2 : fy + heroS/2;
+    const shrink = 0.86;
+    const mx = 2*hx - (type.rect.x + type.rect.w);
+    const my = 2*hy - (type.rect.y + type.rect.h);
+    let w = Math.max(6, type.rect.w * shrink), h = Math.max(6, type.rect.h * shrink);
+    const x = Math.max(CT.x, Math.min(mx - w/2, CT_R - w));
+    const y = Math.max(CT.y, Math.min(my - h/2, CT_B - h));
+    return { x, y, w: Math.min(w, CT_R - x), h: Math.min(h, CT_B - y) };
+  };
+  let void_ = voidRect();
+  let voidGuard = pad(void_, 3);
+
+  /* ---- colour role from the pool: accent A carries the mass ---- */
+  const inkOf = c => {
+    if (c < .17) return pal.a;                       // hero-family
+    if (c < .30) return pal.b;
+    if (c < .44) return pal.ink;
+    if (c < .52) return pal.ground;                  // a void-cut
+    return pal.soft;
+  };
+
+  const modules = [], structG = [];
+  let ink = 0, mx = 0, my = 0;
+  const budget = p.dens * CT.w * CT.h / 100;
+  const massR = Math.hypot(CT.w, CT.h) * 0.155;
+
+  /* ---- BALANCE MODEL --------------------------------------------------
+     A poster is balanced when the centroid of ALL its ink sits near the
+     optical centre of the sheet. The type block is FIXED by design (its
+     position is a parameter) and usually sits in a corner, so the
+     solver cannot move it — instead we solve for where the movable
+     geometry must go:
+
+        target_total = CENTRE
+        target_mobile = (M_total * CENTRE - M_type * C_type) / M_mobile
+
+     which is the unique point at which the combined centroid lands on
+     the centre. If that point falls outside the sheet it is clamped, and
+     the solver gets the best balance the layout physically admits.
+     The type block counts as GLYPH COVERAGE (~45% of its box): a title
+     is mostly counterspace, and treating its box as solid would let one
+     thin-stroke word outweigh every geometric mass on the page.      --- */
+  const CENTRE_X = CT.x + CT.w * 0.50, CENTRE_Y = CT.y + CT.h * 0.47;
+  const GLYPH = GLYPH_C;
+  const allMass = () => {
+    const t = type.rect, ta = GLYPH * t.w * t.h;
+    let a = ta, sx = (t.x + t.w/2) * ta, sy = (t.y + t.h/2) * ta;
+    for (const m of modules){
+      if (!m.box || !m.cost) continue;
+      const w = m.cost * m.box.w * m.box.h;
+      a += w; sx += (m.box.x + m.box.w/2) * w; sy += (m.box.y + m.box.h/2) * w;
+    }
+    return { ink: a, mx: a ? sx/a : CENTRE_X, my: a ? sy/a : CENTRE_Y, typeMass: ta };
+  };
+  /* centroid of the MOVABLE set (everything except the pinned type block) —
+     this is the point the relaxer actually controls. The hero is included:
+     it is the one large mass whose position we are free to choose, so it
+     is the primary counterweight against an off-centre title. */
+  const mobileMass = () => {
+    let a = 0, sx = 0, sy = 0;
+    for (const m of modules){
+      if (!m.box || !m.cost) continue;
+      const w = m.cost * m.box.w * m.box.h;
+      a += w; sx += (m.box.x + m.box.w/2) * w; sy += (m.box.y + m.box.h/2) * w;
+    }
+    return { a, x: a ? sx/a : CENTRE_X, y: a ? sy/a : CENTRE_Y };
+  };
+  /* the point the movable geometry must reach for the WHOLE sheet to balance */
+  const mobileTarget = () => {
+    const t = type.rect, ta = GLYPH * t.w * t.h;
+    const m = allMass();
+    const mm = mobileMass();
+    const tm = Math.max(1e-6, mm.a);
+    const tx = (m.ink * CENTRE_X - ta * (t.x + t.w/2)) / tm;
+    const ty = (m.ink * CENTRE_Y - ta * (t.y + t.h/2)) / tm;
+    return { x: Math.max(CT.x, Math.min(tx, CT_R)), y: Math.max(CT.y, Math.min(ty, CT_B)) };
+  };
+  const remeasure = () => { const r = allMass(); ink = r.ink; mx = r.mx; my = r.my; };
+  remeasure();
+
+  const push = (b, g, role, cost, mk) => {
+    const m = { box: b, g, role, cost: cost, mk: mk || null };
+    modules.push(m);
+    remeasure();
+    return m;
+  };
+  /* re-emit a module's svg after the balance pass moved it */
+  const rebase = (m, b) => m.mk ? m.mk(b.x, b.y) : m.g;
+  const bh = k => r2(Math.max(1.6, BU * 0.30 * (k+1)));
+  /* full-sheet occupancy in 16 bands: a composition must read across the
+     WHOLE sheet, not pool in whichever corner happens to be free */
+  const occ = new Float32Array(16);
+  const bump = (b, amt) => {
+    for (let i = 0; i < 16; i++){
+      const z = CT.y + CT.h * ((i + .5) / 16);
+      if (z >= b.y && z <= b.y + b.h) occ[i] += amt;
+    }
+  };
+
+  /* ---- PLACEMENT SOLVER ------------------------------------------------
+     Rejecting a candidate outright starves the sheet. Instead every
+     candidate proposes a set of grid-legal positions and we keep the
+     best-scoring one. The score rewards three things, in order:
+       1. legality (type block, void, mutual overlap)
+       2. counterbalancing — pull the ink centroid back to the focal point
+       3. coverage — service the emptiest band of the sheet
+     4. mass, so the poster has real weight instead of confetti.
+     -------------------------------------------------------------------- */
+  const score = (b, c) => {
+    if (!inside(b, CT)) return -1e9;
+    /* the word is sacred: a hard veto, not a penalty, so geometry can
+       never be placed on or across the title */
+    if (overlap(b, typeGuard) > 0.5) return -1e9;
+    if (overlap(b, voidGuard) > b.w*b.h * 0.28) return -1e9;   // the void stays void
+    for (const m of modules){
+      if (m.role === "struct") continue;
+      if (overlap(b, m.box) > b.w*b.h * 0.10) return -1e9;     // a rhythm, not a pile
+    }
+    const mt = mobileTarget();
+    const mm = mobileMass();
+    /* the score asks: does this mass pull the MOVABLE centroid toward the
+       point at which the whole sheet balances? */
+    const mBase = Math.max(1e-6, mm.a);
+    const a = c * b.w * b.h;
+    const cx = (mm.x * mm.a + (b.x + b.w/2) * a) / (mBase + a);
+    const cy = (mm.y * mm.a + (b.y + b.h/2) * a) / (mBase + a);
+    const drift = Math.hypot(cx - mt.x, cy - mt.y) / massR;
+    const zc = Math.min(15, Math.max(0, Math.floor((b.y + b.h/2 - CT.y) / CT.h * 16)));
+    const cover = 1 / (1 + occ[zc]);
+    const size  = (b.w * b.h) / (CT.w * CT.h);
+    return (-drift * 2.1) + (cover * 0.62) + Math.sqrt(size) * 2.0;
+  };
+  /* enumerate the grid-legal positions a shape of this size may take */
+  const legalSpots = (w, h, r) => {
+    const out = [];
+    const span = Math.max(1, Math.ceil((w + GUT) / (grid.cw + GUT)));
+    const lastC = Math.max(0, grid.cols - span);
+    /* seven vertical anchors so candidates can land in every band of the
+       sheet; the scorer decides which band actually wants this shape */
+    for (let ci = 0; ci <= lastC; ci++){
+      const lx = grid.x(ci);
+      const xs = [lx, grid.right(ci + span) - w, lx - grid.cw*0.30, lx + grid.cw*0.34];
+      for (const x0 of xs){
+        const x = Math.max(CT.x, Math.min(x0, CT_R - w));
+        for (let j = 0; j < 7; j++){
+          let y;
+          if (j === 0)      y = CT.y;                                    /* top trim  */
+          else if (j === 1) y = qb(CT.y + 0.06 * CT.h + (r()-0.5) * BU * 3);
+          else if (j === 2) y = CT.y + (CT.h - h) * (0.20 + r() * 0.16);
+          else if (j === 3) y = CT.y + (CT.h - h) * (0.50 + (r()-0.5) * 0.18);
+          else if (j === 4) y = CT.y + (CT.h - h) * (0.66 + r() * 0.16);
+          else if (j === 5) y = qb(CT_B - h);                            /* bottom trim */
+          else              y = Math.max(CT.y, Math.min(fy + (r()-0.5)*CT.h*0.44, CT_B - h));
+          out.push(rectAround(x, Math.max(CT.y, Math.min(y, CT_B - h)), w, h));
+        }
+      }
+    }
+    return out;
+  };
+  /* place one shape: return the best legal box, or null */
+  const place = (w, h, c, rng) => {
+    let best = null, bs = -1e8;
+    for (const b of legalSpots(w, h, rng)){
+      const s = score(b, c);
+      if (s > bs){ bs = s; best = b; }
+    }
+    return bs < -1e8 ? null : best;
+  };
+
+  /* ---------- 1. THE HERO : one dominant mass on the focal point ---------- */
+  {
+    const hk = HERO_KIND[voc];
+    const b = rectAround(fx, fy, heroS, heroS);
+    /* counterform: a ground-coloured bite, the classic complement move */
+    const cfS = heroS * (0.32 + 0.18 * ((hashStr("cf"+seed) % 5) / 5));
+    const cfOff = hashStr("cfo"+seed) % 4;
+    const cfKind = (hashStr("cfk"+seed) % 5 === 0) ? 2 : 0;
+    /* luminous bloom: concentric low-alpha discs (no filters, no blur) */
+    const mkHero = (X, Y) => {
+      const q = [];
+      for (let i = 6; i >= 1; i--){
+        const k = 1 + i * 0.15;
+        q.push(`<circle cx="${r2(X+heroS/2)}" cy="${r2(Y+heroS/2)}" r="${r2(heroS*0.5*k)}"
+          fill="${pal.a}" opacity="${r2(0.022 + (6-i)*0.020)}"/>`);
+      }
+      q.push(`<g transform="translate(${r2(X)},${r2(Y)}) scale(${r2(heroS)}) translate(-.5,-.5)">` +
+        motif(voc, hk, pal.a, 0, true) + `</g>`);
+      const cfX = X + [0, heroS - cfS, heroS*0.5 - cfS/2, heroS*0.5 - cfS/2][cfOff];
+      const cfY = Y + [heroS - cfS, 0, heroS*0.5 - cfS/2, heroS - cfS][cfOff];
+      q.push(`<g transform="translate(${r2(cfX)},${r2(cfY)}) scale(${r2(cfS)}) translate(-.5,-.5)">` +
+        motif(voc, cfKind, pal.ground, 0, true) + `</g>`);
+      return q.join("");
+    };
+    /* one hairline through the hero's optical axis */
+    push(b, mkHero(b.x, b.y), "hero", 1.0, (X, Y) => mkHero(X, Y) +
+      (p.rot === 0 ? `<rect x="${r2(CT.x)}" y="${r2(qb(Y + heroS/2))}" width="${r2(CT.w)}" height="0.5" fill="${pal.ink}" opacity=".26"/>` : ""));
+    heroRef = modules[modules.length - 1];
+    bump(b, 1);
+  }
+
+  /* ---------- 2. STRUCTURE : one deliberate architectural element, so the
+     sheet has a spine instead of drifting shapes ---------- */
+  {
+    const bandMode = hashStr("band"+seed) % 3;
+    const lowHalf = (p.type === 2 || p.type === 3 || p.type === 4);
+    if (bandMode === 0){
+      /* a full-measure horizontal band on a baseline, in the quiet half */
+      const by = qb(CT.y + CT.h * (lowHalf ? 0.44 : 0.56));
+      structG.push(`<rect x="${CT.x}" y="${r2(by)}" width="${r2(CT.w)}" height="${bh(1)}" fill="${pal.a}" opacity=".9"/>`);
+      structG.push(`<rect x="${CT.x}" y="${r2(by + 4.5)}" width="${r2(CT.w)}" height="0.4"
+        fill="${pal.ink}" opacity=".45"/>`);
+    } else if (bandMode === 1){
+      /* a full-measure vertical rail riding a column edge */
+      const ci = Math.max(1, Math.min(grid.cols-1, Math.round(grid.cols * (lowHalf ? 0.66 : 0.34))));
+      const vx = grid.right(ci);
+      structG.push(`<rect x="${r2(vx - grid.cw*0.34)}" y="${CT.y}" width="${r2(grid.cw*0.68)}"
+        height="${r2(CT.h)}" fill="${pal.soft}" opacity=".28"/>`);
+      structG.push(`<rect x="${r2(vx - 0.3)}" y="${CT.y}" width="0.6" height="${r2(CT.h)}"
+        fill="${pal.a}" opacity=".9"/>`);
+    } else {
+      /* a stepped stack on a shared column edge */
+      const bx = grid.x(hashStr("bx"+seed) % Math.max(1, grid.cols - 1));
+      const y0 = qb(CT.y + CT.h * (0.26 + 0.26 * ((hashStr("by"+seed) % 5)/5)));
+      const h1 = qb(grid.cw * (0.9 + 0.5*((hashStr("bh"+seed) % 4)/4)));
+      structG.push(`<rect x="${r2(bx)}" y="${r2(y0)}" width="${r2(grid.cw)}" height="${r2(h1)}"
+        fill="${pal.soft}" opacity=".55"/>`);
+      structG.push(`<rect x="${r2(bx)}" y="${r2(y0 + h1 + BU)}" width="${r2(grid.cw*0.5)}"
+        height="${r2(qb(grid.cw*0.5))}" fill="${pal.a}" opacity=".92"/>`);
+    }
+  }
+
+  /* ---------- 3. THE TERMINAL : the closing counterweight --------------
+     A single solid block, bottom-anchored and diagonally opposite the type
+     block. This is both the compositional closure (the element that stops
+     the sheet trailing off into empty paper) and the balancing mass: at
+     low grid density and low ink there is not enough cast to bring the
+     centroid back, so the counterweight is what makes the solve possible. */
+  {
+    const rightSide = (p.type === 1 || p.type === 3);
+    const tw = grid.cw * (p.cols >= 8 ? 1.35 : 1.0);
+    const th = qb(tw * (0.44 + 0.32 * ((hashStr("th"+seed) % 4)/4)));
+    const tx = rightSide ? CT.x : CT_R - tw;
+    const ty = qb(CT_B - th - (p.type === 4 ? CT.h*0.11 : 0));
+    const b = rectAround(tx, ty, tw, th);
+    const free = inside(b, CT) && !inside(void_, b) && overlap(b, typeGuard) <= 0.5
+                 && !modules.some(m => m.box && overlap(b, m.box) > b.w*b.h*0.10);
+    if (free){
+      const col = (hashStr("tc"+seed) % 3) === 0 ? pal.b
+                : (hashStr("tc2"+seed) % 2) ? pal.ink : pal.a;
+      push(b, `<rect x="${r2(tx)}" y="${r2(ty)}" width="${r2(tw)}" height="${r2(th)}" fill="${col}"/>`,
+           "terminal", .8, (X, Y) =>
+        `<rect x="${r2(X)}" y="${r2(Y)}" width="${r2(tw)}" height="${r2(th)}" fill="${col}"/>`);
+      bump(b, .8);
+    }
+  }
+
+  /* ---------- 3b. THE ANCHOR : a second, solver-placed counterweight.
+     A poster with too little mass to balance needs one deliberate mass
+     pushed to the emptiest extreme of the sheet. It is placed by the same
+     scored solver as everything else, so it obeys the grid, the type
+     block and the void like any other module.                        ----- */
+  {
+    const need = 12 + p.dens * 0.25;                 // grid columns of counterweight
+    if (modules.filter(m => m.box).length < need){
+      const aw = grid.cw * (0.8 + 0.3 * ((hashStr("aw"+seed) % 4)/4));
+      const ah = qb(grid.cw * (0.55 + 0.5 * ((hashStr("ah"+seed) % 4)/4)));
+      const b = place(aw, ah, .9, stream(seed, "anchor"));
+      if (b){
+        const col = (hashStr("ac"+seed) % 2) ? pal.ink : pal.a;
+        const mkAnchor = (X, Y) => `<rect x="${r2(X)}" y="${r2(Y)}" width="${r2(aw)}" height="${r2(ah)}" fill="${col}"/>`;
+        push(b, mkAnchor(b.x, b.y), "anchor", .9, mkAnchor);
+        bump(b, .9);
+      }
+    }
+  }
+
+  /* ---------- 4. SATELLITES : scale rhythm, largest first, then stepping
+     down the ladder — the shape hierarchy is a solved property, not a draw */
+  {
+    const dirs = [[1,1],[-1,1],[1,-1],[-1,-1]];
+    const d = dirs[hashStr("dir"+seed) % 4];
+    const n = 2 + (hashStr("sat"+seed) % 3);
+    const sr = stream(seed, "sat");
+    for (let i = 0; i < n; i++){
+      const sIdx = Math.max(1, lad.length - 2 - i);
+      let s = lad[sIdx] * (0.86 + 0.24 * ((hashStr("ss"+i+seed) % 7) / 7));
+      s = Math.min(s, grid.cw * 1.3, CT.h * .17);
+      if (s < 4) continue;
+      /* bias the search toward the chosen diagonal, but let the scorer win */
+      const b = place(s, s, .55, () => {
+        const t = sr();
+        return d[1] > 0 ? 0.18 + t*0.64 : 0.5 + (t-0.5)*0.6;
+      });
+      if (!b) continue;
+      const kind = (hashStr("sk"+i+seed) % (voc === 3 ? 4 : 5));
+      const mkSat = (X, Y) => `<g transform="translate(${r2(X)},${r2(Y)}) rotate(${r2(p.rot*0.5)}) scale(${r2(s)}) translate(-.5,-.5)">` +
+        motif(voc, kind, i === 0 ? pal.b : pal.a, Math.max(.02, .9/s), false) + `</g>`;
+      push(b, mkSat(b.x, b.y), "sat", .55, mkSat);
+      bump(b, .55);
+    }
+  }
+
+  /* ---------- 5. FIELD : the grid-anchored supporting cast, solved to fill
+     the sheet evenly rather than to pile up wherever space happens to be.
+     `ink density` governs BOTH coverage and mass: a denser poster carries
+     fewer but LARGER modules, never more confetti.                        --- */
+  {
+    const maxField = Math.max(6, Math.round(6 + p.dens * 0.34));      // ~17 at 31%
+    const sizeCap  = grid.cw * (0.62 + p.dens * 0.011);                // denser -> bigger
+    let placed = 0;
+    for (const c of pool){
+      if (ink > budget || placed >= maxField) break;
+      const sIdx = Math.min(lad.length - 1, c.sizeIdx);
+      let s = lad[sIdx];
+      if (c.bar) s = lad[Math.max(0, sIdx - 1)];
+      s = Math.min(s, sizeCap);
+      if (s < 4) continue;
+
+      let w, h;
+      if (c.bar){
+        w = s; h = qh(s * vr.ratio);
+        if (sIdx <= 1){ w = qh(s * 1.6); h = Math.max(1.2, qh(s * 0.10)); }   // hairline rule
+      } else { w = s; h = s; }
+
+      const col = inkOf(c.col);
+      const cost = col === pal.ground ? .35 : 1;
+      const b = place(w, h, cost, cr);
+      if (!b) continue;
+
+      const tilt = rot * (c.tilt * 1.6 - .55);
+      const ang = c.spin ? 180 : 0;
+      const strokeW = Math.max(.012, Math.min(.05, 0.9 / Math.max(w, h)));
+      const mkField = (X, Y) => `<g transform="translate(${r2(X)},${r2(Y)}) rotate(${r2(tilt*180/Math.PI + ang)}) scale(${r2(w)},${r2(h)}) translate(-.5,-.5)">` +
+        motif(voc, c.bar ? 4 : c.kind, col, strokeW, !c.thin) + `</g>`;
+      push(b, mkField(b.x, b.y), "field", cost, mkField);
+      bump(b, cost);
+      placed++;
+    }
+  }
+
+  /* ---------- 6. MASS-BALANCE : projected-gradient re-centring ----------
+     The ink centroid must land on the hero's optical centre. We translate
+     the movable cast (including the terminal — the hero alone is the fixed
+     anchor) along the residual vector, clamped back inside the margins and
+     re-validated for legality, with a damped step so it converges instead
+     of oscillating.                                                            */
+  let relaxSteps = 0;
+  /* every geometric mass may move; only the type block is pinned. The hero
+     moves first and carries the most weight, so it does most of the work. */
+  const mobile = () => modules.filter(m => m.box).sort((a,b) =>
+    (b.cost * b.box.w * b.box.h) - (a.cost * a.box.w * a.box.h));
+  const legal = (b, ignore) => {
+    if (!inside(b, CT)) return false;
+    if (overlap(b, typeGuard) > 0.5) return false;            // the word is sacred
+    if (overlap(b, voidGuard) > b.w*b.h * 0.30) return false;
+    for (const m of modules){
+      if (!m.box || m === ignore) continue;
+      if (overlap(b, m.box) > b.w*b.h * 0.10) return false;
+    }
+    return true;
+  };
+  remeasure();
+  for (let pass = 0; pass < 24; pass++){
+    if (ink <= 0) break;
+    const mt = mobileTarget();
+    const mm = mobileMass();
+    const ex = mt.x - mm.x, ey = mt.y - mm.y;
+    const err = Math.hypot(ex, ey);
+    if (err <= massR * 0.10) break;
+    /* damped step, clamped so no module teleports across the sheet */
+    const lim = Math.min(1, (massR * 0.55) / err);
+    const dx = ex * 0.55 * lim, dy = ey * 0.55 * lim;
+    let moved = 0;
+    for (const m of mobile()){
+      const b = m.box;
+      const cand = rectAround(
+        Math.max(CT.x, Math.min(b.x + dx, CT_R - b.w)),
+        Math.max(CT.y, Math.min(b.y + dy, CT_B - b.h)), b.w, b.h);
+      if (cand.x === b.x && cand.y === b.y) continue;
+      if (legal(cand, m)){ m.box = cand; m.g = rebase(m, cand); moved++; }
+    }
+    if (!moved) break;                       // fully clamped: accept the residual
+    /* the hero carries the void with it, so the two never disagree */
+    void_ = voidRect(); voidGuard = pad(void_, 3);
+    remeasure();
+    relaxSteps++;
+  }
+  for (const sg of structG) if (sg) modules.push({ box:null, g:sg, role:"struct", cost:0, mk:null });
+
+  /* the reported balance is the TOTAL centroid against the page centre */
+  const bal = ink > 0 ? Math.hypot(mx - CENTRE_X, my - CENTRE_Y) / Math.hypot(CT.w, CT.h) : 0;
+
+  return { pal, grid, lad, voc, vr, rot, pool, modules, type, relaxSteps,
+           focal:{x:fx, y:fy, s:heroS}, void:void_, typeRect:type.rect,
+           ink, inkPct: ink / (CT.w*CT.h) * 100, bal,
+           centroid:{x:mx, y:my}, baseline:BU, margin:MG, gutter:GUT };
+}
+
+/* ===================================================================
+   8 · render the sheet (vector, print-exact)
+   =================================================================== */
+function noiseTile(){
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const g = c.getContext("2d"), d = g.createImageData(128,128), p = d.data;
+  const r = stream(9137, "grain");
+  for (let i = 0; i < p.length; i += 4){
+    const v = 128 + (r() - .5) * 92;
+    p[i] = p[i+1] = p[i+2] = v; p[i+3] = 255;
+  }
+  g.putImageData(d, 0, 0);
+  return c.toDataURL("image/png");
+}
+
+function render(c, opts){
+  const pal = c.pal, S = [];
+  S.push(`<defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0.28" y2="1">
+      <stop offset="0" stop-color="${pal.ground}"/>
+      <stop offset="1" stop-color="${mix(pal.ground, pal.ink, .085)}"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="${pal.a}" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="${pal.a}" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="${pal.a}" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="${pal.b}" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="${pal.b}" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grain" width="128" height="128" patternUnits="userSpaceOnUse">
+      <image href="${GRAIN}" x="0" y="0" width="128" height="128"/>
+    </pattern>
+  </defs>`);
+
+  /* sheet */
+  S.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="url(#ground)"/>`);
+  /* field glow: the poster breathes from behind the focal point */
+  const gs = c.focal.s * 2.9;
+  S.push(`<g><circle cx="${r2(c.focal.x + c.focal.s/2)}" cy="${r2(c.focal.y + c.focal.s/2)}"
+    r="${r2(gs/2)}" fill="url(#glow)"/>
+    <circle cx="${r2(W*0.86)}" cy="${r2(H*0.12)}" r="${r2(CT.w*0.42)}" fill="url(#glowB)"/></g>`);
+
+  /* --- overlays: the grid, the void, the axes (inspect mode) --- */
+  if (opts.grid){
+    const g = c.grid, o = [];
+    for (let i = 0; i < g.cols; i++){
+      o.push(`<rect x="${r2(g.x(i))}" y="${CT.y}" width="${r2(g.cw)}" height="${r2(CT.h)}"
+        fill="none" stroke="${pal.ink}" stroke-opacity=".22" stroke-width=".3"/>`);
+    }
+    for (let y = CT.y; y <= CT_B + .1; y += BU){
+      o.push(`<path d="M${CT.x} ${r2(y)}H${CT_R}" stroke="${pal.ink}" stroke-opacity="${y % 36 < .1 ? .34 : .12}" stroke-width=".22"/>`);
+    }
+    o.push(`<rect x="${CT.x}" y="${CT.y}" width="${r2(CT.w)}" height="${r2(CT.h)}"
+      fill="none" stroke="${pal.a}" stroke-width=".5"/>`);
+    S.push(`<g class="overlay">${o.join("")}</g>`);
+  }
+  if (opts.anchor){
+    const o = [];
+    const dashes = (x,y,w,h,col)=>`<rect x="${r2(x)}" y="${r2(y)}" width="${r2(w)}" height="${r2(h)}"
+      fill="none" stroke="${col}" stroke-width=".6" stroke-dasharray="2.4 2.4"/>`;
+    o.push(dashes(c.void.x, c.void.y, c.void.w, c.void.h, pal.b));
+    o.push(dashes(c.typeRect.x, c.typeRect.y, c.typeRect.w, c.typeRect.h, pal.ink));
+    o.push(dashes(c.focal.x, c.focal.y, c.focal.s, c.focal.s, pal.a));
+    o.push(`<path d="M${r2(c.focal.x)} ${r2(c.focal.y)}L${r2(c.focal.x+c.focal.s)} ${r2(c.focal.y+c.focal.s)}"
+      stroke="${pal.a}" stroke-width=".4"/>`);
+    o.push(`<path d="M${r2(c.focal.x+c.focal.s)} ${r2(c.focal.y)}L${r2(c.focal.x)} ${r2(c.focal.y+c.focal.s)}"
+      stroke="${pal.a}" stroke-width=".4"/>`);
+    o.push(`<circle cx="${r2(c.centroid.x)}" cy="${r2(c.centroid.y)}" r="2.2" fill="none"
+      stroke="${pal.b}" stroke-width=".8"/>`);
+    o.push(`<path d="M${CT.x} ${r2(c.centroid.y)}H${CT_R}M${r2(c.centroid.x)} ${CT.y}V${CT_B}"
+      stroke="${pal.b}" stroke-width=".3" stroke-dasharray="1.6 3"/>`);
+    S.push(`<g class="overlay">${o.join("")}</g>`);
+  }
+
+  /* --- the modules --- */
+  for (const m of c.modules) S.push(m.g);
+
+  /* --- type --- */
+  S.push(`<g class="type">${c.type.g}</g>`);
+
+  /* --- print marks, inside the trim --- */
+  {
+    const o = [], L = 9, T = 1.1, g = 4.5, R = 3.2;
+    const corner = (cx,cy,sx,sy) => {
+      o.push(`<path d="M${r2(cx)} ${r2(cy+sy*L)}V${r2(cy)}H${r2(cx+sx*L)}"
+        fill="none" stroke="#000" stroke-opacity=".55" stroke-width="${T}"/>`);
+      o.push(`<circle cx="${r2(cx - sx*g)}" cy="${r2(cy - sy*g)}" r="${R}"
+        fill="none" stroke="#000" stroke-opacity=".55" stroke-width="${T}"/>`);
+      o.push(`<path d="M${r2(cx-sx*g)} ${r2(cy-sy*g-R-1.6)}V${r2(cy-sy*g+R+1.6)}
+        M${r2(cx-sx*g-R-1.6)} ${r2(cy-sy*g)}H${r2(cx-sx*g+R+1.6)}"
+        stroke="#000" stroke-opacity=".55" stroke-width="${T*.6}"/>`);
+    };
+    corner(g, g, 1, 1); corner(W-g, g, -1, 1); corner(g, H-g, 1, -1); corner(W-g, H-g, -1, -1);
+    /* colour bar + slug, bottom trim band */
+    const bw = 9, bx = W/2 - bw*5/2, by = H - 11.5;
+    [pal.ground, pal.ink, pal.a, pal.b, mix(pal.a,pal.ink,.5)].forEach((col,i) => {
+      o.push(`<rect x="${r2(bx + i*bw)}" y="${r2(by)}" width="${bw}" height="3.4"
+        fill="${col}" stroke="#000" stroke-opacity=".35" stroke-width=".25"/>`);
+    });
+    o.push(txt("GENERATIVE POSTER · SEED " + c.seed, W/2, by - 2.2, 4.2, "#000", MONO, .18, "middle", 0, "start"));
+    o.push(txt(c.palName + " · " + c.vr.name.toUpperCase() + " · " + c.grid.cols + " COL",
+      W/2, by + 8.4, 4.2, "#000", MONO, .18, "middle", 0, "start"));
+    S.push(`<g class="print-only">${o.join("")}</g>`);
+  }
+
+  /* --- paper: grain, then the trim edge --- */
+  S.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="url(#grain)" opacity=".062"/>`);
+  S.push(`<rect x=".25" y=".25" width="${W-.5}" height="${H-.5}" fill="none"
+    stroke="#000" stroke-opacity=".18" stroke-width=".5"/>`);
+  return S.join("");
+}
+
+/* ===================================================================
+   9 · state, UI, lifecycle
+   =================================================================== */
+let P = { seed:4104, cols:6, vocab:0, pal:0, rot:0, ratio:1.62, dens:31, focal:0, type:0 };
+const opts = { grid:false, anchor:false, marks:false };
+let GRAIN = "", CURRENT = null;
+
+const $ = id => document.getElementById(id);
+const svg = $("sheet"), sheetBox = $("sheetWrap");
+
+function fit(){
+  const stage = $("stage");
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  const availH = sh - 96, availW = sw - 90;
+  const h = Math.max(220, Math.min(availH, availW / (H / W)));
+  const w = h * (W / H);
+  sheetBox.style.width = Math.round(w) + "px";
+  sheetBox.style.height = Math.round(h) + "px";
+}
+
+/* ---- parameter guard ---------------------------------------------------
+   Every control is clamped into a valid range before the solver runs, so
+   no input combination can ever produce NaN geometry. This is a single
+   choke point on purpose: one guard here beats guarding every consumer. */
+const LIM = {
+  seed:  [1, 999999], cols: [4, 12],  vocab: [0, VOCABS.length - 1],
+  pal:   [0, PALETTES.length - 1], rot: [0, 34], ratio: [1.20, 2.00],
+  dens:  [8, 46],  focal: [0, 3],    type: [0, 5]
+};
+const DEF = { seed:4104, cols:6, vocab:0, pal:0, rot:0, ratio:1.62,
+              dens:31, focal:0, type:0 };
+/* discrete params round to integers; ratio is a continuous scale factor */
+const isFloat = k => k === "ratio";
+const clamp = (k, v) => {
+  const c = Math.max(LIM[k][0], Math.min(LIM[k][1], v));
+  return isFloat(k) ? Math.round(c * 100) / 100 : Math.round(c);
+};
+function guardParams(q){
+  const o = {};
+  for (const k in LIM){
+    const v = Number(q[k]);
+    /* fall back to the *previous* good value, then to the default — never
+       to an undefined, which would poison the solver with NaN. */
+    const prev = Number.isFinite(Number(P && P[k])) ? Number(P[k]) : DEF[k];
+    o[k] = Number.isFinite(v) ? clamp(k, v) : clamp(k, prev);
+  }
+  return o;
+}
+
+function draw(){
+  P = guardParams(P);
+  const c = compose(P, P.seed);
+  c.seed = P.seed; c.palName = PALETTES[P.pal].name;
+  CURRENT = c;
+  svg.innerHTML = render(c, opts);
+  fit();
+
+  /* readouts */
+  $("vSeed").textContent = P.seed;
+  $("seedEcho").textContent = P.seed;
+  $("vCols").textContent = P.cols + " col";
+  $("vVocab").textContent = VOCABS[P.vocab].name;
+  $("vPal").textContent = PALETTES[P.pal].name;
+  $("vRot").textContent = P.rot === 0 ? "0° orthogonal" : P.rot + "°";
+  $("vRhythm").textContent = "ratio " + P.ratio.toFixed(2);
+  $("vDens").textContent = P.dens + "%";
+  $("vFocal").textContent = ["Upper third","Golden section","Centre / axis","Lower third, right"][P.focal];
+  $("vType").textContent = ["Top left","Top right","Bottom left","Bottom right","Bottom band","Vertical rail"][P.type];
+  $("sw").innerHTML = [c.pal.ground, c.pal.ink, c.pal.a, c.pal.b]
+    .map(col => `<i style="background:${col}"></i>`).join("");
+
+  const fields = c.modules.filter(m => m.role === "field").length;
+  const sats = c.modules.filter(m => m.role === "sat").length;
+  const balanced = c.bal < 0.05;
+  $("spec").innerHTML = [
+    ["sheet",    "A2 · 420 × 594 mm"],
+    ["grid",     c.grid.cols + " col × " + r2(c.grid.cw) + " mm · gutter " + c.gutter],
+    ["baseline", c.baseline + " mm · margin " + c.margin],
+    ["ladder",   c.lad.map(v => r2(v)).join(" · ")],
+    ["modules",  c.modules.length + "  (" + 1 + " hero, " + sats + " sat, " + fields + " field)"],
+    ["ink",      c.inkPct.toFixed(1) + "% of live area"],
+    ["balance",  '<span class="' + (balanced ? "ok" : "") + '">' + (balanced ? "✓ " : "") +
+                 "mass " + (c.bal*100).toFixed(1) + "% off focus</span>"],
+    ["void",     r2(c.void.w) + " × " + r2(c.void.h) + " mm · mirrors the type block"],
+    ["type",     '"' + c.type.title + '" · ' + c.type.kick]
+  ].map(([k,v]) => `<div><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+
+  $("caption").innerHTML =
+    `<span><b>PLATE</b> ${String(P.seed % 1000).padStart(3,"0")}/999</span><span class="dot">·</span>` +
+    `<span><b>${PALETTES[P.pal].name.toUpperCase()}</b></span><span class="dot">·</span>` +
+    `<span>${VOCABS[P.vocab].name.toUpperCase()}</span><span class="dot">·</span>` +
+    `<span>SEED <b>${P.seed}</b></span>`;
+
+  window.__probe = {
+    seed: P.seed, palette: PALETTES[P.pal].name, vocabulary: VOCABS[P.vocab].name,
+    columns: c.grid.cols, moduleW: +c.grid.cw.toFixed(2), baselineMm: c.baseline,
+    rhythmLadder: c.lad.map(v => +v.toFixed(1)),
+    modules: c.modules.length, hero: 1, satellites: sats, field: fields,
+    inkPct: +c.inkPct.toFixed(1), balancePct: +(c.bal*100).toFixed(1),
+    relaxSteps: c.relaxSteps,
+    voidMm: [ +c.void.w.toFixed(1), +c.void.h.toFixed(1) ],
+    focalMm: [ +c.focal.x.toFixed(1), +c.focal.y.toFixed(1) ],
+    typeBlock: c.type.title, typePos: P.type, rotationDeg: P.rot,
+    solver: "modular-grid + rhythm-ladder + void-mirror + mass-balance"
+  };
+}
+
+/* ---- controls ---- */
+const palSel = $("iPal");
+palSel.innerHTML = PALETTES.map((p,i) => `<option value="${i}">${p.name}</option>`).join("");
+
+function reseed(){
+  P.seed = (Math.floor(Math.random() * 99999) + 1000) >>> 0;   // user-triggered only
+  $("iSeed").value = P.seed;
+  draw();
+}
+function stepPlate(){
+  P.seed = ((P.seed + 1) % 100000 + 1000) >>> 0;
+  $("iSeed").value = P.seed;
+  draw();
+}
+$("bReseed").addEventListener("click", reseed);
+$("bStep").addEventListener("click", stepPlate);
+$("iSeed").addEventListener("change", e => {
+  const v = parseInt(e.target.value, 10);
+  P.seed = Number.isFinite(v) ? ((v % 100000) + 100000) % 100000 : 4104;
+  e.target.value = P.seed; draw();
+});
+const bind = (id, key, fn) => $(id).addEventListener("input", e => {
+  P[key] = fn(e.target.value);      // .value — e.target is the element itself
+  draw();
+});
+bind("iCols","cols", t => +t);
+bind("iRot","rot", t => +t);
+bind("iRhythm","ratio", t => +t / 100);
+bind("iDens","dens", t => +t);
+bind("iVocab","vocab", t => +t);
+bind("iPal","pal", t => +t);
+bind("iFocal","focal", t => +t);
+bind("iType","type", t => +t);
+
+const toggles = [["bGrid","grid"],["bAnchor","anchor"],["bPrint","marks"]];
+for (const [id, key] of toggles){
+  $(id).addEventListener("click", () => {
+    opts[key] = !opts[key];
+    $(id).setAttribute("aria-pressed", String(opts[key]));
+    document.body.classList.toggle("pv", opts.marks);
+    draw();
+  });
+}
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  const k = e.key.toLowerCase();
+  if (k === "r") reseed();
+  else if (k === "g") $("bGrid").click();
+  else if (k === "a") $("bAnchor").click();
+  else if (k === "p") $("bPrint").click();
+});
+addEventListener("resize", () => { fit(); });
+
+/* ---- boot ---- */
+GRAIN = noiseTile();
+document.documentElement.style.setProperty("--grain", `url("${GRAIN}")`);
+document.body.classList.remove("pv");
+/* ---- automation hook: render an explicit parameter set, no UI involved.
+   Used by the verification harness to sweep the parameter space. It goes
+   through the same guard as every other path, so it cannot produce a
+   broken poster either.                                                     */
+window.__renderCase = function(o){
+  for (const k in LIM) if (o && o[k] !== undefined) P[k] = o[k];
+  draw();
+  return window.__probe;
+};
+
+svg.setAttribute("aria-label", "Generated A2 poster");
+requestAnimationFrame(() => {
+  draw();
+  requestAnimationFrame(() => { window.__probe = window.__probe || {}; window.__ready = true; });
+});
+</script>
+</body>
+</html>

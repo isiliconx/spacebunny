@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CPU Fluid — Navier–Stokes on a staggered grid</title>
+<style>
+  :root{
+    --ink:#04060c;
+    --line:rgba(150,190,220,.15);
+    --line2:rgba(150,190,220,.30);
+    --dim:#8399b0;
+    --txt:#d6e6f2;
+    --hot:#ffc46b;
+    --cool:#5fe0d0;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--ink);}
+  body{
+    font-family:var(--mono);
+    color:var(--txt);
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+    cursor:crosshair;
+  }
+  #cv{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--ink);touch-action:none;}
+
+  /* deliberate frame: vignette + edge falls, so the fluid sits in a composed space */
+  #vig{position:fixed;inset:0;pointer-events:none;
+    background:
+      radial-gradient(126% 96% at 41% 42%, rgba(0,0,0,0) 30%, rgba(0,0,0,.34) 68%, rgba(0,0,0,.80) 100%),
+      linear-gradient(180deg, rgba(2,4,10,.60) 0%, rgba(0,0,0,0) 15%, rgba(0,0,0,0) 80%, rgba(2,4,10,.66) 100%);
+  }
+  #edge{position:fixed;inset:18px;pointer-events:none;border:1px solid rgba(160,200,230,.085);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.4);}
+
+  .panel{
+    position:fixed;pointer-events:auto;
+    background:linear-gradient(180deg,rgba(6,11,20,.88),rgba(5,9,16,.78));
+    border:1px solid var(--line);
+    border-radius:3px;
+    backdrop-filter:blur(7px);
+    -webkit-backdrop-filter:blur(7px);
+    box-shadow:0 10px 34px rgba(0,0,0,.5);
+  }
+  .panel h2{
+    margin:0;padding:7px 11px 6px;font-size:10.5px;letter-spacing:.20em;font-weight:600;
+    color:var(--cool);text-transform:uppercase;
+    border-bottom:1px solid var(--line);
+  }
+  .panel .body{padding:9px 11px 11px}
+
+  #title{left:36px;top:36px;width:462px;}
+  #title .body{padding:10px 12px 12px}
+  #title h1{margin:0 0 3px;font-size:16.5px;letter-spacing:.055em;font-weight:600;color:#eaf4fb;}
+  #title .sub{margin:0;font-size:12px;line-height:1.62;color:#9db4c9;letter-spacing:.01em;}
+  #title .sub b{color:var(--hot);font-weight:600}
+  #title .sub i{color:#a2c0d6;font-style:normal}
+
+  #ctl{left:36px;bottom:36px;width:312px;}
+  .row{margin:0 0 8px}
+  .row .lab{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11px;letter-spacing:.10em;color:#aec2d5;margin-bottom:3px}
+  .row .val{color:var(--hot);font-size:11px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:transparent;margin:0;display:block;cursor:pointer}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:linear-gradient(90deg,rgba(95,224,208,.55),rgba(95,224,208,.14));border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;margin-top:-4.5px;border-radius:50%;
+    background:#0a1018;border:1.5px solid var(--cool);box-shadow:0 0 7px rgba(95,224,208,.5)}
+  input[type=range]::-moz-range-track{height:2px;background:rgba(95,224,208,.3);border-radius:2px}
+  input[type=range]::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#0a1018;border:1.5px solid var(--cool)}
+  .btns{display:flex;gap:6px;margin-top:11px}
+  button{
+    flex:1;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;padding:6px 4px;
+    color:#cfe2ef;background:rgba(20,34,50,.72);border:1px solid var(--line2);border-radius:2px;
+    cursor:pointer;transition:background .12s,color .12s,border-color .12s;
+  }
+  button:hover{background:rgba(38,72,92,.85);color:#eaf6fb;border-color:rgba(95,224,208,.6)}
+  button:active{background:rgba(95,224,208,.22)}
+  button.on{color:#04121a;background:rgba(95,224,208,.82);border-color:rgba(95,224,208,.9)}
+  .toggles{display:flex;gap:5px;margin-top:6px}
+  .toggles button{font-size:9.5px;letter-spacing:.10em;padding:5px 3px;color:#8fa6bb;background:rgba(14,22,34,.6);
+    white-space:nowrap}
+
+  #stats{right:36px;top:36px;width:238px}
+  #stats dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:4px 8px;font-size:11px}
+  #stats dt{color:#93a8bd;letter-spacing:.08em}
+  #stats dd{margin:0;text-align:right;color:#e2f0f8;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  #stats dd.hot{color:var(--hot)}
+  #stats .note{margin:9px 0 0;padding-top:8px;border-top:1px solid var(--line);
+    font-size:10.5px;line-height:1.6;color:#8ea4b9;letter-spacing:.02em}
+
+  #hint{position:fixed;right:36px;bottom:36px;pointer-events:none;text-align:right;
+    font-size:11.5px;letter-spacing:.16em;color:#b3c8db;
+    text-shadow:0 1px 6px rgba(0,0,0,.95),0 0 14px rgba(0,0,0,.85)}
+  #hint b{color:var(--cool);font-weight:600}
+  #hint span{color:#8399b0;font-size:10.5px;letter-spacing:.10em;display:block;margin-top:3px;
+    text-shadow:0 1px 5px rgba(0,0,0,.95)}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="vig"></div>
+<div id="edge"></div>
+
+<section class="panel" id="title">
+  <div class="body">
+    <h1>CPU FLUID</h1>
+    <p class="sub">
+      Incompressible <b>Navier–Stokes</b> solved on the CPU — <i>plain JavaScript, 2D canvas, no GPU, no WebGL</i>.<br>
+      <i>staggered MAC grid 64×40</i> · semi-Lagrangian advection · <i>red–black Gauss–Seidel</i> projection · vorticity confinement.
+    </p>
+  </div>
+</section>
+
+<section class="panel" id="ctl">
+  <h2>Solver controls</h2>
+  <div class="body">
+    <div class="row">
+      <div class="lab"><span>KINEMATIC VISCOSITY ν</span><span class="val" id="vVis">0.22</span></div>
+      <input type="range" id="sVis" min="0" max="1" step="0.01" value="0.22">
+    </div>
+    <div class="row">
+      <div class="lab"><span>PRESSURE ITERATIONS</span><span class="val" id="vIt">28</span></div>
+      <input type="range" id="sIt" min="4" max="60" step="1" value="28">
+    </div>
+    <div class="row">
+      <div class="lab"><span>DYE DISSIPATION</span><span class="val" id="vDis">0.30</span></div>
+      <input type="range" id="sDis" min="0" max="1" step="0.01" value="0.30">
+    </div>
+    <div class="row">
+      <div class="lab"><span>VORTICITY CONFINEMENT</span><span class="val" id="vVor">0.30</span></div>
+      <input type="range" id="sVor" min="0" max="1" step="0.01" value="0.30">
+    </div>
+    <div class="row" style="margin-bottom:2px">
+      <div class="lab"><span>STIR RADIUS</span><span class="val" id="vRad">3.4 c</span></div>
+      <input type="range" id="sRad" min="1.2" max="8" step="0.1" value="3.4">
+    </div>
+    <div class="btns">
+      <button id="bStir">STIR</button>
+      <button id="bSeed">RE-SEED</button>
+      <button id="bClear">CLEAR</button>
+    </div>
+    <div class="toggles">
+      <button id="bVec" class="on">VELOCITY</button>
+      <button id="bGrid" class="on">MAC GRID</button>
+      <button id="bPause">PAUSE</button>
+    </div>
+  </div>
+</section>
+
+<aside class="panel" id="stats">
+  <h2>Telemetry</h2>
+  <div class="body">
+    <dl>
+      <dt>GRID</dt><dd>64 × 40</dd>
+      <dt>ARRANGEMENT</dt><dd>MAC / staggered</dd>
+      <dt>UNKNOWN FIELDS</dt><dd>u, v, p, ω</dd>
+      <dt>FRAMES</dt><dd id="oFrames">0</dd>
+      <dt>STEP TIME</dt><dd class="hot" id="oMs">—</dd>
+      <dt>FPS</dt><dd class="hot" id="oFps">—</dd>
+      <dt>PEAK |u|</dt><dd id="oU">0.00</dd>
+      <dt>PEAK CURL</dt><dd id="oC">0.00</dd>
+      <dt>∇·u RESIDUAL</dt><dd id="oR">0.00</dd>
+      <dt>DYE MASS</dt><dd id="oD">0.0</dd>
+    </dl>
+    <p class="note">Fixed Δt — one solver step per frame, seeded mulberry32. A cold load always produces this same fluid.</p>
+  </div>
+</aside>
+
+<div id="hint">DRAG TO STIR<b> · SPACE = STIR · C = CLEAR</b>
+  <span>no external requests · runs from file://</span>
+</div>
+
+<script>
+'use strict';
+/* ==========================================================================
+   CPU FLUID — 2D incompressible Navier–Stokes, plain JS, Canvas 2D only.
+   Staggered (MAC) grid:  u at (i, j+½)   v at (i+½, j)   p, ω at (i+½, j+½)
+   One step =  vorticity confinement → semi-Lagrangian velocity advection
+            →  viscous diffusion (Jacobi)  →  pressure projection
+               (red–black Gauss–Seidel)  →  clamp  →  dye advection.
+   ========================================================================== */
+
+const W = 64, H = 40;                 // cells
+const SW = W + 1, SVW = W;            // u: (W+1) x H
+const SH = H,   SVH = H + 1;          // v: W x (H+1)
+const NC = W * H;
+
+/* ---------------------------------------------------------------- RNG --- */
+/* Resettable so RE-SEED reproduces the load-time scene exactly, not an
+   arbitrary point further along the random stream.                        */
+let rngState = 0x5EED1A17;
+function rand(){
+  rngState |= 0; rngState = (rngState + 0x6D2B79F5) | 0;
+  let t = Math.imul(rngState ^ (rngState >>> 15), 1 | rngState);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+const resetRand = () => { rngState = 0x5EED1A17; };
+
+/* ------------------------------------------------------------- fields --- */
+const u  = new Float32Array(SW * SH);
+const v  = new Float32Array(SVW * SVH);
+const u0 = new Float32Array(SW * SH);
+const v0 = new Float32Array(SVW * SVH);
+const dr = new Float32Array(NC), dg = new Float32Array(NC), db = new Float32Array(NC);
+const tr = new Float32Array(NC), tg = new Float32Array(NC), tb = new Float32Array(NC);
+const pr = new Float32Array(NC);       // pressure
+const dv = new Float32Array(NC);       // divergence
+const cr = new Float32Array(NC);       // vorticity
+const uc = new Float32Array(NC), vc = new Float32Array(NC);   // cell-centred velocity
+/* per-cell display fields, rebuilt from the dye each frame */
+const cCov = new Float32Array(NC);     // compressed coverage 1 - e^(-g·D)
+const cMR = new Float32Array(NC), cMG = new Float32Array(NC), cMB = new Float32Array(NC);
+const cGX = new Float32Array(NC), cGY = new Float32Array(NC);
+
+/* ------------------------------------------------------------ params ---- */
+const P = {
+  visc: 0.22,        // 0 = inviscid smoke, 1 = thick honey
+  iters: 28,         // red-black Gauss-Seidel sweeps
+  diss: 0.30,        // dye dissipation
+  vort: 0.30,        // vorticity confinement strength
+  radius: 3.4,       // stir splat radius, cells
+  vectors: true,
+  grid: true,
+  paused: false
+};
+
+const VMAX    = 19;     // per-component velocity clamp, cells / step
+                      // (cell-centred |u| peaks near VMAX·√2 ≈ 27)
+const DYE_CAP = 1.45;   // per-channel dye ceiling — keeps density compressible
+const GAIN    = 0.85;   // coverage compression constant
+const SATB    = 1.50;   // chroma boost
+const LUMA    = 0.60;   // master dye brightness
+const NRM     = 3.1;    // density-gradient relief strength
+const GROUND  = [4, 7, 14];
+const CEIL    = 246;  // per-channel ceiling; headroom below 255 keeps dye reading
+                     // as luminous colour rather than a clipped white blob
+const SHEEN   = [8, 24, 33];
+const CREAM   = [1.00, 0.88, 0.70];
+let velDecay = 1, dyeDecay = 1, viscA = 0, viscIters = 0;
+function refresh(){
+  velDecay  = 1.0 - 0.0025 * (1 - P.visc);
+  dyeDecay  = 1.0 - 0.022 * P.diss;
+  /* Implicit diffusion: (4 + A)u' = A·u + Σneighbours.  A = 0 is inviscid
+     (early-out below); A grows with ν, which is what damps the flow, and more
+     ν needs more Jacobi sweeps to stay stable.  A must INCREASE with viscosity. */
+  viscA     = 3 * P.visc;
+  viscIters = 1 + Math.round(4 * P.visc);
+}
+
+/* --------------------------------------------------------- interpolation - */
+function bilerp(a, w, h, x, y){
+  let i0 = Math.floor(x), j0 = Math.floor(y);
+  let tx = x - i0, ty = y - j0;
+  if (i0 < 0)        { i0 = 0;        tx = 0; }
+  else if (i0 > w-2) { i0 = w - 2;    tx = 1; }
+  if (j0 < 0)        { j0 = 0;        ty = 0; }
+  else if (j0 > h-2) { j0 = h - 2;    ty = 1; }
+  const k  = i0 + j0 * w;
+  const a0 = a[k], a1 = a[k + 1], b0 = a[k + w], b1 = a[k + w + 1];
+  const t  = a0 + (a1 - a0) * tx;
+  const s  = b0 + (b1 - b0) * tx;
+  return t + (s - t) * ty;
+}
+/* u lives at grid (i, j+½) → array space (x, y-½).  v at (i+½, j) → (x-½, y). */
+const sU = (x, y) => bilerp(u0, SW, SH, x, y - 0.5);
+const sV = (x, y) => bilerp(v0, SVW, SVH, x - 0.5, y);
+
+/* ------------------------------------------------------------- splats --- */
+/* Splats inject momentum between solver steps, so the velocity clamp has to be
+   enforced here too — otherwise a fast drag can leave |u| above VMAX on screen. */
+function splat(cx, cy, fx, fy, cr_, cg_, cb_, R){
+  const r2 = R * R, inv = 1 / r2;
+  const i0 = Math.max(0, Math.floor(cx - R)), i1 = Math.min(W - 1, Math.ceil(cx + R));
+  const j0 = Math.max(0, Math.floor(cy - R)), j1 = Math.min(H - 1, Math.ceil(cy + R));
+  for (let j = j0; j <= j1; j++){
+    const dy = j + 0.5 - cy, py = j * SW, pv = j * SVW, pc = j * W;
+    for (let i = i0; i <= i1; i++){
+      const dx = i + 0.5 - cx;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      const f = Math.exp(-d2 * inv);
+      const su = f * fx, sv = f * fy;
+      let a = u[py + i] + su;     u[py + i]     = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+      a = u[py + i + 1] + su;     u[py + i + 1] = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+      a = v[pv + i] + sv;         v[pv + i]         = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+      a = v[pv + SVW + i] + sv;   v[pv + SVW + i]   = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+      const k = pc + i;
+      let c = dr[k] + f * cr_;  dr[k] = c > DYE_CAP ? DYE_CAP : c;
+      c = dg[k] + f * cg_;      dg[k] = c > DYE_CAP ? DYE_CAP : c;
+      c = db[k] + f * cb_;      db[k] = c > DYE_CAP ? DYE_CAP : c;
+    }
+  }
+}
+
+/* ------------------------------------------- vorticity confinement ------- */
+function confine(){
+  const e = P.vort * 2.4;
+  if (e <= 0) return;
+  for (let j = 1; j < H - 1; j++){
+    const pc = j * W;
+    for (let i = 1; i < W - 1; i++){
+      cr[pc + i] = (v[j * SVW + i + 1] - v[j * SVW + i]) - (u[(j + 1) * SW + i] - u[j * SW + i]);
+    }
+  }
+  for (let j = 0; j < H; j++){
+    const pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      const l = i > 0     ? cr[k - 1] : cr[k];
+      const r = i < W - 1 ? cr[k + 1] : cr[k];
+      const d = j > 0     ? cr[k - W] : cr[k];
+      const t = j < H - 1 ? cr[k + W] : cr[k];
+      let gx = (r - l) * 0.5, gy = (t - d) * 0.5;
+      const m = Math.sqrt(gx * gx + gy * gy) + 1e-5;
+      gx /= m; gy /= m;
+      const w = cr[k] * e;
+      u[j * SW + i]        +=  gy * w;
+      u[j * SW + i + 1]    +=  gy * w;
+      v[j * SVW + i]        += -gx * w;
+      v[(j + 1) * SVW + i]  += -gx * w;
+    }
+  }
+}
+
+/* ------------------------------------------------- advect velocity ------ */
+function advectVel(){
+  u0.set(u); v0.set(v);
+  for (let j = 0; j < H; j++){
+    const row = j * SW, y = j + 0.5;
+    for (let i = 0; i <= W; i++){
+      const k = row + i;
+      const vx = u0[k], vy = bilerp(v0, SVW, SVH, i - 0.5, y);
+      u[k] = sU(i - vx, y - vy) * velDecay;
+    }
+  }
+  for (let j = 0; j <= H; j++){
+    const row = j * SVW, y = j;
+    for (let i = 0; i < W; i++){
+      const k = row + i;
+      const vy = v0[k], vx = bilerp(u0, SW, SH, i + 0.5, y - 0.5);
+      v[k] = sV(i - vx, y - vy) * velDecay;
+    }
+  }
+}
+
+/* --------------------------------------------- viscous diffusion (Jacobi) */
+function diffuse(){
+  const A = viscA;
+  if (A <= 0.0005) return;
+  const den = 4 + A;
+  for (let it = 0; it < viscIters; it++){
+    for (let j = 0; j < H; j++){
+      const row = j * SW, jm = (j > 0 ? j - 1 : 0) * SW, jp = (j < H - 1 ? j + 1 : H - 1) * SW;
+      for (let i = 1; i < W; i++){
+        const k = row + i;
+        u0[k] = (u[k - 1] + u[k + 1] + u[jm + i] + u[jp + i] + A * u[k]) / den;
+      }
+    }
+    for (let j = 1; j < H; j++){
+      const row = j * SVW, jm = (j - 1) * SVW, jp = (j + 1) * SVW;
+      for (let i = 0; i < W; i++){
+        const k = row + i;
+        v0[k] = (v[k - 1] + v[k + 1] + v[jm + i] + v[jp + i] + A * v[k]) / den;
+      }
+    }
+    u.set(u0); v.set(v0);
+  }
+}
+
+/* ------------------------------------- pressure projection (red–black) -- */
+function project(iters){
+  for (let j = 0; j < H; j++){
+    const pu = j * SW, pv = j * SVW, pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      dv[k] = 0.5 * ((u[pu + i + 1] - u[pu + i]) + (v[pv + W + i] - v[pv + i]));
+      pr[k] = 0;
+    }
+  }
+  for (let it = 0; it < iters; it++){
+    for (let par = 0; par < 2; par++){
+      for (let j = 0; j < H; j++){
+        const pc = j * W;
+        for (let i = (j + par) & 1; i < W; i += 2){
+          const k = pc + i;
+          const l  = i > 0     ? pr[k - 1] : pr[k];
+          const r  = i < W - 1 ? pr[k + 1] : pr[k];
+          const d  = j > 0     ? pr[k - W] : pr[k];
+          const t  = j < H - 1 ? pr[k + W] : pr[k];
+          pr[k] = (l + r + d + t + 2 * dv[k]) * 0.25;
+        }
+      }
+    }
+  }
+  for (let j = 0; j < H; j++){
+    const pu = j * SW, pc = j * W;
+    for (let i = 0; i <= W; i++){
+      const hi = i < W ? pr[pc + i]     : pr[pc + W - 1];
+      const lo = i > 0 ? pr[pc + i - 1] : pr[pc + i];
+      u[pu + i] -= 0.5 * (hi - lo);
+    }
+  }
+  for (let j = 0; j <= H; j++){
+    const pv = j * SVW;
+    for (let i = 0; i < W; i++){
+      const hi = j < H ? pr[j * W + i]     : pr[(H - 1) * W + i];
+      const lo = j > 0 ? pr[(j - 1) * W + i] : pr[j * W + i];
+      v[pv + i] -= 0.5 * (hi - lo);
+    }
+  }
+  for (let i = 0; i < SW; i++){ u[i] = 0; u[(H - 1) * SW + i] = 0; }
+  for (let j = 0; j < SVH; j++){ v[j * SVW] = 0; v[j * SVW + W - 1] = 0; }
+}
+
+/* -------------------------------------------------------- advect dye ---- */
+function advectDye(){
+  for (let j = 0; j < H; j++){
+    const pu = j * SW, pv = j * SVW, pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      uc[k] = 0.5 * (u[pu + i] + u[pu + i + 1]);
+      vc[k] = 0.5 * (v[pv + i] + v[pv + W + i]);
+    }
+  }
+  for (let j = 0; j < H; j++){
+    const pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      const vx = uc[k], vy = vc[k];
+      const d = dyeDecay;
+      tr[k] = bilerp(dr, W, H, i - vx, j - vy) * d;
+      tg[k] = bilerp(dg, W, H, i - vx, j - vy) * d;
+      tb[k] = bilerp(db, W, H, i - vx, j - vy) * d;
+    }
+  }
+  dr.set(tr); dg.set(tg); db.set(tb);
+}
+
+/* --------------------------------------------------------------- clamp -- */
+function clampVel(){
+  for (let k = 0; k < u.length; k++){
+    const a = u[k]; u[k] = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+    if (a !== a) u[k] = 0;
+  }
+  for (let k = 0; k < v.length; k++){
+    const a = v[k]; v[k] = a > VMAX ? VMAX : a < -VMAX ? -VMAX : a;
+    if (a !== a) v[k] = 0;
+  }
+}
+
+/* ------------------------------------------------------------ one step -- */
+function step(){
+  confine();
+  advectVel();
+  diffuse();
+  project(P.iters);
+  clampVel();
+  advectDye();
+}
+
+/* ------------------------------ per-cell display fields + their gradient */
+/* Coverage is compressed, so dense dye never clips to white; mixing distinct
+   dyes lowers the dominant channel, so overlaps go dark instead of white.   */
+function derive(){
+  for (let j = 0; j < H; j++){
+    const pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      const R = dr[k], G = dg[k], B = db[k];
+      const tot = R + G + B;
+      cCov[k] = 1 - Math.exp(-tot * GAIN);
+      let pk = R; if (G > pk) pk = G; if (B > pk) pk = B;
+      const nrm = tot + 0.35 * pk + 1e-6;
+      const r = R / nrm, g = G / nrm, b = B / nrm;
+      const lu = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      cMR[k] = lu + (r - lu) * SATB;
+      cMG[k] = lu + (g - lu) * SATB;
+      cMB[k] = lu + (b - lu) * SATB;
+    }
+  }
+  for (let j = 0; j < H; j++){
+    const pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      const l = i > 0     ? cCov[k - 1] : cCov[k];
+      const r = i < W - 1 ? cCov[k + 1] : cCov[k];
+      const d = j > 0     ? cCov[k - W] : cCov[k];
+      const t = j < H - 1 ? cCov[k + W] : cCov[k];
+      cGX[k] = (r - l) * 0.5;
+      cGY[k] = (t - d) * 0.5;
+    }
+  }
+}
+
+/* -------------------------------------------------------------- seeding - */
+const SPECIES = [[1.00, 0.52, 0.10], [0.10, 0.85, 0.80], [0.22, 0.38, 1.00]];
+function clearAll(){
+  u.fill(0); v.fill(0); u0.fill(0); v0.fill(0);
+  dr.fill(0); dg.fill(0); db.fill(0); tr.fill(0); tg.fill(0); tb.fill(0);
+  pr.fill(0); dv.fill(0); cr.fill(0); uc.fill(0); vc.fill(0);
+  cCov.fill(0); cMR.fill(0); cMG.fill(0); cMB.fill(0); cGX.fill(0); cGY.fill(0);
+}
+function seedVelocity(){
+  clearAll();
+  // two superposed shears so nothing starts dead
+  for (const s of [2.2, 1.5]){
+    for (let j = 0; j < H; j++){
+      for (let i = 0; i < W; i++){
+        const x = (i + 0.5) / W - 0.5, y = (j + 0.5) / H - 0.5;
+        const tx = -y * s, ty = x * s;
+        u[j * SW + i] += tx; u[j * SW + i + 1] += tx;
+        v[j * SVW + i] += ty; v[(j + 1) * SVW + i] += ty;
+      }
+    }
+  }
+}
+function seedDye(){
+  /* Three dye masses, composed on thirds rather than centred: a warm mass
+     low-left, a teal mass right, a cobalt accent upper-left.  These go in
+     AFTER the velocity field has matured, so each species is stretched into
+     filaments by an established flow instead of being churned into mud.    */
+  const blobs = [
+    [W * 0.30, H * 0.36, 10.0, 0, 1.25],
+    [W * 0.38, H * 0.52,  6.0, 0, 0.75],
+    [W * 0.20, H * 0.24,  4.4, 0, 0.62],
+    [W * 0.67, H * 0.62,  9.0, 1, 1.10],
+    [W * 0.78, H * 0.42,  5.0, 1, 0.78],
+    [W * 0.88, H * 0.72,  4.0, 1, 0.58],
+    [W * 0.12, H * 0.74,  4.6, 2, 0.85],
+    [W * 0.47, H * 0.80,  4.0, 2, 0.70]
+  ];
+  for (let b = 0; b < blobs.length; b++){
+    const a = blobs[b];
+    const jx = (rand() - 0.5) * 2.2, jy = (rand() - 0.5) * 2.2;
+    const c = SPECIES[a[3]];
+    splat(a[0] + jx, a[1] + jy, 0, 0, c[0] * a[4], c[1] * a[4], c[2] * a[4], a[2]);
+  }
+}
+
+/* A deterministic "someone stirred it" path, so the first painted frame is alive.
+   It injects mostly momentum and only a little dye — the seeded blobs stay the
+   colour source, so the three-species palette is not washed out by the stir.  */
+function scriptedStir(s){
+  const t = s / 46;
+  const x = W * (0.5 + 0.30 * Math.sin(t * 1.9));
+  const y = H * (0.5 + 0.26 * Math.sin(t * 1.35 + 1.1));
+  const dx = 0.30 * 1.9 * Math.cos(t * 1.9);
+  const dy = 0.26 * 1.35 * Math.cos(t * 1.35 + 1.1);
+  const c = SPECIES[Math.floor(s / 40) % 3];
+  splat(x, y, dx * 17, dy * 17, c[0] * 0.10, c[1] * 0.10, c[2] * 0.10, 4.2);
+  const s2 = s * 0.61;
+  splat(W * (0.5 + 0.24 * Math.cos(s2 * 1.1)), H * (0.5 + 0.20 * Math.sin(s2 * 1.7)),
+        -Math.sin(s2 * 1.1) * 6, Math.cos(s2 * 1.7) * 6, 0.07, 0.20, 0.19, 3.0);
+}
+
+/* ------------------------------------------------------------- canvas --- */
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', { alpha: false });
+const DW = 512, DH = 320;                 // internal display resolution
+const field = document.createElement('canvas');
+field.width = DW; field.height = DH;
+const fctx = field.getContext('2d', { alpha: false });
+const img = fctx.createImageData(DW, DH);
+const pix = img.data;
+
+let CW = 0, CH = 0;
+function resize(){
+  const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+  CW = Math.max(320, Math.floor(window.innerWidth));
+  CH = Math.max(240, Math.floor(window.innerHeight));
+  cv.width  = Math.floor(CW * dpr);
+  cv.height = Math.floor(CH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* precomputed sample tables: display px -> sim cell, x rightwards, y upwards */
+const colI = new Int32Array(DW), colT = new Float32Array(DW);
+const rowI = new Int32Array(DH), rowT = new Float32Array(DH);
+for (let px = 0; px < DW; px++){
+  const gx = (px + 0.5) / DW * W - 0.5;
+  let i0 = Math.floor(gx), t = gx - i0;
+  if (i0 < 0) { i0 = 0; t = 0; } else if (i0 > W - 2) { i0 = W - 2; t = 1; }
+  colI[px] = i0; colT[px] = t;
+}
+for (let py = 0; py < DH; py++){
+  const gy = (1 - (py + 0.5) / DH) * H - 0.5;   // display row 0 = top = y H
+  let j0 = Math.floor(gy), t = gy - j0;
+  if (j0 < 0) { j0 = 0; t = 0; } else if (j0 > H - 2) { j0 = H - 2; t = 1; }
+  rowI[py] = j0; rowT[py] = t;
+}
+
+/* three light directions, one per channel, slightly splayed: cheap dispersion */
+const LX = [-0.470, -0.400, -0.334], LY = [0.700, 0.700, 0.700], LZ = [0.530, 0.584, 0.632];
+
+function drawField(){
+  let o = 0;
+  for (let py = 0; py < DH; py++){
+    const j0 = rowI[py] * W, ty = rowT[py];
+    for (let px = 0; px < DW; px++, o += 4){
+      const i0 = colI[px], tx = colT[px];
+      const k  = i0 + j0,  kR = k + W;
+      const a0 = cCov[k], a1 = cCov[k + 1], b0 = cCov[kR], b1 = cCov[kR + 1];
+      const at = a0 + (a1 - a0) * tx;
+      const cov = at + ((b0 + (b1 - b0) * tx) - at) * ty;
+
+      const e0 = cMR[k], e1 = cMR[k + 1], f0 = cMR[kR], f1 = cMR[kR + 1];
+      const ea = e0 + (e1 - e0) * tx;
+      const mr = ea + ((f0 + (f1 - f0) * tx) - ea) * ty;
+      const g0 = cMG[k], g1 = cMG[k + 1], h0 = cMG[kR], h1 = cMG[kR + 1];
+      const ga = g0 + (g1 - g0) * tx;
+      const mg = ga + ((h0 + (h1 - h0) * tx) - ga) * ty;
+      const n0 = cMB[k], n1 = cMB[k + 1], m0 = cMB[kR], m1 = cMB[kR + 1];
+      const na = n0 + (n1 - n0) * tx;
+      const mb = na + ((m0 + (m1 - m0) * tx) - na) * ty;
+
+      const q0 = cGX[k], q1 = cGX[k + 1], r0 = cGX[kR], r1 = cGX[kR + 1];
+      const qa = q0 + (q1 - q0) * tx;
+      const gx = qa + ((r0 + (r1 - r0) * tx) - qa) * ty;
+      const y0 = cGY[k], y1 = cGY[k + 1], z0 = cGY[kR], z1 = cGY[kR + 1];
+      const ya = y0 + (y1 - y0) * tx;
+      const gy = ya + ((z0 + (z1 - z0) * tx) - ya) * ty;
+
+      // relief normal from the coverage gradient (sim +y is up on screen)
+      let nx = -gx * NRM, ny = gy * NRM;
+      const inv = 1 / Math.sqrt(nx * nx + ny * ny + 1);
+      nx *= inv; ny *= inv;
+      const nz = inv;
+
+      // wrapped lambert, one light dir per channel.  Peak is 0.22 + 0.66 = 0.88,
+      // so even a fully-lit core stays below the ceiling with the master
+      // brightness applied, and the tonal range is not crushed at the top.
+      const sR = 0.22 + 0.66 * (0.5 + 0.5 * (nx * LX[0] + ny * LY[0] + nz * LZ[0]));
+      const sG = 0.22 + 0.66 * (0.5 + 0.5 * (nx * LX[1] + ny * LY[1] + nz * LZ[1]));
+      const sB = 0.22 + 0.66 * (0.5 + 0.5 * (nx * LX[2] + ny * LY[2] + nz * LZ[2]));
+
+      // dense cores go warm rather than clipping to white
+      let core = (cov - 0.86) / 0.14; if (core < 0) core = 0; else if (core > 1) core = 1;
+      core = core * core * (3 - 2 * core);
+      const sAvg = (sR + sG + sB) * 0.3333;
+      const keep = 1 - core * 0.86;
+      const cw = core * (0.18 + 0.16 * sAvg);
+
+      let R = mr * cov * sR * keep * LUMA + CREAM[0] * cw;
+      let G = mg * cov * sG * keep * LUMA + CREAM[1] * cw;
+      let B = mb * cov * sB * keep * LUMA + CREAM[2] * cw;
+
+      // faint flow sheen where the medium is nearly clear
+      const s0 = uc[k], s1 = uc[k + 1], s2 = uc[kR], s3 = uc[kR + 1];
+      const sa = s0 + (s1 - s0) * tx, sb = s2 + (s3 - s2) * tx;
+      const svx = sa + (sb - sa) * ty;
+      const t0 = vc[k], t1 = vc[k + 1], t2 = vc[kR], t3 = vc[kR + 1];
+      const ta = t0 + (t1 - t0) * tx, tb = t2 + (t3 - t2) * tx;
+      const svy = ta + (tb - ta) * ty;
+      let spd = Math.sqrt(svx * svx + svy * svy);
+      if (spd > 9) spd = 9;
+      spd = (spd / 9) * (spd / 9) * (1 - cov);
+      R += SHEEN[0] * spd; G += SHEEN[1] * spd; B += SHEEN[2] * spd;
+
+      /* Ceiling is applied to the FINAL byte including the ground offset.
+         Clamping R first and then adding GROUND pushed the sum past 255, and
+         the Uint8ClampedArray re-clamped it — which is what put 47% of the frame
+         at a flat 255 blue.  CEIL leaves a little headroom below white so a
+         dense core reads as luminous dye instead of a clipped blob.         */
+      let q = GROUND[0] + R * 255; pix[o]     = q > CEIL ? CEIL : q;
+      q = GROUND[1] + G * 255;       pix[o + 1] = q > CEIL ? CEIL : q;
+      q = GROUND[2] + B * 255;       pix[o + 2] = q > CEIL ? CEIL : q;
+      pix[o + 3] = 255;
+    }
+  }
+  fctx.putImageData(img, 0, 0);
+  ctx.drawImage(field, 0, 0, DW, DH, 0, 0, CW, CH);
+}
+
+function drawOverlay(){
+  const sx = CW / W, sy = CH / H;
+  if (P.grid){
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(150,200,235,0.05)';
+    ctx.beginPath();
+    for (let i = 8; i < W; i += 8){
+      const x = Math.round(i * sx) + 0.5;
+      ctx.moveTo(x, 0); ctx.lineTo(x, CH);
+    }
+    for (let j = 8; j < H; j += 8){
+      const y = Math.round(CH - j * sy) + 0.5;
+      ctx.moveTo(0, y); ctx.lineTo(CW, y);
+    }
+    ctx.stroke();
+  }
+  if (P.vectors){
+    ctx.lineWidth = 1.1;
+    ctx.lineCap = 'round';
+    for (let j = 2; j < H - 1; j += 4){
+      for (let i = 2; i < W - 1; i += 4){
+        const k = j * W + i;
+        const vx = uc[k], vy = vc[k];
+        const m = Math.sqrt(vx * vx + vy * vy);
+        if (m < 0.35) continue;
+        const px = (i + 0.5) * sx, py = CH - (j + 0.5) * sy;
+        const ex = px + vx * sx * 0.8, ey = py - vy * sy * 0.8;
+        const a = 0.09 + 0.44 * Math.min(1, m / 9);
+        ctx.strokeStyle = 'rgba(190,228,252,' + a.toFixed(3) + ')';
+        const ang = Math.atan2(ey - py, ex - px);
+        ctx.beginPath();
+        ctx.moveTo(px, py); ctx.lineTo(ex, ey);
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - 4 * Math.cos(ang - 0.5), ey - 4 * Math.sin(ang - 0.5));
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(ex - 4 * Math.cos(ang + 0.5), ey - 4 * Math.sin(ang + 0.5));
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------ telemetry - */
+const probe = window.__probe = {
+  grid: W + 'x' + H, cells: NC, frames: 0, fps: 0, stepMs: 0,
+  iters: P.iters, viscosity: P.visc, dyeDissipation: P.diss, vorticity: P.vort,
+  maxSpeed: 0, maxCurl: 0, residual: 0, dyeMass: 0, coverage: 0, paused: false
+};
+const oFrames = document.getElementById('oFrames'), oMs = document.getElementById('oMs');
+const oFps = document.getElementById('oFps'), oU = document.getElementById('oU');
+const oC = document.getElementById('oC'), oR = document.getElementById('oR');
+const oD = document.getElementById('oD');
+
+function measure(){
+  derive();
+  let mS = 0, mC = 0, mR = 0, mD = 0, mV = 0;
+  for (let j = 0; j < H; j++){
+    const pu = j * SW, pv = j * SVW, pc = j * W;
+    for (let i = 0; i < W; i++){
+      const k = pc + i;
+      const a = 0.5 * (u[pu + i] + u[pu + i + 1]);
+      const b = 0.5 * (v[pv + i] + v[pv + W + i]);
+      const s = Math.sqrt(a * a + b * b);
+      if (s > mS) mS = s;
+      const dd = Math.abs(0.5 * ((u[pu + i + 1] - u[pu + i]) + (v[pv + W + i] - v[pv + i])));
+      if (dd > mR) mR = dd;
+      const w = Math.abs(cr[k]); if (w > mC) mC = w;
+      mD += dr[k] + dg[k] + db[k];
+      mV += cCov[k];
+    }
+  }
+  probe.maxSpeed = mS; probe.maxCurl = mC; probe.residual = mR;
+  probe.dyeMass = mD; probe.coverage = mV / NC;
+  oU.textContent = mS.toFixed(2);
+  oC.textContent = mC.toFixed(2);
+  oR.textContent = mR.toFixed(4);
+  oD.textContent = mD.toFixed(0);
+}
+
+/* ------------------------------------------------------------- controls - */
+function bind(rangeId, valId, key, fmt){
+  const el = document.getElementById(rangeId), lab = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    P[key] = parseFloat(el.value);
+    lab.textContent = fmt(P[key]);
+    refresh();
+  });
+  lab.textContent = fmt(P[key]);
+}
+bind('sVis', 'vVis', 'visc',   x => x.toFixed(2));
+bind('sIt',  'vIt',  'iters',  x => String(x | 0));
+bind('sDis', 'vDis', 'diss',   x => x.toFixed(2));
+bind('sVor', 'vVor', 'vort',   x => x.toFixed(2));
+bind('sRad', 'vRad', 'radius', x => x.toFixed(1) + ' c');
+refresh();
+
+let stirN = 0;
+function stir(){
+  stirN++;
+  const t = stirN * 0.83;
+  const x = W * (0.5 + 0.27 * Math.sin(t * 1.7)) + (rand() - 0.5) * 5;
+  const y = H * (0.5 + 0.24 * Math.sin(t * 1.23 + 2.0)) + (rand() - 0.5) * 4;
+  const dx = Math.cos(t * 1.7) * 1.7, dy = Math.cos(t * 1.23 + 2.0) * 1.7;
+  const c = SPECIES[(stirN - 1) % 3];
+  splat(x, y, dx * 9, dy * 9, c[0] * 0.75, c[1] * 0.75, c[2] * 0.75, P.radius * 1.7);
+  splat(x - dy * 3.2, y + dx * 3.2, -dy * 6, dx * 6, 0.14, 0.52, 0.48, P.radius * 1.2);
+}
+document.getElementById('bStir').addEventListener('click', stir);
+document.getElementById('bSeed').addEventListener('click', () => { seedScene(); frames = 0; measure(); });
+document.getElementById('bClear').addEventListener('click', () => { clearAll(); measure(); });
+
+function toggle(btn, key){
+  const el = document.getElementById(btn);
+  el.addEventListener('click', () => {
+    P[key] = !P[key];
+    el.classList.toggle('on', P[key]);
+  });
+}
+toggle('bVec', 'vectors');
+toggle('bGrid', 'grid');
+const bPause = document.getElementById('bPause');
+bPause.addEventListener('click', () => {
+  P.paused = !P.paused;
+  bPause.classList.toggle('on', P.paused);
+  bPause.textContent = P.paused ? 'RESUME' : 'PAUSE';
+});
+
+/* --------------------------------------------------------------- input -- */
+let ptrDown = false, pxCell = 0, pyCell = 0, pcol = 0;
+function toCell(e){
+  const r = cv.getBoundingClientRect();
+  return [ (e.clientX - r.left) / r.width * W, (1 - (e.clientY - r.top) / r.height) * H ];
+}
+function paintDye(x, y, R, k){
+  const c = SPECIES[k % 3], s = 0.30;
+  splat(x, y, 0, 0, c[0] * s, c[1] * s, c[2] * s, R);
+}
+cv.addEventListener('pointerdown', e => {
+  ptrDown = true;
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  const c = toCell(e); pxCell = c[0]; pyCell = c[1];
+  pcol = (pcol + 1) % 3; stirN++;
+  paintDye(pxCell, pyCell, P.radius, pcol);
+  splat(pxCell, pyCell, (rand() - 0.5) * 5, (rand() - 0.5) * 5, 0, 0, 0, P.radius);
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrDown) return;
+  const c = toCell(e);
+  const dx = c[0] - pxCell, dy = c[1] - pyCell;
+  if (Math.abs(dx) + Math.abs(dy) > 0.001){
+    const R = P.radius;
+    // five overlapping splats along the drag give a smooth continuous streak
+    for (let s = 1; s <= 5; s++){
+      const f = s / 5, x = pxCell + dx * f, y = pyCell + dy * f;
+      paintDye(x, y, R * 1.05, pcol);
+      splat(x, y, dx * 2.4, dy * 2.4, 0, 0, 0, R);
+    }
+  }
+  pxCell = c[0]; pyCell = c[1];
+});
+const up = () => { ptrDown = false; };
+cv.addEventListener('pointerup', up);
+cv.addEventListener('pointercancel', up);
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space'){ e.preventDefault(); stir(); }
+  else if (e.key === 'c' || e.key === 'C'){ clearAll(); }
+});
+
+/* ---------------------------------------------------------------- loop -- */
+/* Replays the exact load-time pre-roll, so RE-SEED returns to the developed
+   opening scene instead of dropping a raw blob into a live field. */
+function seedScene(){
+  clearAll();
+  resetRand();
+  seedVelocity();
+  for (let i = 0; i < WARM_VEL; i++){
+    scriptedStir(i);
+    step();
+  }
+  seedDye();
+  for (let i = 0; i < WARM_DYE; i++){
+    scriptedStir(WARM_VEL + i);
+    step();
+  }
+  derive();
+}
+
+/* ---------------------------------------------------------------- loop -- */
+/* Fixed pre-roll, so the first painted frame is already a developed fluid:
+   mature the velocity field first, inject dye into it, then let the dye
+   stretch.  Every step is deterministic — a cold load is reproducible. */
+const WARM_VEL = 60, WARM_DYE = 34;
+let frames = 0, lastT = 0, fpsAcc = 0, fpsN = 0, statT = 0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  const t0 = performance.now();
+  if (!P.paused){
+    scriptedStir(frames);
+    step();
+    frames++;
+  }
+  derive();
+  drawField();
+  drawOverlay();
+  const ms = performance.now() - t0;
+
+  if (lastT){ fpsAcc += 1000 / Math.max(1, now - lastT); fpsN++; }
+  lastT = now;
+  if (now - statT > 220){
+    statT = now;
+    probe.frames = frames;
+    probe.stepMs = ms;
+    probe.fps = fpsN ? fpsAcc / fpsN : 0;
+    probe.iters = P.iters; probe.viscosity = P.visc;
+    probe.dyeDissipation = P.diss; probe.vorticity = P.vort; probe.paused = P.paused;
+    oFrames.textContent = frames;
+    oMs.textContent = ms.toFixed(1) + ' ms';
+    oFps.textContent = probe.fps.toFixed(1);
+    measure();
+    fpsAcc = 0; fpsN = 0;
+  }
+  if (!window.__ready) window.__ready = true;
+}
+
+seedScene();
+frames = 0;
+measure();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

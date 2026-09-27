@@ -1,0 +1,1222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>43 · Tilemap Generator — 47-blob autotiler</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #05070c; overflow: hidden; }
+  body {
+    font: 11px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    color: #8ea3b8; -webkit-font-smoothing: antialiased; user-select: none;
+  }
+  #app { position: relative; width: 1280px; height: 800px; margin: 0 auto;
+         background: radial-gradient(ellipse at 62% 34%, #0c121c 0%, #06090f 70%); }
+
+  /* ---------------- left control panel ---------------- */
+  #panel {
+    position: absolute; left: 0; top: 0; width: 256px; height: 800px;
+    padding: 14px 14px 10px; border-right: 1px solid #1a2331;
+    background: linear-gradient(180deg, #090d15 0%, #070a11 100%);
+    display: flex; flex-direction: column; gap: 9px;
+  }
+  .title { color: #e6f0f7; font-size: 14px; letter-spacing: .16em; font-weight: 700; }
+  .title b { color: #59d0c8; font-weight: 700; }
+  .sub { color: #4d6178; letter-spacing: .14em; font-size: 10px; margin-top: 2px; }
+  .rule { height: 1px; background: #17202c; margin: 1px 0 0; }
+  .tech { color: #6c8199; font-size: 10px; line-height: 1.5; letter-spacing: .01em; }
+  .tech b { color: #8fd4cf; font-weight: 600; }
+  .lbl { display: flex; justify-content: space-between; color: #7d93aa; letter-spacing: .1em; font-size: 10px; }
+  .lbl span:last-child { color: #cfdcea; }
+  .ctl { display: flex; flex-direction: column; gap: 3px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 14px;
+    background: transparent; cursor: ew-resize; margin: 0;
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; background: #1c2634; border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 9px; height: 13px; margin-top: -5px;
+    background: #59d0c8; border-radius: 1px; box-shadow: 0 0 6px #2c7d78aa;
+  }
+  select, button {
+    font: inherit; color: #cfdcea; background: #101825; border: 1px solid #22303f;
+    border-radius: 2px; padding: 3px 5px; cursor: pointer; width: 100%; text-align: left;
+  }
+  select:hover, button:hover { background: #17222f; border-color: #33526b; }
+  button#roll { color: #06110f; background: #59d0c8; border-color: #59d0c8; font-weight: 700; letter-spacing: .1em; }
+  button#roll:hover { background: #7ce6de; }
+  .row { display: flex; gap: 5px; }
+  .row > * { flex: 1; }
+  .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 6px; }
+  .tg { display: flex; align-items: center; gap: 5px; color: #7d93aa; cursor: pointer; letter-spacing: .06em; }
+  .tg i { width: 8px; height: 8px; border: 1px solid #3a4d63; background: #0c1420; border-radius: 1px; }
+  .tg.on i { background: #59d0c8; border-color: #59d0c8; box-shadow: 0 0 5px #2c7d78; }
+  .tg.on { color: #cfe3ee; }
+  .legend { display: flex; flex-direction: column; gap: 2px; }
+  .lg { display: flex; align-items: center; gap: 6px; color: #90a6bc; }
+  .lg u { width: 9px; height: 9px; border-radius: 1px; flex: none; }
+  .lg p { margin: 0; width: 46px; letter-spacing: .08em; }
+  .lg b { color: #6d8299; font-weight: 400; width: 46px; text-align: right; }
+  .lg s { flex: 1; height: 3px; background: #131c27; text-decoration: none; position: relative; }
+  .lg s::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w, 0%); background: var(--c, #333); }
+  .stats { color: #55697f; display: grid; grid-template-columns: 1fr auto; gap: 0 8px; }
+  .stats b { color: #93aac0; font-weight: 400; text-align: right; }
+  .stats .hi b { color: #59d0c8; }
+
+  /* ---------------- map stage ---------------- */
+  #stage { position: absolute; left: 256px; top: 0; width: 1024px; height: 800px; }
+  #frame {
+    position: absolute; left: 0; top: 8px; width: 1024px; height: 768px;
+    border: 1px solid #24313f; background: #04060a;
+    box-shadow: 0 0 0 1px #0a0f16, 0 18px 60px #00000090, inset 0 0 90px #00000060;
+  }
+  #view {
+    position: absolute; left: 0; top: 0; width: 1024px; height: 768px;
+    image-rendering: pixelated; image-rendering: crisp-edges; display: block;
+  }
+  #vig {
+    position: absolute; left: 0; top: 0; width: 1024px; height: 768px; pointer-events: none;
+    background:
+      radial-gradient(ellipse 62% 58% at 40% 40%, rgba(0,0,0,0) 30%, rgba(4,7,13,.42) 72%, rgba(2,4,9,.80) 100%),
+      linear-gradient(190deg, rgba(20,40,52,.10) 0%, rgba(0,0,0,0) 45%);
+  }
+  .brk { position: absolute; width: 13px; height: 13px; border: 0 solid #59d0c8aa; pointer-events: none; }
+  #b0 { left: -1px;  top: -1px;    border-left-width: 1px; border-top-width: 1px; }
+  #b1 { right: -1px; top: -1px;    border-right-width: 1px; border-top-width: 1px; }
+  #b2 { left: -1px;  bottom: -1px; border-left-width: 1px; border-bottom-width: 1px; }
+  #b3 { right: -1px; bottom: -1px; border-right-width: 1px; border-bottom-width: 1px; }
+  #plate {
+    position: absolute; left: 10px; top: 10px; pointer-events: none;
+    background: #050a12c4; border: 1px solid #1d2f3c; border-left: 2px solid #59d0c8;
+    padding: 5px 9px 6px; color: #86a2b8; letter-spacing: .1em; line-height: 1.6;
+  }
+  #plate u { text-decoration: none; color: #dceaf4; }
+  #plate em { font-style: normal; color: #59d0c8; }
+  #mini {
+    position: absolute; right: 10px; bottom: 10px; padding: 3px 3px 2px;
+    background: #050a12d0; border: 1px solid #1d2f3c; pointer-events: none;
+  }
+  #mm { display: block; image-rendering: pixelated; }
+  #mini s { text-decoration: none; display: block; color: #566e85; letter-spacing: .16em; font-size: 9px; text-align: center; padding-top: 2px; }
+  #status {
+    position: absolute; left: 4px; top: 780px; width: 1024px; color: #5d7488; letter-spacing: .1em;
+  }
+  #status b { color: #9fb6c8; font-weight: 400; }
+  #status em { font-style: normal; color: #59d0c8; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <aside id="panel">
+    <div>
+      <div class="title">TILEMAP <b>GEN</b></div>
+      <div class="sub">PROJECT 43 · TOP-DOWN</div>
+    </div>
+    <div class="rule"></div>
+    <div class="tech">
+      <b>domain-warped fBm value noise</b> (4 oct) → elevation × moisture band
+      classification → <b>cellular-automata</b> majority smoothing → 8-neighbour
+      bitmask → <b>47-blob autotiling</b> (256 masks → 47 classes) → <b>A*</b>
+      over the terrain cost grid
+    </div>
+    <div class="rule"></div>
+
+    <div class="ctl">
+      <div class="lbl"><span>MAP SIZE</span><span id="vSize">32 × 24</span></div>
+      <select id="size">
+        <option value="20,15">20 × 15 tiles</option>
+        <option value="24,18">24 × 18 tiles</option>
+        <option value="32,24" selected>32 × 24 tiles</option>
+        <option value="40,30">40 × 30 tiles</option>
+        <option value="48,36">48 × 36 tiles</option>
+      </select>
+    </div>
+
+    <div class="ctl">
+      <div class="lbl"><span>SEA LEVEL</span><span id="vSea">0.30</span></div>
+      <input type="range" id="sea" min="0" max="1" step="0.01" value="0.30">
+    </div>
+    <div class="ctl">
+      <div class="lbl"><span>RELIEF</span><span id="vRelief">0.55</span></div>
+      <input type="range" id="relief" min="0" max="1" step="0.01" value="0.55">
+    </div>
+    <div class="ctl">
+      <div class="lbl"><span>FOREST MIX</span><span id="vForest">0.50</span></div>
+      <input type="range" id="forest" min="0" max="1" step="0.01" value="0.50">
+    </div>
+    <div class="ctl">
+      <div class="lbl"><span>CA SMOOTH PASSES</span><span id="vPass">3</span></div>
+      <input type="range" id="passes" min="0" max="8" step="1" value="3">
+    </div>
+    <div class="ctl">
+      <div class="lbl"><span>AUTOTILE BLEND</span><span id="vBlend">1.00</span></div>
+      <input type="range" id="blend" min="0" max="1" step="0.01" value="1">
+    </div>
+
+    <div class="ctl">
+      <div class="lbl"><span>SEED</span><span id="vSeed">1</span></div>
+      <div class="row">
+        <input type="range" id="seed" min="1" max="9999" step="1" value="1" style="flex:1">
+        <button id="roll" style="flex:none;width:64px">REROLL</button>
+      </div>
+    </div>
+
+    <div class="toggles">
+      <div class="tg on" id="tgShimmer"><i></i>WATER FX</div>
+      <div class="tg on" id="tgPath"><i></i>A* TRAIL</div>
+      <div class="tg" id="tgGrid"><i></i>GRID</div>
+      <div class="tg on" id="tgWalk"><i></i>WALKER</div>
+    </div>
+
+    <div class="rule"></div>
+    <div class="legend" id="legend"></div>
+    <div class="rule"></div>
+    <div class="stats" id="stats"></div>
+  </aside>
+
+  <main id="stage">
+    <div id="frame">
+      <canvas id="view" width="512" height="384"></canvas>
+      <div id="vig"></div>
+      <div class="brk" id="b0"></div><div class="brk" id="b1"></div>
+      <div class="brk" id="b2"></div><div class="brk" id="b3"></div>
+      <div id="plate">
+        <u>47-BLOB AUTOTILE</u> · CA SMOOTHING · fBm NOISE<br>
+        <em id="plateSub">32 × 24 · seed 1</em> · click map to re-target A*
+      </div>
+      <div id="mini"><canvas id="mm" width="64" height="48"></canvas><s>OVERVIEW</s></div>
+    </div>
+    <div id="status">
+      <b>SIM</b> <em id="sStep">0</em> step · <b>FIXED Δ</b> 1/60 s ·
+      <b>FPS</b> <span id="sFps">—</span> · <b>PATH</b> <span id="sPath">0</span> tiles ·
+      <b>BLOB CLASSES</b> <em id="sCls">47</em> ·
+      <b>WALKER</b> <span id="sPos">—</span>
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+/* =========================================================================
+   43 · PROCEDURAL TILEMAP GENERATOR WITH 47-BLOB AUTOTILING
+   value noise → terrain bands → CA smoothing → 8-neighbour mask →
+   47 canonical blob classes → A* walker.  Fixed-delta simulation.
+   ========================================================================= */
+
+const TS   = 16;                 // tile size in map pixels
+const VW   = 512, VH = 384;      // internal render resolution (2x upscale)
+const NT   = 5;                  // terrain types
+const BITS = [128,1,2, 64,0,4, 32,16,8];   // [dy+1][dx+1] -> neighbour bit
+const DT   = 1/60;
+
+/* ---------------- deterministic hashing / noise ---------------- */
+function ihash(x, y, s) {
+  let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(s | 0, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+const h01 = (x, y, s) => ihash(x, y, s) * 2.3283064365386963e-10;
+
+function vnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+  const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+  const a = h01(xi, yi, s),     b = h01(xi + 1, yi, s);
+  const c = h01(xi, yi + 1, s), d = h01(xi + 1, yi + 1, s);
+  const t = a + (b - a) * u;
+  return t + (c + (d - c) * u - t) * v;
+}
+function fbm(x, y, s, oct) {
+  let a = 1, f = 1, sum = 0, nrm = 0;
+  for (let o = 0; o < oct; o++) { sum += a * vnoise(x * f, y * f, s + o * 7919); nrm += a; a *= 0.5; f *= 2; }
+  return sum / nrm;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) * 2.3283064365386963e-10;
+  };
+}
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp  = (a, b, t) => a + (b - a) * t;
+const smoothstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+/* ---------------- terrain table ---------------- */
+const T = [
+  { n: 'WATER',  base: [ 22,  56,  92], shallow: [ 58, 122, 148], deep: [ 10,  26,  56],
+    rim: [176, 222, 236], rimD: [ 44,  86, 122],  walk: 0, cost: 0,   css: '#163a5c' },
+  { n: 'SAND',   base: [196, 170, 118], rim: [246, 232, 190], rimD: [162, 136,  92], walk: 1, cost: 1.00, css: '#c4aa76' },
+  { n: 'GRASS',  base: [ 72, 116,  76], rim: [146, 184, 104], rimD: [ 56,  88,  58], walk: 1, cost: 1.00, css: '#48744c' },
+  { n: 'FOREST', base: [ 34,  74,  56], rim: [ 96, 142,  92], rimD: [ 24,  50,  42], walk: 1, cost: 1.80, css: '#224a38' },
+  { n: 'ROCK',   base: [ 98, 104, 116], rim: [190, 198, 210], rimD: [ 62,  68,  82], walk: 0, cost: 0,   css: '#626876' },
+];
+
+/* =========================================================================
+   47-BLOB CLASS TABLE
+   canonicalise(m): a corner is only meaningful when BOTH adjacent edges
+   match, so corners adjacent to a missing edge are cleared.
+   classKey(m): 4 edge bits + 1 bit per corner whose two edges both match.
+   The reachable key set has exactly 47 members — the RPG-Maker blob set.
+   ========================================================================= */
+function canon(m) {
+  // a corner is only meaningful when BOTH adjacent edges match; otherwise the
+  // edge already decides the shape there, so the corner bit is discarded
+  if (!((m & 1)  && (m & 4)))   m &= ~2;     // NE
+  if (!((m & 4)  && (m & 16)))  m &= ~8;     // SE
+  if (!((m & 16) && (m & 64)))  m &= ~32;    // SW
+  if (!((m & 64) && (m & 1)))   m &= ~128;   // NW
+  return m;
+}
+function keyOf(m) {
+  let k = (m & 1 ? 1 : 0) | (m & 4 ? 2 : 0) | (m & 16 ? 4 : 0) | (m & 64 ? 8 : 0);
+  if ((m & 1)  && (m & 4))   k |= (m & 2   ? 16 : 0);
+  if ((m & 4)  && (m & 16))  k |= (m & 8   ? 32 : 0);
+  if ((m & 16) && (m & 64))  k |= (m & 32  ? 64 : 0);
+  if ((m & 64) && (m & 1))   k |= (m & 128 ? 128 : 0);
+  return k;
+}
+const CLASS = new Uint8Array(256);
+const CLASSKEY = [];
+{
+  const seen = new Map();
+  for (let m = 0; m < 256; m++) {
+    const k = keyOf(canon(m));
+    let id = seen.get(k);
+    if (id === undefined) { id = seen.size; seen.set(k, id); CLASSKEY.push(k); }
+    CLASS[m] = id;
+  }
+}
+const BLOB_CLASSES = CLASSKEY.length;     // 47
+
+/* =========================================================================
+   TILE ART — 5 terrains x 47 blob classes, stored as an OWNERSHIP map.
+
+   A tile's edge is cut away wherever a neighbour does not match, so the
+   NEIGHBOUR's blob must show through the cut.  A plain overlay cannot do
+   that: it would only reveal the base layer, which holds the same terrain,
+   and the autotiling would be invisible.  So for each pixel of each
+   (terrain, class) tile we record an owner: one of the 9 neighbour slots,
+   or 5 for the tile itself.  Rendering samples the owner of the tile under
+   each screen pixel, so the blobs interlock exactly like a 47-tile set.
+
+   owner slot -> neighbour offset: 1=NW 2=N 3=NE 4=W 5=self 6=E 7=SW 8=S 9=SE
+   ========================================================================= */
+const ART_R = 7;                 // corner arc radius (px) on a 16px tile — big
+                                 // enough that concave corners read as round
+                                 // lobes rather than square notches
+const ART_R_SOLO = 6;            // radius when the tile is fully isolated: keeps
+                                 // a 4x4 core so single-tile regions survive
+const LX = -0.55, LY = -0.83;     // unit vector towards the light
+const SIDEBIT = [0, 128, 1, 2, 64, 0, 4, 32, 16, 8];  // slot -> side bit
+const CORNBIT = [0, 128, 0, 2, 0, 0, 8, 32, 0, 16];   // slot -> corner bit
+const SLOFF   = [-1,-1, 0,-1, 1,-1, -1, 0, 0, 0, 1, 0, -1, 1, 0, 1, 1, 1]; // slot dx,dy
+
+const CORNER_DEF = [
+  { slot: 3, ax: +1, ay: -1, ox: 16, oy: 0  },   // NE
+  { slot: 9, ax: +1, ay: +1, ox: 16, oy: 16 },   // SE
+  { slot: 7, ax: -1, ay: +1, ox: 0,  oy: 16 },   // SW
+  { slot: 1, ax: -1, ay: -1, ox: 0,  oy: 0  },   // NW
+];
+
+function buildTile(cls) {
+  const k = CLASSKEY[cls], S = TS;
+  // an isolated tile has no matching neighbour at all: use the smaller radius
+  // so a single-tile region keeps a visible core instead of vanishing
+  const r = k === 0 ? ART_R_SOLO : ART_R;
+  const owner = new Uint8Array(S * S).fill(5);
+  const set = (x, y, slot) => { owner[y * S + x] = slot; };
+
+  // 1) CORNERS.  The shape a corner takes depends on ALL THREE neighbours:
+  //    - the diagonal matches AND both sides are open  -> keep the disc
+  //      (a concave notch is carved by the diagonal, which matches nothing
+  //      on this side: this tile's corner stays square, the notch belongs
+  //      to the neighbour that is diagonally adjacent)
+  //    - the diagonal does NOT match and both sides are open -> the corner
+  //      is EXPOSED: this tile must round it off, handing the corner disc
+  //      to the diagonal neighbour
+  //    - only one side open -> a small rounding
+  //    - both sides matched -> nothing
+  for (const c of CORNER_DEF) {
+    const sA = c.ax < 0 ? !!(k & 8) : !!(k & 2);   // W / E matches?
+    const sB = c.ay < 0 ? !!(k & 1) : !!(k & 4);   // N / S matches?
+    const dmatch = !!(k & CORNBIT[c.slot]);
+    const open = (!sA ? 1 : 0) + (!sB ? 1 : 0);
+    if (open === 0) continue;
+    if (open === 2 && dmatch) {
+      // the diagonal shares this corner: its own tile rounds it, not ours
+      continue;
+    }
+    const rad = open === 2 ? r : r * 0.55;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++)
+      if (Math.hypot(x + 0.5 - c.ox, y + 0.5 - c.oy) < rad) set(x, y, c.slot);
+  }
+  // 2) SIDE BANDS, skipping the corner discs so the two never overlap and
+  //    the three regions form a disjoint cover of the tile.
+  if (!(k & 1)) for (let y = 0; y < r; y++) for (let x = 0; x < S; x++) if (owner[y*S+x] === 5) set(x, y, 2);
+  if (!(k & 4)) for (let y = S - r; y < S; y++) for (let x = 0; x < S; x++) if (owner[y*S+x] === 5) set(x, y, 8);
+  if (!(k & 8)) for (let x = 0; x < r; x++) for (let y = 0; y < S; y++) if (owner[y*S+x] === 5) set(x, y, 4);
+  if (!(k & 2)) for (let x = S - r; x < S; x++) for (let y = 0; y < S; y++) if (owner[y*S+x] === 5) set(x, y, 6);
+
+  return owner;
+}
+
+const ART = [];                       // ART[class] -> Uint8Array ownership
+for (let c = 0; c < BLOB_CLASSES; c++) ART.push(buildTile(c));
+
+/* ---------------- shared terrain surface sampler ---------------- */
+function surfaceAt(px, py, ti, seed) {
+  const T0 = T[ti];
+  let r, g, b;
+  if (ti === 0) {                                     // WATER
+    const sh = fbm(px * 0.035, py * 0.035, seed + 55, 2);
+    r = T0.base[0] * 1.12 + (sh - 0.5) * 24;
+    g = T0.base[1] * 1.14 + (sh - 0.5) * 28;
+    b = T0.base[2] * 1.16 + (sh - 0.5) * 24;
+  } else if (ti === 4) {                              // ROCK: strata + speckle
+    const sh = h01(px >> 1, py >> 1, seed + 88);
+    const st = h01(px >> 2, py >> 2, seed + 41);
+    const k = 0.84 + 0.32 * st;
+    r = T0.base[0] * k + (sh - 0.5) * 30;
+    g = T0.base[1] * k + (sh - 0.5) * 30;
+    b = T0.base[2] * k * 1.06 + (sh - 0.5) * 32;
+  } else if (ti === 3) {                              // FOREST: clumped canopy
+    const c = fbm(px * 0.11, py * 0.11, seed + 301, 2);
+    const k = 0.72 + 0.56 * c;
+    r = T0.base[0] * k; g = T0.base[1] * k; b = T0.base[2] * k;
+    const sh = h01(px >> 1, py >> 1, seed + 12);
+    r += (sh - 0.5) * 22; g += (sh - 0.5) * 26; b += (sh - 0.5) * 16;
+  } else if (ti === 2) {                              // GRASS: tufts
+    const c = fbm(px * 0.075, py * 0.075, seed + 190, 2);
+    const k = 0.82 + 0.38 * c;
+    r = T0.base[0] * k; g = T0.base[1] * k; b = T0.base[2] * k;
+    const sh = h01(px, py, seed + 3);
+    r += (sh - 0.5) * 17; g += (sh - 0.5) * 17; b += (sh - 0.5) * 9;
+  } else {                                            // SAND: warm grain
+    const c = fbm(px * 0.09, py * 0.09, seed + 260, 2);
+    const k = 0.90 + 0.22 * c;
+    r = T0.base[0] * k; g = T0.base[1] * k; b = T0.base[2] * k;
+    const sh = h01(px, py, seed + 9);
+    r += (sh - 0.5) * 22; g += (sh - 0.5) * 22; b += (sh - 0.5) * 14;
+  }
+  return [r, g, b];
+}
+function detailAt(px, py, ti, seed) {
+  // fine per-pixel grain so the 2x upscale never looks like flat colour
+  return (h01(px, py, seed * 7 + 71) - 0.5) * 6;
+}
+
+/* =========================================================================
+   WORLD STATE
+   ========================================================================= */
+const P = { sea: 0.30, relief: 0.55, forest: 0.50, passes: 3, blend: 1, seed: 1, w: 32, h: 24 };
+const OPT = { shimmer: true, path: true, grid: false, walk: true };
+
+let mw = 32, mh = 24;
+let tiles, hmap, mmap, lmap, maskIdx;
+let usedCls = new Uint8Array(BLOB_CLASSES);
+let waterCells = [];
+let counts = new Uint32Array(NT);
+
+/* every per-tile buffer must be resized with the map, or a bigger map
+   silently overruns the typed arrays and every stat turns to nonsense */
+function allocMap(w, h) {
+  mw = w; mh = h;
+  const n = w * h;
+  tiles = new Uint8Array(n);
+  hmap = new Float32Array(n);
+  mmap = new Float32Array(n);
+  lmap = new Float32Array(n);
+  maskIdx = new Uint8Array(n);
+}
+allocMap(32, 24);
+
+let worldCv, worldCx, worldImg, worldU32;
+let edgeDist = null;          // per-pixel chamfer distance to a terrain border
+
+let walker = { x: 0, y: 0, s: 0, dir: 2, moving: false, walkPhase: 0 };
+let path = [], pathLen = 0, goal = null;
+let simStep = 0, fps = 0, frame = 0;
+let viewOx = 0, viewOy = 0;
+
+const $ = id => document.getElementById(id);
+const view = $('view'), vctx = view.getContext('2d');
+vctx.imageSmoothingEnabled = false;
+const mm = $('mm'), mctx = mm.getContext('2d');
+
+/* ---------------- generation ---------------- */
+function generate() {
+  const s = P.seed;
+  const contrast = 0.40 + 1.70 * P.relief;
+  const sea = 0.22 + P.sea * 0.36;
+  counts.fill(0); waterCells.length = 0;
+
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+    const i = y * mw + x;
+    // two-level domain warp: a broad one shapes the landmass, a tight one
+    // adds small bays, headlands and spits so coastlines are not smooth blobs
+    const wq = fbm(x * 0.050 + 11.3, y * 0.050 - 4.7, s + 7, 2);
+    const wr = fbm(x * 0.050 - 6.1, y * 0.050 + 9.4, s + 23, 2);
+    const wq2 = fbm(x * 0.21 - 3.3, y * 0.21 + 7.7, s + 907, 2);
+    const wr2 = fbm(x * 0.21 + 5.1, y * 0.21 - 2.9, s + 919, 2);
+    const e  = fbm(x * 0.088 + (wq - 0.5) * 1.7 + (wq2 - 0.5) * 0.42,
+                   y * 0.088 + (wr - 0.5) * 1.7 + (wr2 - 0.5) * 0.42, s, 4);
+    const m  = fbm(x * 0.118 + 31.7, y * 0.118 - 12.3, s + 411, 3);
+    const l  = fbm(x * 0.032 - 8.2, y * 0.032 + 5.5, s + 733, 2);
+
+    let h = 0.5 + (e - 0.5) * contrast;
+    const nx = (x + 0.5) / mw - 0.5, ny = (y + 0.5) / mh - 0.5;
+    const rr = Math.sqrt(nx * nx * 1.02 + ny * ny * 1.25);
+    h -= 0.34 * Math.pow(rr, 2.6);
+    hmap[i] = h; mmap[i] = m; lmap[i] = l;
+
+    let t;
+    // beaches widen in dry climates (low moisture) so shorelines read as
+    // coast rather than a 1-tile path
+    const beach = 0.032 + 0.052 * (1 - m);
+    const rockT = sea + 0.20 - 0.10 * P.relief + 0.10 * (1 - m);
+    if (h < sea) t = 0;
+    else if (h < sea + beach) t = 1;
+    else if (h > rockT) t = 4;
+    else t = m > P.forest ? 3 : 2;
+    tiles[i] = t; counts[t]++;
+  }
+
+  // ---- cellular-automata majority smoothing (synchronous, deterministic)
+  if (P.passes > 0) {
+    const next = new Uint8Array(mw * mh);
+    const D = [[-1,0,2],[1,0,2],[0,-1,2],[0,1,2],[-1,-1,1],[1,-1,1],[-1,1,1],[1,1,1]];
+    for (let p = 0; p < P.passes; p++) {
+      let changed = 0;
+      for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+        const c = [0, 0, 0, 0, 0];
+        c[tiles[y * mw + x]] += 3;
+        for (const d of D) {
+          const nx = x + d[0], ny = y + d[1];
+          if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+          c[tiles[ny * mw + nx]] += d[2];
+        }
+        const own = tiles[y * mw + x];
+        const oc = c[own];
+        let bt = own, bc = oc;
+        for (let t = 0; t < NT; t++) if (c[t] > bc) { bc = c[t]; bt = t; }
+        const flip = bc >= 6 && (oc < 4 || bc >= oc + 9);
+        next[y * mw + x] = flip ? bt : own;
+        if (flip) changed++;
+      }
+      tiles.set(next);
+      if (!changed) break;
+    }
+  }
+  counts.fill(0); waterCells.length = 0;
+  for (let i = 0; i < tiles.length; i++) {
+    counts[tiles[i]]++;
+    if (tiles[i] === 0) waterCells.push(i);
+  }
+
+  buildMasks();
+  layout();
+  resetWalker();
+  paintWorld();
+  drawMinimap();
+  updateUI();
+}
+
+/* ---------------- autotile masks (8 neighbours -> 47 classes) ---------------- */
+function buildMasks() {
+  usedCls.fill(0);
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+    const i = y * mw + x, t = tiles[i];
+    let m = 0;
+    for (let k = 0; k < 9; k++) {
+      if (k === 4) continue;
+      const dx = (k % 3) - 1, dy = ((k / 3) | 0) - 1;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+      if (tiles[ny * mw + nx] === t) m |= BITS[k];
+    }
+    const id = CLASS[m];
+    maskIdx[i] = id; usedCls[id]++;
+  }
+}
+
+/* =========================================================================
+   WORLD RENDER — one pass, owner-driven
+
+   For every screen pixel inside the map we find the tile that owns it via
+   its 47-class ownership map, then sample that terrain.  The terrain border
+   distance field is built once per generation, giving a single continuous
+   bevel that follows the autotiled outline — including through corners.
+   ========================================================================= */
+function paintWorld() {
+  const W = mw * TS, H = mh * TS;
+  if (!worldCv || worldCv.width !== W || worldCv.height !== H) {
+    worldCv = document.createElement('canvas'); worldCv.width = W; worldCv.height = H;
+    worldCx = worldCv.getContext('2d');
+    worldImg = worldCx.createImageData(W, H);
+    worldU32 = new Uint32Array(worldImg.data.buffer);
+  }
+  const seed = P.seed;
+  // key-light anchor: a fixed point in map pixels, placed just off-centre so
+  // the composition is not symmetrical
+  const lightX = mw * TS * 0.62, lightY = mh * TS * 0.34;
+
+  // ---- ownership-resolved terrain id per pixel, and border distance field
+  const own = new Uint8Array(W * H);          // resolved terrain
+  edgeDist = new Int8Array(W * H).fill(60);
+  for (let ty = 0; ty < mh; ty++) for (let tx = 0; tx < mw; tx++) {
+    const ti = ty * mw + tx;
+    const art = ART[maskIdx[ti]];
+    const ownTile = tiles[ti];
+    for (let ly = 0; ly < TS; ly++) {
+      const row = (ty * TS + ly) * W + tx * TS;
+      for (let lx = 0; lx < TS; lx++) {
+        const slot = art[ly * TS + lx];
+        if (slot === 5) { own[row + lx] = ownTile; continue; }
+        const o = 2 * (slot - 1);
+        const nx = tx + SLOFF[o], ny = ty + SLOFF[o + 1];
+        own[row + lx] = (nx < 0 || ny < 0 || nx >= mw || ny >= mh) ? ownTile : tiles[ny * mw + nx];
+      }
+    }
+  }
+  // border distance: BFS-free two-pass chamfer over the whole map
+  {
+    const d = edgeDist;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const up = y > 0 ? i - W : i, lf = x > 0 ? i - 1 : i;
+      let m = 60;
+      if (own[up]   !== own[i]) m = d[up]   + 1;
+      if (own[lf]   !== own[i]) m = Math.min(m, d[lf] + 1);
+      if (y > 0 && x > 0 && own[i - W - 1] !== own[i]) m = Math.min(m, d[i - W - 1] + 2);
+      if (y > 0 && x < W - 1 && own[i - W + 1] !== own[i]) m = Math.min(m, d[i - W + 1] + 2);
+      d[i] = Math.min(d[i], m);
+    }
+    for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+      const i = y * W + x;
+      const dn = y < H - 1 ? i + W : i, rt = x < W - 1 ? i + 1 : i;
+      let m = 60;
+      if (own[dn] !== own[i]) m = d[dn] + 1;
+      if (own[rt] !== own[i]) m = Math.min(m, d[rt] + 1);
+      if (y < H - 1 && x < W - 1 && own[i + W + 1] !== own[i]) m = Math.min(m, d[i + W + 1] + 2);
+      if (y < H - 1 && x > 0 && own[i + W - 1] !== own[i]) m = Math.min(m, d[i + W - 1] + 2);
+      d[i] = Math.min(d[i], m);
+    }
+  }
+  // normal of the border (for the bevel light), from the distance field
+  const nx_ = new Int8Array(W * H), ny_ = new Int8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    const l = x > 0 ? edgeDist[i - 1] : edgeDist[i];
+    const r = x < W - 1 ? edgeDist[i + 1] : edgeDist[i];
+    const u = y > 0 ? edgeDist[i - W] : edgeDist[i];
+    const dn = y < H - 1 ? edgeDist[i + W] : edgeDist[i];
+    nx_[i] = clamp(l - r, -3, 3); ny_[i] = clamp(u - dn, -3, 3);
+  }
+
+  // ---- shade
+  let o = 0;
+  for (let py = 0; py < H; py++) {
+    const fy = py / TS - 0.5, y0 = Math.floor(fy), ty = fy - y0;
+    const ya = clamp(y0, 0, mh - 1), yb = clamp(y0 + 1, 0, mh - 1);
+    for (let px = 0; px < W; px++) {
+      const i = py * W + px;
+      const ti = own[i];
+      const T0 = T[ti];
+
+      // large-scale light patch, smooth-interpolated across tiles
+      const fx = px / TS - 0.5, x0 = Math.floor(fx), tx = fx - x0;
+      const xa = clamp(x0, 0, mw - 1), xb = clamp(x0 + 1, 0, mw - 1);
+      const ia = ya * mw, ib = yb * mw;
+      const l = (lmap[ia+xa] * (1 - tx) + lmap[ia+xb] * tx) * (1 - ty) +
+                (lmap[ib+xa] * (1 - tx) + lmap[ib+xb] * tx) * ty;
+      let k = 0.82 + 0.36 * l;
+
+      // warm key light, anchored to a FIXED map point (not the walker) so the
+      // terrain render stays a pure function of (map, seed, controls)
+      const kx = px - lightX, ky = py - lightY;
+      const kd2 = kx * kx + ky * ky;
+      k *= 1 + 0.40 * Math.exp(-kd2 / (2 * 56 * 56));
+
+      let c = surfaceAt(px, py, ti, seed);
+      let r = c[0] * k, g = c[1] * k, b = c[2] * k;
+
+      // --- autotile border treatment: 2px rim + directional bevel
+      const d = edgeDist[i];
+      if (d < 4) {
+        const rim = T0.rim, rimD = T0.rimD;
+        let ux = nx_[i], uy = ny_[i];
+        const ul = Math.hypot(ux, uy) || 1;
+        ux /= ul; uy /= ul;
+        const lit = Math.max(0, ux * LX + uy * LY);
+        let m;
+        if (d === 0)      m = 0.34 + 0.46 * lit;
+        else if (d === 1) m = 0.18 + 0.30 * lit;
+        else              m = 0.07 + 0.13 * lit;
+        const bw = P.blend;
+        const a0 = (d === 0 ? 0.62 : d === 1 ? 0.44 : 0.22) * bw;
+        r = lerp(r, lerp(rimD[0], rim[0], m), a0);
+        g = lerp(g, lerp(rimD[1], rim[1], m), a0);
+        b = lerp(b, lerp(rimD[2], rim[2], m), a0);
+        if (d === 0 && lit < 0.18) { r *= 1 - 0.12 * bw; g *= 1 - 0.12 * bw; b *= 1 - 0.09 * bw; }
+        if (ti === 0 && d <= 1) { r += (26 * lit + 8) * bw; g += (34 * lit + 12) * bw; b += (30 * lit + 12) * bw; }
+      }
+
+      const j = detailAt(px, py, ti, seed);
+      r = clamp(r + j, 0, 255); g = clamp(g + j, 0, 255); b = clamp(b + j, 0, 255);
+      worldU32[o++] = (255 << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255);
+    }
+  }
+  worldCx.putImageData(worldImg, 0, 0);
+}
+
+/* ---------------- animated water ---------------- */
+const SHIM_F = 10, SHIM = [];
+for (let f = 0; f < SHIM_F; f++) {
+  const c = document.createElement('canvas'); c.width = TS; c.height = TS;
+  const cx = c.getContext('2d');
+  const im = cx.createImageData(TS, TS);
+  for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) {
+    const v = Math.sin(x * 0.72 + y * 1.31 - f * 0.72) * 0.5 + 0.5;
+    const v2 = Math.sin(x * 1.9 - y * 0.8 + f * 0.55) * 0.5 + 0.5;
+    const a = Math.max(0, v * 0.75 + v2 * 0.45 - 1.02);
+    const o = (y * TS + x) * 4;
+    im.data[o] = 90; im.data[o+1] = 150; im.data[o+2] = 180;
+    im.data[o+3] = clamp(a * 430, 0, 190);
+  }
+  cx.putImageData(im, 0, 0);
+  SHIM.push(c);
+}
+
+/* =========================================================================
+   A* PATHFINDING
+   ========================================================================= */
+class Heap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  push(i, f) {
+    const a = this.a; a.push({ i, f });
+    let c = a.length - 1;
+    while (c > 0) { const p = (c - 1) >> 1; if (a[p].f <= a[c].f) break; const t = a[p]; a[p] = a[c]; a[c] = t; c = p; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last; let c = 0;
+      for (;;) {
+        const l = c * 2 + 1, r = l + 1; let m = c;
+        if (l < a.length && a[l].f < a[m].f) m = l;
+        if (r < a.length && a[r].f < a[m].f) m = r;
+        if (m === c) break;
+        const t = a[m]; a[m] = a[c]; a[c] = t; c = m;
+      }
+    }
+    return top;
+  }
+}
+let walkCost = new Float32Array(mw * mh);
+function refreshCost() {
+  walkCost.fill(Infinity);
+  for (let i = 0; i < tiles.length; i++) if (T[tiles[i]].walk) walkCost[i] = T[tiles[i]].cost;
+}
+function astar(sx, sy, tx, ty) {
+  if (sx === tx && sy === ty) return [];
+  if (!isFinite(walkCost[ty * mw + tx])) return null;
+  const n = mw * mh;
+  const g = new Float32Array(n).fill(Infinity);
+  const came = new Int32Array(n).fill(-1);
+  const closed = new Uint8Array(n);
+  const open = new Heap();
+  const si = sy * mw + sx;
+  g[si] = 0; open.push(si, 0);
+  while (open.size) {
+    const cur = open.pop().i;
+    if (closed[cur]) continue;
+    closed[cur] = 1;
+    if (cur === ty * mw + tx) break;
+    const cx = cur % mw, cy = (cur / mw) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+      const ni = ny * mw + nx;
+      if (closed[ni] || !isFinite(walkCost[ni])) continue;
+      if (dx && dy) {                          // no corner cutting
+        if (!isFinite(walkCost[cy * mw + nx]) || !isFinite(walkCost[ny * mw + cx])) continue;
+      }
+      const step = (dx && dy ? 1.41421356 : 1) * (walkCost[ni] * 0.5 + walkCost[cur] * 0.5);
+      const ng = g[cur] + step;
+      if (ng < g[ni]) {
+        g[ni] = ng; came[ni] = cur;
+        const ax = Math.abs(nx - tx), ay = Math.abs(ny - ty);
+        open.push(ni, ng + (ax + ay) + (1.41421356 - 2) * Math.min(ax, ay));
+      }
+    }
+  }
+  if (!isFinite(g[ty * mw + tx])) return null;
+  const out = [];
+  for (let c = ty * mw + tx; c !== si; c = came[c]) {
+    if (c < 0) return null;
+    out.push({ x: (c % mw) + 0.5, y: ((c / mw) | 0) + 0.5 });
+  }
+  out.reverse();
+  return out;
+}
+function pathLength(pl) {
+  let s = 0;
+  for (let i = 1; i < pl.length; i++) s += Math.hypot(pl[i].x - pl[i-1].x, pl[i].y - pl[i-1].y);
+  return s;
+}
+function nearestWalkable(x, y) {
+  x = clamp(x | 0, 0, mw - 1); y = clamp(y | 0, 0, mh - 1);
+  if (isFinite(walkCost[y * mw + x])) return { x, y };
+  for (let r = 1; r < 12; r++) {
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+      if (isFinite(walkCost[ny * mw + nx])) return { x: nx, y: ny };
+    }
+  }
+  return { x: 0, y: 0 };
+}
+/* flood-fill the 8-connected walkable region containing a tile */
+let region = new Int32Array(mw * mh);
+function computeRegion(sx, sy) {
+  region.fill(-1);
+  const si = sy * mw + sx;
+  if (!isFinite(walkCost[si])) return 0;
+  let id = 0, n = 0;
+  const stack = [si]; region[si] = 0; n = 1;
+  while (stack.length) {
+    const cur = stack.pop(), cx = cur % mw, cy = (cur / mw) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= mw || ny >= mh) continue;
+      const ni = ny * mw + nx;
+      if (region[ni] !== -1 || !isFinite(walkCost[ni])) continue;
+      if (dx && dy && (!isFinite(walkCost[cy * mw + nx]) || !isFinite(walkCost[ny * mw + cx]))) continue;
+      region[ni] = 0; n++; stack.push(ni);
+    }
+  }
+  return n;
+}
+/* choose a reachable goal inside the walker's own region — never across water */
+function pickGoal(rng) {
+  const si = (walker.y | 0) * mw + (walker.x | 0);
+  const members = regionCells.length ? regionCells : null;
+  if (!members || !members.length) return null;
+  const cx0 = walker.x, cy0 = walker.y;
+  const maxD = Math.min(mw, mh) * 0.95;
+  let best = null, bestScore = -1;
+  for (let k = 0; k < 64; k++) {
+    const i = members[(rng() * members.length) | 0];
+    const gx = i % mw, gy = (i / mw) | 0;
+    const d = Math.hypot(gx + 0.5 - cx0, gy + 0.5 - cy0);
+    if (d < 3.5) continue;
+    const score = d + rng() * 2.5;
+    if (score > bestScore) { bestScore = score; best = { x: gx, y: gy }; }
+  }
+  return best || (members.length ? { x: members[0] % mw, y: (members[0] / mw) | 0 } : null);
+}
+let regionCells = [];
+
+let rng = mulberry32(1);
+function resetWalker() {
+  refreshCost();
+  // spawn on the largest walkable region: spiral candidates, keep the biggest
+  let bestSpot = null, bestN = -1;
+  for (let ry = 2; ry < mh - 2; ry += 2) for (let rx = 2; rx < mw - 2; rx += 2) {
+    if (!isFinite(walkCost[ry * mw + rx])) continue;
+    const n = computeRegion(rx, ry);
+    if (n > bestN) { bestN = n; bestSpot = { x: rx, y: ry }; }
+  }
+  const spot = bestSpot || nearestWalkable((mw * 0.36) | 0, (mh * 0.46) | 0);
+  walker.x = spot.x + 0.5; walker.y = spot.y + 0.5; walker.s = 0;
+  walker.dir = 2; walker.moving = false; walker.walkPhase = 0;
+  // collect the walker's own connected region for goal selection
+  computeRegion(spot.x, spot.y);
+  regionCells = [];
+  for (let i = 0; i < tiles.length; i++) if (region[i] === 0) regionCells.push(i);
+  path = []; pathLen = 0; goal = null;
+  rng = mulberry32((P.seed * 2654435761) % 2147483647 + 12345);
+  repath(pickGoal(rng));
+}
+function repath(g) {
+  if (!g) { path = []; pathLen = 0; goal = null; return; }
+  const sx = (walker.x) | 0, sy = (walker.y) | 0;
+  let p = astar(sx, sy, g.x, g.y);
+  if (!p || !p.length) {
+    const nw = nearestWalkable(g.x, g.y);
+    p = astar(sx, sy, nw.x, nw.y);
+  }
+  path = p || [];
+  pathLen = pathLength(path);
+  goal = path.length ? { x: path[path.length - 1].x, y: path[path.length - 1].y } : null;
+  walker.s = 0;
+}
+
+/* ---------------- walker sprite ---------------- */
+const CLOAK = '#3d6f9c', CLOAKD = '#26466a', HOOD = '#4e86b8', SKIN = '#e2b58c',
+      BOOT = '#1b2430', PACK = '#7a5a3a', LAMP = '#ffd88a';
+function drawWalker() {
+  const px = viewOx + walker.x * TS, py = viewOy + walker.y * TS;
+  const bob = walker.moving ? (Math.sin(walker.walkPhase * 2) > 0 ? 1 : 0) : 0;
+  const cx = Math.round(px), cy = Math.round(py);
+  const d = walker.dir, flip = d === 3;
+  const st = walker.moving ? Math.sin(walker.walkPhase * 2) : 0;
+
+  // shadow
+  vctx.globalAlpha = 0.34; vctx.fillStyle = '#04070c';
+  vctx.fillRect(cx - 4, cy + 1, 9, 3);
+  vctx.fillRect(cx - 3, cy + 4, 7, 1);
+  vctx.globalAlpha = 1;
+
+  const gy = cy - 8 - bob;
+  // legs
+  vctx.fillStyle = BOOT;
+  vctx.fillRect(cx - 3, gy + 6, 2, 3 - (st > 0 ? 0 : 0));
+  vctx.fillRect(cx + 1, gy + 6, 2, 3);
+  if (walker.moving) {
+    vctx.fillRect(cx - 3, gy + 8, 2, 1 + (st > 0 ? 1 : 0));
+    vctx.fillRect(cx + 1, gy + 8, 2, 1 + (st > 0 ? 0 : 1));
+  }
+  // cloak
+  vctx.fillStyle = CLOAK;
+  vctx.fillRect(cx - 4, gy + 1, 8, 6);
+  vctx.fillStyle = CLOAKD;
+  vctx.fillRect(cx + (flip ? -4 : 2), gy + 1, 2, 6);
+  vctx.fillRect(cx - 4, gy + 6, 8, 1);
+  // pack
+  vctx.fillStyle = PACK;
+  vctx.fillRect(cx + (flip ? 2 : -6), gy + 2, 2, 4);
+  // hood + face
+  vctx.fillStyle = HOOD;
+  vctx.fillRect(cx - 3, gy - 3, 6, 4);
+  vctx.fillStyle = CLOAKD;
+  vctx.fillRect(cx - 3, gy - 3, 6, 1);
+  if (d === 0) { vctx.fillStyle = SKIN; vctx.fillRect(cx - 2, gy - 1, 4, 2); }
+  else if (d === 2) { vctx.fillStyle = SKIN; vctx.fillRect(cx + (flip ? -2 : -1), gy - 1, 3, 2); }
+  else { vctx.fillStyle = HOOD; }
+  vctx.fillStyle = '#121a24';
+  if (d === 0) { vctx.fillRect(cx - 1, gy - 1, 1, 1); vctx.fillRect(cx + 1, gy - 1, 1, 1); }
+  else if (d === 2) { vctx.fillRect(cx + (flip ? -1 : 1), gy - 1, 1, 1); }
+  // lantern
+  vctx.fillStyle = LAMP;
+  vctx.fillRect(cx + (flip ? -6 : 4), gy + 3, 2, 2);
+  vctx.fillStyle = '#fff6d8';
+  vctx.fillRect(cx + (flip ? -6 : 4), gy + 3, 1, 1);
+}
+
+/* ---------------- minimap ---------------- */
+function drawMinimap() {
+  mm.width = mw; mm.height = mh;
+  mctx.imageSmoothingEnabled = false;
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) {
+    const T0 = T[tiles[y * mw + x]];
+    mctx.fillStyle = T0.css;
+    mctx.fillRect(x, y, 1, 1);
+  }
+  const sc = Math.max(1, Math.min(3, Math.floor(112 / mw)));
+  mm.style.width = (mw * sc) + 'px';
+  mm.style.height = (mh * sc) + 'px';
+}
+function drawMinimapDot() {
+  mctx.fillStyle = '#0a0f16';
+  mctx.fillRect((walker.x | 0), (walker.y | 0), 1, 1);
+  mctx.fillStyle = '#ffe6a0';
+  mctx.fillRect((walker.x | 0), (walker.y | 0), 1, 1);
+}
+
+/* =========================================================================
+   FRAME COMPOSITING
+   ========================================================================= */
+function drawPath() {
+  if (!OPT.path || path.length < 2) return;
+  vctx.globalCompositeOperation = 'lighter';
+  const step = 0.9;                       // one dot every 0.9 tiles
+  let acc = 0, seg = 0, px = walker.x, py = walker.y;
+  let i = 1;
+  const total = pathLen;
+  while (i < path.length) {
+    const dx = path[i].x - px, dy = path[i].y - py;
+    const seglen = Math.hypot(dx, dy);
+    while (acc <= seglen) {
+      const u = seglen ? acc / seglen : 0;
+      const X = viewOx + (px + dx * u) * TS, Y = viewOy + (py + dy * u) * TS;
+      const f = (walker.s + acc) / Math.max(total, 1);
+      const a = 0.30 * (1 - f) + 0.06;
+      vctx.fillStyle = 'rgba(255,214,140,' + a.toFixed(3) + ')';
+      vctx.fillRect(Math.round(X) - 1, Math.round(Y) - 1, 2, 2);
+      acc += step;
+    }
+    acc -= seglen; px = path[i].x; py = path[i].y; i++;
+  }
+  vctx.globalCompositeOperation = 'source-over';
+  if (goal) {
+    const gx = Math.round(viewOx + goal.x * TS), gy = Math.round(viewOy + goal.y * TS);
+    const pulse = 2 + Math.sin(simStep * 0.18) * 1.2;
+    vctx.strokeStyle = 'rgba(120,240,225,0.85)'; vctx.lineWidth = 1;
+    vctx.strokeRect(gx - pulse - 2.5, gy - pulse - 2.5, pulse * 2 + 5, pulse * 2 + 5);
+    vctx.fillStyle = 'rgba(120,240,225,0.9)';
+    vctx.fillRect(gx - 1, gy - 1, 3, 3);
+  }
+}
+
+function compose() {
+  vctx.globalCompositeOperation = 'source-over';
+  vctx.globalAlpha = 1;
+  vctx.fillStyle = '#04060a';
+  vctx.fillRect(0, 0, VW, VH);
+
+  // letterbox surround, only when the map is smaller than the viewport
+  if (viewOx > 0 || viewOy > 0) {
+    vctx.fillStyle = '#080c13';
+    vctx.fillRect(0, 0, VW, Math.max(0, viewOy));
+    vctx.fillRect(0, Math.max(0, viewOy + mh * TS), VW, Math.max(0, VH - (viewOy + mh * TS)));
+    vctx.fillRect(0, Math.max(0, viewOy), Math.max(0, viewOx), Math.min(VH, mh * TS));
+    vctx.fillRect(Math.max(0, viewOx + mw * TS), Math.max(0, viewOy),
+                  Math.max(0, VW - (viewOx + mw * TS)), Math.min(VH, mh * TS));
+  }
+
+  vctx.imageSmoothingEnabled = false;
+  vctx.drawImage(worldCv, viewOx, viewOy);
+
+  if (OPT.shimmer && waterCells.length) {
+    vctx.globalCompositeOperation = 'lighter';
+    const f = ((simStep * 0.9) | 0) % SHIM_F;
+    const f2 = (f + 4) % SHIM_F;
+    for (let k = 0; k < waterCells.length; k++) {
+      const i = waterCells[k];
+      const x = i % mw, y = (i / mw) | 0;
+      const p = (x * 3 + y * 5) % SHIM_F;
+      vctx.drawImage(SHIM[p === f ? f2 : f], viewOx + x * TS, viewOy + y * TS);
+    }
+    vctx.globalCompositeOperation = 'source-over';
+  }
+
+  if (OPT.grid) {
+    vctx.fillStyle = 'rgba(120,190,220,0.13)';
+    for (let x = 0; x <= mw; x++) vctx.fillRect(viewOx + x * TS, viewOy, 1, mh * TS);
+    for (let y = 0; y <= mh; y++) vctx.fillRect(viewOx, viewOy + y * TS, mw * TS, 1);
+  }
+
+  drawPath();
+
+  if (OPT.walk) {
+    // warm lamp pool (additive)
+    vctx.globalCompositeOperation = 'lighter';
+    const lx = viewOx + walker.x * TS, ly = viewOy + walker.y * TS;
+    const g1 = vctx.createRadialGradient(lx, ly, 2, lx, ly, 58);
+    g1.addColorStop(0, 'rgba(255,196,110,0.30)');
+    g1.addColorStop(0.4, 'rgba(255,150,70,0.11)');
+    g1.addColorStop(1, 'rgba(255,120,50,0)');
+    vctx.fillStyle = g1;
+    vctx.fillRect(lx - 60, ly - 60, 120, 120);
+    const g2 = vctx.createRadialGradient(lx, ly, 1, lx, ly, 15);
+    g2.addColorStop(0, 'rgba(255,226,160,0.30)');
+    g2.addColorStop(1, 'rgba(255,200,120,0)');
+    vctx.fillStyle = g2;
+    vctx.fillRect(lx - 16, ly - 16, 32, 32);
+    vctx.globalCompositeOperation = 'source-over';
+    drawWalker();
+  }
+
+  // map frame edge (outside the map, 1px inner border) for the atlas-plate look
+  vctx.strokeStyle = 'rgba(90,208,200,0.10)';
+  vctx.lineWidth = 1;
+  vctx.strokeRect(viewOx + 0.5, viewOy + 0.5, mw * TS - 1, mh * TS - 1);
+}
+
+/* ---------------- fixed-delta simulation ---------------- */
+function step() {
+  simStep++;
+  if (OPT.walk && path.length) {
+    walker.moving = true;
+    walker.s += 2.6 * DT;                 // 2.6 tiles / second
+    walker.walkPhase += DT * 7.5;
+    if (walker.s >= pathLen) {
+      walker.x = path[path.length - 1].x; walker.y = path[path.length - 1].y;
+      repath(pickGoal(rng));
+      walker.moving = path.length > 0;
+    } else {
+      // position along the polyline
+      let s = walker.s, i = 1, px = walker.x, py = walker.y;
+      while (i < path.length) {
+        const dx = path[i].x - px, dy = path[i].y - py;
+        const L = Math.hypot(dx, dy);
+        if (s <= L || i === path.length - 1) {
+          const u = L ? Math.min(s / L, 1) : 0;
+          walker.x = px + dx * u; walker.y = py + dy * u;
+          if (Math.abs(dx) > Math.abs(dy)) walker.dir = dx > 0 ? 1 : 3;
+          else walker.dir = dy > 0 ? 2 : 0;
+          break;
+        }
+        s -= L; px = path[i].x; py = path[i].y; i++;
+      }
+    }
+  } else {
+    walker.moving = false;
+  }
+}
+
+/* ---------------- UI ---------------- */
+function fmt2(v) { return v.toFixed(2); }
+function updateUI() {
+  $('vSize').textContent = mw + ' × ' + mh;
+  $('vSea').textContent = fmt2(P.sea);
+  $('vRelief').textContent = fmt2(P.relief);
+  $('vForest').textContent = fmt2(P.forest);
+  $('vPass').textContent = P.passes;
+  $('vBlend').textContent = fmt2(P.blend);
+  $('vSeed').textContent = P.seed;
+  $('plateSub').textContent = mw + ' × ' + mh + ' · seed ' + P.seed;
+
+  const total = mw * mh;
+  let leg = '';
+  for (let t = 0; t < NT; t++) {
+    const pc = counts[t] / total * 100;
+    leg += '<div class="lg"><u style="background:' + T[t].css + '"></u><p>' + T[t].n +
+           '</p><b>' + pc.toFixed(1) + '%</b><s style="--w:' + Math.min(100, pc).toFixed(1) +
+           '%;--c:' + T[t].css + '"></s></div>';
+  }
+  $('legend').innerHTML = leg;
+
+  let used = 0;
+  for (let i = 0; i < BLOB_CLASSES; i++) if (usedCls[i]) used++;
+  $('stats').innerHTML =
+    '<div>BLOB CLASSES</div><div class="hi"><b>' + BLOB_CLASSES + '</b></div>' +
+    '<div>IN USE</div><div><b>' + used + '</b></div>' +
+    '<div>TILES</div><div><b>' + total + '</b></div>' +
+    '<div>PASSES</div><div><b>' + P.passes + '</b></div>' +
+    '<div>SEED</div><div><b>' + P.seed + '</b></div>';
+
+  $('sCls').textContent = BLOB_CLASSES;
+  $('sPath').textContent = path.length;
+  $('sPos').textContent = (walker.x).toFixed(1) + ',' + (walker.y).toFixed(1);
+}
+
+function bind(id, key, fmt, after) {
+  const el = $(id);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    P[key] = key === 'passes' ? (v | 0) : v;
+    updateUI();
+    if (after) after();
+  });
+}
+let pending = null;
+let regenQueued = false;
+// Coalesce slider drags into one regeneration per animation frame, so the
+// map is rebuilt at most once per displayed frame.
+function scheduleRegen() {
+  regenQueued = true;
+  if (pending) return;
+  pending = requestAnimationFrame(() => {
+    pending = null;
+    if (!regenQueued) return;
+    regenQueued = false;
+    generate();
+  });
+}
+bind('sea', 'sea', null, scheduleRegen);
+bind('relief', 'relief', null, scheduleRegen);
+bind('forest', 'forest', null, scheduleRegen);
+bind('passes', 'passes', null, scheduleRegen);
+bind('blend', 'blend', null, scheduleRegen);
+$('size').addEventListener('change', () => {
+  const a = $('size').value.split(',');
+  allocMap(+a[0], +a[1]);
+  region = new Int32Array(mw * mh);
+  walkCost = new Float32Array(mw * mh);
+  regionCells = [];
+  generate();
+});
+$('seed').addEventListener('input', () => { P.seed = +$('seed').value; scheduleRegen(); });
+$('roll').addEventListener('click', () => {
+  P.seed = (P.seed * 1664525 + 1013904223) >>> 0;
+  P.seed = (P.seed >>> 8) % 9000 + 1;
+  $('seed').value = P.seed;
+  generate();
+});
+for (const t of ['shimmer', 'path', 'grid', 'walk']) {
+  const key = 'tg' + t[0].toUpperCase() + t.slice(1);
+  $(key).addEventListener('click', () => {
+    OPT[t] = !OPT[t];
+    $(key).classList.toggle('on', OPT[t]);
+    if (t === 'walk' && !OPT.walk) walker.moving = false;
+  });
+}
+view.addEventListener('click', ev => {
+  const r = view.getBoundingClientRect();
+  const vx = (ev.clientX - r.left) / r.width * VW;
+  const vy = (ev.clientY - r.top) / r.height * VH;
+  const tx = Math.floor((vx - viewOx) / TS), ty = Math.floor((vy - viewOy) / TS);
+  if (tx < 0 || ty < 0 || tx >= mw || ty >= mh) return;
+  const nw = nearestWalkable(tx, ty);
+  // reject a click that lands in a different landmass — no path exists
+  if (region[nw.y * mw + nw.x] !== 0) {
+    $('plateSub').textContent = 'unreachable — island #' +
+      (region[nw.y * mw + nw.x] + 1) + ' · click your own land';
+    setTimeout(() => { $('plateSub').textContent = mw + ' × ' + mh + ' · seed ' + P.seed; }, 1400);
+    return;
+  }
+  goal = { x: nw.x + 0.5, y: nw.y + 0.5 };
+  const p = astar(walker.x | 0, walker.y | 0, nw.x, nw.y);
+  if (p) { path = p; pathLen = pathLength(p); walker.s = 0; }
+  else { path = []; pathLen = 0; }
+  updateUI();
+});
+
+/* ---------------- main loop ---------------- */
+let last = 0, acc = 0, fpsAcc = 0, fpsN = 0, fpsT = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (!last) last = now;
+  let dt = (now - last) / 1000; last = now;
+  if (dt > 0.25) dt = 0.25;
+  acc += dt;
+  let n = 0;
+  while (acc >= DT && n < 6) { step(); acc -= DT; n++; }
+  if (n === 6) acc = 0;
+  compose();
+  if (frame % 5 === 0) drawMinimapDot();
+  frame++;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  if (frame % 6 === 0) {
+    $('sStep').textContent = simStep;
+    $('sFps').textContent = fps.toFixed(1);
+    $('sPath').textContent = path.length;
+    $('sPos').textContent = walker.x.toFixed(1) + ',' + walker.y.toFixed(1);
+  }
+  if (frame === 2) {
+    window.__ready = true;
+  }
+}
+
+/* ---------------- layout + boot ---------------- */
+function layout() {
+  viewOx = Math.round((VW - mw * TS) / 2);
+  viewOy = Math.round((VH - mh * TS) / 2);
+}
+layout();
+generate();
+requestAnimationFrame(loop);
+
+window.__probe = {
+  get seed() { return P.seed; }, get size() { return mw + 'x' + mh; },
+  get passes() { return P.passes; }, get blobClasses() { return BLOB_CLASSES; },
+  get classesUsed() { let u = 0; for (let i = 0; i < BLOB_CLASSES; i++) if (usedCls[i]) u++; return u; },
+  get pathLen() { return path.length; }, get step() { return simStep; },
+  get fps() { return +fps.toFixed(2); }, get frame() { return frame; },
+  get terrainPct() { return Array.from(counts, c => +(c / (mw * mh) * 100).toFixed(1)); }
+};
+</script>
+</body>
+</html>

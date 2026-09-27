@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SYNTH·LAB — 38 · subtractive synthesis playground</title>
+<style>
+  :root{
+    --bg0:#04060c; --bg1:#0a1120; --bg2:#070b15;
+    --pnl:rgba(12,19,33,.80); --pnl2:rgba(9,14,26,.72);
+    --line:rgba(98,214,255,.18); --line2:rgba(98,214,255,.10);
+    --cy:#5ce6ff; --cy2:#2c9fd0; --am:#ffb45c; --am2:#ff8b3d; --vi:#b48cff;
+    --tx:#d3e6f4; --dim:#7189a1; --dim2:#4d637a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg0);color:var(--tx);overflow:hidden;
+    font:12px/1.3 ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono",monospace;
+    -webkit-font-smoothing:antialiased}
+  #app{height:100vh;min-width:0;display:grid;grid-template-rows:44px 1fr auto;grid-template-columns:minmax(0,1fr)}
+
+  /* ---------- header ---------- */
+  #bar{display:flex;align-items:center;gap:18px;padding:0 16px;min-width:0;overflow:hidden;
+    border-bottom:1px solid var(--line2);
+    background:linear-gradient(180deg,#0c1322,#070b14)}
+  .brand{display:flex;align-items:baseline;gap:9px;white-space:nowrap;flex:none}
+  .num{color:#05080e;background:var(--cy);font-weight:700;padding:1px 5px;border-radius:2px;font-size:11px}
+  .brand h1{margin:0;font-size:14px;letter-spacing:.16em;font-weight:600}
+  .brand .sub{color:var(--dim);font-size:11px;letter-spacing:.06em}
+  #tech{color:var(--dim);font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+  #tech b{color:var(--cy2);font-weight:400}
+  #stats{color:var(--dim);font-size:11px;white-space:nowrap;display:flex;gap:12px;flex:none}
+  #stats b{color:var(--tx);font-weight:400}
+  .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim2);
+    box-shadow:0 0 0 1px rgba(255,255,255,.10) inset;margin-right:5px;vertical-align:1px}
+  .led.on{background:var(--am);box-shadow:0 0 7px 1px rgba(255,180,92,.75)}
+  .led.cy.on{background:var(--cy);box-shadow:0 0 7px 1px rgba(92,230,255,.8)}
+
+  /* ---------- stage ---------- */
+  #stage{position:relative;overflow:hidden;min-height:0;min-width:0}
+  #cv{position:absolute;left:0;top:0;display:block}
+  #lyr{position:absolute;left:0;top:0;pointer-events:none}
+  .lb{position:absolute;white-space:nowrap;letter-spacing:.05em}
+  .lb.bt{font-size:13px;letter-spacing:.14em;color:var(--tx)}
+  .lb.bv{font-size:11px;color:var(--dim)}
+  .lb.bn{font-size:10px;color:var(--dim2)}
+  .lb.pt{font-size:12px;letter-spacing:.10em;color:var(--tx)}
+  .lb.ps{font-size:11px;color:var(--dim2)}
+  .lb.tk{font-size:11px;color:var(--dim2)}
+  .lb.lg{font-size:11px;color:var(--dim)}
+  .lb.hd{font-size:11px;letter-spacing:.14em;color:var(--cy2)}
+
+  /* ---------- control rail ---------- */
+  #rail{display:grid;grid-template-columns:1.02fr 1.18fr 1fr 1.18fr;gap:0;min-width:0;
+    border-top:1px solid var(--line2);
+    background:linear-gradient(180deg,#0a101c,#06090f)}
+  .col{padding:9px 14px 10px;border-right:1px solid var(--line2);min-width:0;overflow:hidden}
+  .col:last-child{border-right:0}
+  .ct{font-size:10px;letter-spacing:.18em;color:var(--cy2);margin-bottom:7px}
+  .ct span{color:var(--dim2);letter-spacing:.08em}
+  .row{display:flex;align-items:center;gap:8px;height:21px}
+  .row label{font-size:11px;color:var(--dim);width:56px;flex:none;letter-spacing:.06em}
+  .row output{font-size:11px;color:var(--tx);width:64px;flex:none;text-align:right}
+  .row.wide label{width:64px}
+  .row.wide output{width:58px}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:14px;background:transparent;margin:0;min-width:0;cursor:ew-resize}
+  input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;
+    background:linear-gradient(90deg,var(--cy2) 0%,var(--cy2) var(--f,50%),#1a2434 var(--f,50%),#1a2434 100%)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+    background:var(--cy);margin-top:-4px;box-shadow:0 0 6px rgba(92,230,255,.55)}
+  input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:#1a2434}
+  input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--cy2)}
+  input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--cy)}
+  .btns{display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap}
+  button{font:inherit;font-size:11px;letter-spacing:.10em;color:var(--dim);cursor:pointer;
+    background:#0d1626;border:1px solid #1d2a3d;border-radius:2px;padding:3px 8px}
+  button:hover{color:var(--tx);border-color:#2c4a63}
+  button.sel{color:#04101a;background:var(--cy);border-color:var(--cy);box-shadow:0 0 9px rgba(92,230,255,.35)}
+  button.go{color:var(--am);border-color:#4a3a20}
+  button.go.on{color:#160b02;background:var(--am);border-color:var(--am);box-shadow:0 0 9px rgba(255,180,92,.4)}
+  button.mini{font-size:10px;padding:2px 6px;letter-spacing:.06em}
+  .nums{display:flex;gap:10px;font-size:11px;color:var(--dim2);margin-top:5px;flex-wrap:wrap}
+  .nums b{color:var(--tx);font-weight:400}
+  .note{font-size:10px;color:var(--dim2);line-height:1.35;margin-top:4px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="bar">
+    <div class="brand"><span class="num">38</span><h1>SYNTH·LAB</h1><span class="sub">subtractive synthesis playground</span></div>
+    <div id="tech"><b>polyBLEP</b> osc → <b>exp. ADSR</b> → <b>TPT SVF LPF, Q</b> → gain</div>
+    <div id="stats">
+      <span><i class="led cy" id="ledRun"></i><b id="sFps">—</b> fps</span>
+      <span>peak <b id="sPk">—</b></span>
+      <span>rms <b id="sRms">—</b></span>
+      <span>note <b id="sNote">—</b></span>
+    </div>
+  </header>
+
+  <section id="stage">
+    <canvas id="cv"></canvas>
+    <div id="lyr"></div>
+  </section>
+
+  <footer id="rail">
+    <div class="col">
+      <div class="ct">OSCILLATOR <span>· phase accum</span></div>
+      <div class="btns" id="oscBtns">
+        <button data-osc="sine">SINE</button>
+        <button data-osc="saw" class="sel">SAW</button>
+        <button data-osc="square">SQR</button>
+        <button data-osc="noise">NOISE</button>
+      </div>
+      <div class="row"><label>FREQ</label><input type="range" id="s_freq" min="0" max="1000"><output id="o_freq"></output></div>
+      <div class="row"><label>RATE</label><input type="range" id="s_rate" min="0" max="1000"><output id="o_rate"></output></div>
+      <div class="row"><label>LEVEL</label><input type="range" id="s_amp" min="0" max="1000"><output id="o_amp"></output></div>
+      <div class="note">alias-free edges via 2-sample polyBLEP correction; noise = seeded mulberry32 stream</div>
+    </div>
+
+    <div class="col">
+      <div class="ct">ENVELOPE <span>· ADSR, exponential decay</span></div>
+      <div class="row wide"><label>ATTACK</label><input type="range" id="s_a" min="0" max="1000"><output id="o_a"></output></div>
+      <div class="row wide"><label>DECAY</label><input type="range" id="s_d" min="0" max="1000"><output id="o_d"></output></div>
+      <div class="row wide"><label>SUSTAIN</label><input type="range" id="s_s" min="0" max="1000"><output id="o_s"></output></div>
+      <div class="row wide"><label>RELEASE</label><input type="range" id="s_r" min="0" max="1000"><output id="o_r"></output></div>
+      <div class="btns" style="margin-top:7px" id="pre1">
+        <button class="mini" data-pre="bass">BASS</button>
+        <button class="mini" data-pre="lead">LEAD</button>
+        <button class="mini" data-pre="pluck">PLUCK</button>
+        <button class="mini" data-pre="glass">GLASS</button>
+        <button class="mini" data-pre="init">INIT</button>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="ct">FILTER <span>· 2-pole LPF</span></div>
+      <div class="row wide"><label>CUTOFF</label><input type="range" id="s_cut" min="0" max="1000"><output id="o_cut"></output></div>
+      <div class="row wide"><label>RESO</label><input type="range" id="s_q" min="0" max="1000"><output id="o_q"></output></div>
+      <div class="nums"><span>f<sub>c</sub>/f<sub>0</sub> <b id="nRatio">—</b></span><span>peak <b id="nPk">—</b></span>
+        <span>fft <b>2048</b></span><span>Δt <b>1/60</b></span></div>
+      <div class="note">|H(f)| is measured by pushing a unit phasor through the
+        <i>same</i> filter recurrence, not from an analytic formula</div>
+    </div>
+
+    <div class="col">
+      <div class="ct">OUTPUT <span>· transport</span></div>
+      <div class="btns">
+        <button class="go" id="bAud">▶ AUDIO</button>
+        <button id="bTrig">RETRIG</button>
+      </div>
+      <div class="nums">
+        <span><i class="led" id="ledAud"></i><b id="nAud">offline model</b></span>
+        <span>env <b id="nEnv">—</b></span>
+        <span>fft <b>2048</b></span>
+        <span>sr <b>48k</b></span>
+      </div>
+      <div class="note" id="audNote">click AUDIO for real WebAudio — one OscillatorNode → GainNode envelope
+        → BiquadFilter → gain, scheduled on the same note grid the model renders</div>
+    </div>
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* =======================================================================
+   SYNTH·LAB — a subtractive-synthesis chain whose *numbers* drive the
+   picture.  One DSP core renders audio into a ring buffer; the scope reads
+   the buffer, the spectrum is a real FFT of it, the block diagram reads the
+   per-node levels the same core produced.  No audio hardware needed.
+   ======================================================================= */
+
+const TAU = Math.PI * 2;
+const SR  = 48000;          // analysis sample rate
+const N   = 2048;           // FFT size
+const RING= 8192;           // ring buffer
+const DT  = 1 / 60;         // fixed simulation delta
+const BLK = Math.round(SR * DT);
+const HOLD = 0.5;           // fraction of the note cycle the gate is high
+const DB_MIN = -96, DB_MAX = 6;
+const F_LO = 30, F_HI = 20000;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp  = (a, b, t) => a + (b - a) * t;
+const dbOf  = m => 20 * Math.log10(Math.max(m, 1e-7));
+
+/* deterministic RNG — contract §3 */
+function mulberry32(a){ return function(){
+  a |= 0; a = a + 0x6D2B79F5 | 0;
+  let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+};}
+
+/* =======================================================================
+   1. PARAMETERS
+   ======================================================================= */
+const P = { osc:'saw', freq:220, a:0.010, d:0.220, s:0.55, r:0.300,
+            cut:1400, q:3.2, amp:0.70, rate:0.80 };
+
+const SPEC = {
+  freq:{lo:40,   hi:1200,  log:1, fmt:v => v<100?v.toFixed(1)+' Hz':v.toFixed(0)+' Hz'},
+  rate:{lo:0.20, hi:4.00,  log:1, fmt:v => v.toFixed(2)+' /s'},
+  amp: {lo:0,    hi:1,     log:0, fmt:v => (v*100).toFixed(0)+' %'},
+  a:   {lo:0.002,hi:0.600, log:1, fmt:v => (v*1000).toFixed(0)+' ms'},
+  d:   {lo:0.010,hi:1.200, log:1, fmt:v => (v*1000).toFixed(0)+' ms'},
+  s:   {lo:0,    hi:1,     log:0, fmt:v => (v*100).toFixed(0)+' %'},
+  r:   {lo:0.010,hi:1.500, log:1, fmt:v => (v*1000).toFixed(0)+' ms'},
+  cut: {lo:60,   hi:16000, log:1, fmt:v => v>=1000?(v/1000).toFixed(2)+' kHz':v.toFixed(0)+' Hz'},
+  q:   {lo:0.40, hi:16.0,  log:1, fmt:v => v.toFixed(2)+' Q'}
+};
+const toNorm = k => { const s = SPEC[k];
+  return s.log ? Math.log(P[k]/s.lo)/Math.log(s.hi/s.lo) : (P[k]-s.lo)/(s.hi-s.lo); };
+const fromNorm = (k,t) => { const s = SPEC[k]; t = clamp(t,0,1);
+  return s.log ? s.lo*Math.pow(s.hi/s.lo, t) : s.lo + (s.hi-s.lo)*t; };
+
+const PRESETS = {
+  init : {osc:'saw', freq:220, a:0.010,d:0.220,s:0.55,r:0.300, cut:1400,q:3.2, amp:0.70,rate:0.80},
+  bass : {osc:'square',freq:82, a:0.005,d:0.150,s:0.35,r:0.180, cut:420, q:6.5, amp:0.75,rate:1.60},
+  lead : {osc:'saw',   freq:330,a:0.030,d:0.300,s:0.70,r:0.450, cut:2600,q:8.0, amp:0.55,rate:1.10},
+  pluck: {osc:'square',freq:520,a:0.002,d:0.240,s:0.05,r:0.300, cut:900, q:4.5, amp:0.80,rate:2.20},
+  glass: {osc:'sine',  freq:660,a:0.120,d:0.600,s:0.15,r:0.900, cut:5200,q:2.0, amp:0.60,rate:0.45}
+};
+
+/* =======================================================================
+   2. DSP CORE  (one implementation, used by scope + FFT + playback mirror)
+   ======================================================================= */
+const ring    = new Float32Array(RING);   // final output
+const ringRaw = new Float32Array(RING);   // pre-envelope, pre-filter oscillator
+const oscS = { ph: 0, rng: mulberry32(0xA17E38) };
+const svfS = { i1: 0, i2: 0 };
+const envS = { stage: 0, v: 0 };
+let   sampleClock = 0, lastNoteT = 0, gatePrev = false, gateNow = false;
+let   peak = 0, rms = 0, rawRms = 1e-6, filtRms = 1e-6, filtRatio = 1, envNow = 0;
+
+/* 2-sample polyBLEP correction: removes most of the aliasing a naive
+   saw/square ramp produces at high frequencies. */
+function polyBlep(t, dt){
+  if (t < dt)      { t /= dt; return t + t - t * t - 1; }
+  if (t > 1 - dt)  { t = (t - 1) / dt; return t * t + t + t + 1; }
+  return 0;
+}
+function oscSample(type, freq){
+  const dt = clamp(freq / SR, 0, 0.45);
+  oscS.ph += dt; if (oscS.ph >= 1) oscS.ph -= 1;
+  const p = oscS.ph;
+  if (type === 'sine')   return Math.sin(p * TAU);
+  if (type === 'saw')    return 2 * p - 1 - polyBlep(p, dt);
+  if (type === 'square') return (p < 0.5 ? 1 : -1) + polyBlep(p, dt) - polyBlep((p + 0.5) % 1, dt);
+  return oscS.rng() * 2 - 1;
+}
+/* TPT (zero-delay) state-variable lowpass.  Stable up to high Q. */
+const FC = { a1:0, a2:0, a3:0, g:0, k:0 };
+function retune(){
+  const g = Math.tan(Math.PI * clamp(P.cut, 10, SR * 0.45) / SR);
+  const k = 1 / Math.max(P.q, 0.35);
+  FC.g = g; FC.k = k;
+  FC.a1 = 1 / (1 + g * (g + k));
+  FC.a2 = g * FC.a1;
+  FC.a3 = g * FC.a2;
+}
+function svfStep(s, x){
+  const v3 = x - s.i2;
+  const v1 = FC.a1 * s.i1 + FC.a2 * v3;
+  const v2 = s.i2 + FC.a2 * s.i1 + FC.a3 * v3;
+  s.i1 = 2 * v1 - s.i1; s.i2 = 2 * v2 - s.i2;
+  return v2;
+}
+/* exponential-segment ADSR, exactly the curve the ENV block draws */
+function adsrStep(s, dt){
+  if (s.stage === 0){ s.v += dt / Math.max(P.a, 4e-4); if (s.v >= 1){ s.v = 1; s.stage = 1; } }
+  else if (s.stage === 1){
+    s.v = P.s + (s.v - P.s) * Math.exp(-dt / (Math.max(P.d, 8e-3) * 0.32));
+    if (P.s >= 0.999) s.v = 1;
+  } else if (s.stage === 3){
+    s.v *= Math.exp(-dt / (Math.max(P.r, 8e-3) * 0.32));
+    if (s.v < 6e-4){ s.v = 0; s.stage = 0; }
+  }
+  return s.v;
+}
+
+const notePeriod = () => 1 / P.rate;
+/* advance the whole chain by one fixed delta; returns nothing, fills ring */
+function stepDSP(){
+  const per = notePeriod();
+  let sPk = 0, sR2 = 0, rR2 = 0, fR2 = 0;
+  for (let i = 0; i < BLK; i++){
+    const tAbs = (sampleClock + i) / SR;
+    const ph   = (tAbs % per) / per;
+    const gate = ph < HOLD;
+    if (gate && !gatePrev){ envS.stage = 0; envS.v = 0; lastNoteT = tAbs; }
+    gatePrev = gate; gateNow = gate;
+
+    const raw = oscSample(P.osc, P.freq);
+    const e   = adsrStep(envS, 1 / SR);
+    const flt = svfStep(svfS, raw);
+    const out = flt * e * P.amp;
+
+    ring[(sampleClock + i) % RING]    = out;
+    ringRaw[(sampleClock + i) % RING] = raw;
+
+    const ao = Math.abs(out); if (ao > sPk) sPk = ao;
+    sR2 += out * out; rR2 += raw * raw; fR2 += flt * flt;
+  }
+  sampleClock += BLK;
+  peak = sPk;
+  rms  = Math.sqrt(sR2 / BLK);
+  rawRms  = Math.max(Math.sqrt(rR2 / BLK), 1e-6);
+  filtRms = Math.max(Math.sqrt(fR2 / BLK), 1e-6);
+  filtRatio = clamp(filtRms / rawRms, 0, 4);
+  envNow = envS.v;
+}
+
+/* =======================================================================
+   3. FFT  (radix-2, in place) — the spectrum is a real transform of the
+   rendered audio, not an analytic model of it.
+   ======================================================================= */
+function makeFFT(n){
+  const bits = Math.round(Math.log2(n));
+  const rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++){ let r = 0;
+    for (let b = 0; b < bits; b++) if (i & (1 << b)) r |= 1 << (bits - 1 - b);
+    rev[i] = r; }
+  const cr = new Float32Array(n >> 1), ci = new Float32Array(n >> 1);
+  for (let i = 0; i < n >> 1; i++){ cr[i] = Math.cos(TAU * i / n); ci[i] = -Math.sin(TAU * i / n); }
+  return function(re, im){
+    for (let i = 0; i < n; i++){ const j = rev[i];
+      if (j > i){ let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; } }
+    for (let size = 2; size <= n; size <<= 1){
+      const half = size >> 1, step = n / size;
+      for (let i = 0; i < n; i += size){
+        for (let j = i, k = 0; j < i + half; j++, k += step){
+          const l = j + half;
+          const tre = re[l] * cr[k] - im[l] * ci[k];
+          const tim = re[l] * ci[k] + im[l] * cr[k];
+          re[l] = re[j] - tre; im[l] = im[j] - tim;
+          re[j] += tre;        im[j] += tim;
+        }
+      }
+    }
+  };
+}
+const fftRun = makeFFT(N);
+const win = new Float32Array(N);
+let winSum = 0;
+for (let i = 0; i < N; i++){ win[i] = 0.5 - 0.5 * Math.cos(TAU * i / (N - 1)); winSum += win[i]; }
+const fftRe = new Float32Array(N), fftIm = new Float32Array(N);
+const MAG = new Float32Array(N >> 1), DB = new Float32Array(N >> 1);
+const NX  = 640;                       // spectrum x resolution
+const nrm  = 2 / winSum;
+function runFFT(){
+  let off = (sampleClock - N) % RING; if (off < 0) off += RING;
+  for (let i = 0; i < N; i++){ fftRe[i] = ring[off] * win[i]; fftIm[i] = 0; off++; if (off === RING) off = 0; }
+  fftRun(fftRe, fftIm);
+  for (let k = 0; k < N >> 1; k++){ const m = Math.hypot(fftRe[k], fftIm[k]) * nrm; MAG[k] = m; DB[k] = dbOf(m); }
+}
+
+/* =======================================================================
+   4. MEASURED FILTER RESPONSE — a unit phasor pushed through the same
+   recurrence as the audio, so |H(f)| and the audio cannot disagree.
+   ======================================================================= */
+const NF = 200;
+const RESP = new Float32Array(NF);
+const RESPdB = new Float32Array(NF);
+let respDirty = true, respPeakDb = 0;
+function measureResponse(){
+  const s1 = { i1:0, i2:0 }, s2 = { i1:0, i2:0 };
+  for (let i = 0; i < NF; i++){
+    const f = F_LO * Math.pow(F_HI / F_LO, i / (NF - 1));
+    const w = TAU * f / SR, c = Math.cos(w), sn = Math.sin(w);
+    /* settle: envelope decays as exp(-2π f t / Q); cap the work per point */
+    const n = Math.min(24000, Math.max(500, Math.ceil(10 * P.q * SR / f)));
+    let yc = 0, ys = 0;
+    for (let j = 0; j < n; j++){ yc = svfStep(s1, c); ys = svfStep(s2, sn); }
+    const m = Math.hypot(yc, ys);
+    RESP[i] = m; RESPdB[i] = dbOf(m);
+    if (RESPdB[i] > respPeakDb) respPeakDb = RESPdB[i];
+  }
+  respDirty = false;
+}
+const respAt = db => {
+  if (db <= dbOf(F_LO)) return RESP[0];
+  if (db >= dbOf(F_HI)) return RESP[NF - 1];
+  const t = (db - dbOf(F_LO)) / (dbOf(F_HI) - dbOf(F_LO)) * (NF - 1);
+  const i = clamp(Math.floor(t), 0, NF - 2);
+  return lerp(RESPdB[i], RESPdB[i + 1], t - i);
+};
+
+/* =======================================================================
+   5. CANVAS + DOM LABEL LAYER
+   ======================================================================= */
+const stage = document.getElementById('stage');
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const lyr = document.getElementById('lyr');
+let S = 0.5, LW = 1280, LH = 508, L = null;
+
+function lb(cls, txt){
+  const d = document.createElement('div');
+  d.className = 'lb ' + cls; d.textContent = txt;
+  lyr.appendChild(d); return d;
+}
+/* ax: 0 = left edge sits on x, 1 = right edge sits on x, .5 = centred on x.
+   ay: 0 = top on y, 1 = bottom on y, .5 = middle on y. */
+function place(el, x, y, ax, ay){
+  const tx = ax === 1 ? '-100%' : ax === .5 ? '-50%' : '0%';
+  const ty = ay === 1 ? '-100%' : ay === .5 ? '-50%' : '0%';
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.transform = 'translate(' + tx + ',' + ty + ')';
+}
+const L_ = {
+  hd:  lb('hd',  'SIGNAL PATH · SUBTRACTIVE CHAIN'),
+  gate:lb('lg',  'GATE'),
+  bt:  [], bv: [], bn: [],
+  pt0: lb('pt', 'WAVEFORM'),
+  ps0: lb('ps', ''),
+  pt1: lb('pt', 'SPECTRUM'),
+  ps1: lb('ps', ''),
+  outT:lb('bt', 'OUT'),
+  outV:lb('bv', ''),
+  lgs: [],
+  tk:  { sx:[], sy:[], fx:[], fy:[] }
+};
+/* legend: the swatch is drawn on the canvas, the word is a real DOM span
+   (crisp at any scale).  Offsets are measured once per resize. */
+const LEGEND = [
+  { c:'rgba(178,140,255,0.85)', t:'raw osc' },
+  { c:'rgba(126,240,255,0.98)', t:'filtered output' },
+  { c:'rgba(255,186,104,0.95)', t:'measured |H(f)|' },
+  { c:'rgba(120,150,190,0.75)', t:'1/n harmonic ref' }
+];
+for (const g of LEGEND) L_.lgs.push(lb('tk', g.t));
+for (let i = 0; i < 4; i++){
+  L_.bn.push(lb('bn', '0' + (i + 1)));
+  L_.bt.push(lb('bt', ''));
+  L_.bv.push(lb('bv', ''));
+}
+for (let i = 0; i < 5; i++) L_.tk.sx.push(lb('tk', ''));
+for (let i = 0; i < 3; i++) L_.tk.sy.push(lb('tk', ''));
+for (let i = 0; i < 5; i++) L_.tk.fx.push(lb('tk', ''));
+for (let i = 0; i < 4; i++) L_.tk.fy.push(lb('tk', ''));
+
+function layout(W, H){
+  const m = 16;
+  const o = { W, H, m, leg:[] };
+  const outW = Math.min(150, (W - 2 * m) * 0.158);
+  const gap = Math.max(38, Math.min(54, Math.round(W * 0.036)));  // room for real patch cables
+  o.bw = Math.floor((W - 2 * m - outW - 30 - 3 * gap) / 4);
+  o.by = 46;
+  o.bh = Math.max(104, Math.min(176, Math.round(H * 0.295)));
+  o.bx = []; for (let i = 0; i < 4; i++) o.bx.push(m + i * (o.bw + gap));
+  o.outX = m + 4 * (o.bw + gap) + 4;
+  o.outW = outW - 4;
+  /* the note-cycle bar and the legend get their own rows, so neither can ever
+     collide with the panel axes or the block captions */
+  o.noteY = o.by + o.bh + 15;
+  o.legY = o.noteY + 20;
+  o.dH   = o.legY + 18;
+  const py = o.dH + 8, gapX = 16;
+  const pw = (W - 2 * m - gapX) / 2;
+  const ph = Math.max(90, H - py - 27);
+  o.scope = { x:m, y:py, w:pw, h:ph };
+  o.spec  = { x:m + pw + gapX, y:py, w:pw, h:ph };
+  return o;
+}
+function plotArea(p, headH, botH){
+  return { x:p.x + 34, y:p.y + headH, w:p.w - 34 - 10, h:p.h - headH - botH };
+}
+function blockPlot(b){
+  return { x:b.x + 13, y:b.y + 27, w:L.bw - 26, h:L.bh - 27 - 23 };
+}
+
+/* ---------- drawing helpers ---------- */
+function rr(c, x, y, w, h, r){
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+function strokeGlow(c, build, col, w){
+  c.lineJoin = 'round'; c.lineCap = 'round'; c.strokeStyle = col;
+  c.globalAlpha = 0.10; c.lineWidth = w * 3.4; build(); c.stroke();
+  c.globalAlpha = 0.28; c.lineWidth = w * 1.8; build(); c.stroke();
+  c.globalAlpha = 1.0;  c.lineWidth = w;       build(); c.stroke();
+  c.globalAlpha = 1;
+}
+
+/* ---------- background (cached) ---------- */
+let bg = document.createElement('canvas');
+function buildBG(w, h){
+  bg.width = w; bg.height = h;
+  const b = bg.getContext('2d');
+  const g = b.createLinearGradient(0, 0, w * 0.35, h);
+  g.addColorStop(0, '#0b1424'); g.addColorStop(0.45, '#070c17'); g.addColorStop(1, '#04070d');
+  b.fillStyle = g; b.fillRect(0, 0, w, h);
+  const rg = b.createRadialGradient(w * 0.30, h * 0.18, 0, w * 0.30, h * 0.18, w * 0.62);
+  rg.addColorStop(0, 'rgba(48,132,190,0.20)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  b.fillStyle = rg; b.fillRect(0, 0, w, h);
+  const rg2 = b.createRadialGradient(w * 0.86, h * 0.86, 0, w * 0.86, h * 0.86, w * 0.5);
+  rg2.addColorStop(0, 'rgba(150,90,200,0.13)'); rg2.addColorStop(1, 'rgba(0,0,0,0)');
+  b.fillStyle = rg2; b.fillRect(0, 0, w, h);
+  /* fine measuring grid so no single flat colour dominates the frame */
+  b.strokeStyle = 'rgba(96,190,240,0.045)'; b.lineWidth = 1;
+  b.beginPath();
+  for (let x = 0; x <= w; x += 32){ b.moveTo(x + .5, 0); b.lineTo(x + .5, h); }
+  for (let y = 0; y <= h; y += 32){ b.moveTo(0, y + .5); b.lineTo(w, y + .5); }
+  b.stroke();
+}
+
+let lastLW = 0, lastLH = 0;
+function resize(){
+  const r = stage.getBoundingClientRect();
+  LW = Math.max(320, Math.round(r.width));
+  LH = Math.max(240, Math.round(r.height));
+  S  = clamp(640 / LW, 0.4, 1);            // internal buffer ≈ 640 px wide
+  cv.style.width = LW + 'px'; cv.style.height = LH + 'px';
+  cv.width  = Math.round(LW * S);
+  cv.height = Math.round(LH * S);
+  lyr.style.width = LW + 'px'; lyr.style.height = LH + 'px';
+  L = layout(LW, LH);
+  if (lastLW !== LW || lastLH !== LH){ buildBG(Math.round(LW * S), Math.round(LH * S)); lastLW = LW; lastLH = LH; }
+  applyLabels();
+  respDirty = true;
+}
+window.addEventListener('resize', resize);
+
+/* ---------- DOM labels follow the same geometry as the canvas ---------- */
+function applyLabels(){
+  if (!L) return;
+  place(L_.hd, L.m, 14, 0, 0);
+  place(L_.gate, L.W - L.m, 14, 1, 0);
+  for (let i = 0; i < 4; i++){
+    const b = { x:L.bx[i], y:L.by, w:L.bw, h:L.bh };
+    place(L_.bt[i], b.x + 13, b.y + 18, 0, 0);
+    place(L_.bn[i], b.x + b.w - 13, b.y + 18, 1, 0);
+    place(L_.bv[i], b.x + 13, b.y + b.h - 7, 0, 1);
+  }
+  place(L_.outT, L.outX + 13, L.by + 18, 0, 0);
+  place(L_.outV, L.outX + 13, L.by + L.bh - 7, 0, 1);
+  const sa = plotArea(L.scope, 30, 22), fa = plotArea(L.spec, 30, 22);
+  place(L_.pt0, L.scope.x + 10, L.scope.y + 9, 0, 0);
+  place(L_.ps0, L.scope.x + L.scope.w - 10, L.scope.y + 10, 1, 0);
+  place(L_.pt1, L.spec.x + 10, L.spec.y + 9, 0, 0);
+  place(L_.ps1, L.spec.x + L.spec.w - 10, L.spec.y + 10, 1, 0);
+  /* legend row: own row, so it can never overprint the axis tick labels */
+  let lx = L.m + 2;
+  for (let i = 0; i < LEGEND.length; i++){
+    L.leg[i] = { x:lx, y:L.legY };
+    place(L_.lgs[i], lx + 16, L.legY, 0, 0);
+    lx += 16 + L_.lgs[i].offsetWidth + 16;
+  }
+  for (let i = 0; i < 5; i++) place(L_.tk.sx[i], sa.x + sa.w * i / 4, sa.y + sa.h + 17, .5, 0);
+  for (let i = 0; i < 3; i++) place(L_.tk.sy[i], sa.x - 6, sa.y + sa.h * (0.5 - i * 0.5), 1, .5);
+  for (let i = 0; i < 5; i++) place(L_.tk.fx[i], fa.x + fa.w * i / 4, fa.y + fa.h + 17, .5, 0);
+  for (let i = 0; i < 4; i++) place(L_.tk.fy[i], fa.x - 6, fa.y + fa.h * i / 3, 1, .5);
+}
+
+/* =======================================================================
+   6. FRAME
+   ======================================================================= */
+const wirePh = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+const nodeLvl = [0, 0, 0, 0];
+
+function triggerIndex(buf, len){
+  const base = sampleClock - len; if (base < 0) return null;
+  let idx = Math.floor(len * 0.55);
+  for (let i = Math.floor(len * 0.12); i < Math.floor(len * 0.75); i++){
+    const a = buf[(base + i) % RING], b = buf[(base + i - 1 + RING) % RING];
+    if (a <= 0 && b > 0 && a > -0.25) { idx = i; break; }
+  }
+  return base + idx;
+}
+
+function draw(){
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  ctx.clearRect(0, 0, LW, LH);
+  ctx.drawImage(bg, 0, 0, LW, LH);
+  drawDiagram();
+  drawScope();
+  drawSpectrum();
+  drawLegend();
+}
+function drawLegend(){
+  for (let i = 0; i < LEGEND.length; i++){
+    const p = L.leg[i]; if (!p) continue;
+    const g = LEGEND[i];
+    if (i < 3){
+      ctx.strokeStyle = g.c; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y + 5); ctx.lineTo(p.x + 10, p.y + 5); ctx.stroke();
+    } else {
+      ctx.strokeStyle = g.c; ctx.lineWidth = 1.2; ctx.setLineDash([2, 2]);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y + 5); ctx.lineTo(p.x + 10, p.y + 5); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+function drawDiagram(){
+  const cy = L.by + L.bh / 2;
+  /* a floor on the per-node drive keeps the patch cables visibly *connected*
+     even during the release phase, when the envelope is nearly silent */
+  const lv = [ nodeLvl[0], Math.max(nodeLvl[0] * envNow, 0.16),
+               Math.max(nodeLvl[0] * envNow * clamp(filtRatio, 0, 1.4), 0.16),
+               clamp(rms * 3.2, 0.16, 1.2) ];
+
+  /* ---- patch cables ---- */
+  for (let w = 0; w < 4; w++){
+    const x0 = w < 3 ? L.bx[w] + L.bw + 1 : L.outX - 1;
+    const x1 = w < 3 ? L.bx[w + 1] - 6 : L.outX + L.outW;
+    const lvl = clamp(lv[w], 0, 1.3);
+    const hot = clamp(lvl, 0, 1);
+    const sp = 0.30 + 1.7 * hot;
+    /* the animation freezes during the capture hold (see tick) */
+    if (!frozen) for (let k = 0; k < 4; k++) wirePh[w][k] = (wirePh[w][k] + DT * sp * (1 + k * 0.06)) % 1;
+    /* sag: a real patch cable droops, and the droop is where the eye looks */
+    const sag = 9 + 9 * (1 - hot);
+    const cable = () => {
+      ctx.beginPath();
+      ctx.moveTo(x0, cy);
+      ctx.quadraticCurveTo((x0 + x1) / 2, cy + sag, x1, cy);
+    };
+    strokeGlow(ctx, cable, 'rgba(96,190,240,' + (0.55 + 0.40 * hot).toFixed(3) + ')', 1.5);
+    for (let k = 0; k < 4; k++){
+      const t = wirePh[w][k];
+      const x = lerp(lerp(x0, (x0 + x1) / 2, t), lerp((x0 + x1) / 2, x1, t), t);
+      const y = lerp(lerp(cy, cy + sag, t), lerp(cy + sag, cy, t), t);
+      const a = (0.22 + 0.78 * hot) * (0.4 + 0.6 * Math.sin(t * Math.PI));
+      ctx.fillStyle = 'rgba(150,240,255,' + a.toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(x, y, 2.1, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(90,200,255,' + (a * 0.20).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(x, y, 5.4, 0, TAU); ctx.fill();
+    }
+    /* jack at each end of the cable */
+    for (const jx of [x0, x1]){
+      ctx.fillStyle = 'rgba(12,22,36,0.95)';
+      ctx.beginPath(); ctx.arc(jx, cy, 4.6, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(150,230,255,' + (0.55 + 0.4 * hot).toFixed(3) + ')';
+      ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = 'rgba(160,240,255,' + (0.60 + 0.4 * hot).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(jx, cy, 1.7, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(150,235,255,' + (0.40 + 0.5 * hot).toFixed(3) + ')';
+    ctx.beginPath(); ctx.moveTo(x1 - 8, cy - 4.4); ctx.lineTo(x1, cy); ctx.lineTo(x1 - 8, cy + 4.4); ctx.closePath(); ctx.fill();
+  }
+
+  /* ---- blocks ---- */
+  for (let i = 0; i < 4; i++){
+    const b = { x:L.bx[i], y:L.by, w:L.bw, h:L.bh };
+    const act = i === 0 ? clamp(nodeLvl[0] * 2.4, .12, 1) : i === 1 ? clamp(envNow, .10, 1)
+              : i === 2 ? clamp(filtRatio, .08, 1) : clamp(lv[3], .10, 1);
+    const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    g.addColorStop(0, 'rgba(15,25,42,0.92)'); g.addColorStop(1, 'rgba(8,13,24,0.92)');
+    rr(ctx, b.x, b.y, b.w, b.h, 5);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(96,200,245,' + (0.16 + 0.30 * act).toFixed(3) + ')';
+    ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = 'rgba(92,230,255,' + (0.55 * act + 0.12).toFixed(3) + ')';
+    ctx.fillRect(b.x + 1, b.y + 5, 2.5, b.h - 10);
+    const p = blockPlot(b);
+    if (i === 0) miniOsc(p);
+    if (i === 1) miniEnv(p);
+    if (i === 2) miniFlt(p);
+    if (i === 3) miniOut(p);
+  }
+
+  /* ---- output node ---- */
+  const ox = L.outX, ow = L.outW, oy = L.by, oh = L.bh, ocy = oy + oh / 2;
+  rr(ctx, ox, oy, ow, oh, 5);
+  const g2 = ctx.createLinearGradient(ox, oy, ox, oy + oh);
+  g2.addColorStop(0, 'rgba(26,18,10,0.92)'); g2.addColorStop(1, 'rgba(12,9,6,0.92)');
+  ctx.fillStyle = g2; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,180,92,0.30)'; ctx.stroke();
+  for (let k = 0; k < 3; k++){
+    const t = (wirePh[3][k] + 0.5) % 1;
+    ctx.strokeStyle = 'rgba(255,190,110,' + (0.42 * (1 - t)).toFixed(3) + ')';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(ox + 26, ocy, 6 + t * 20, -0.7, 0.7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(ox + 26, ocy, 6 + t * 20, Math.PI - 0.7, Math.PI + 0.7); ctx.stroke();
+  }
+  ctx.fillStyle = '#1a1209'; ctx.beginPath(); ctx.arc(ox + 26, ocy, 5.2, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,190,110,0.75)'; ctx.lineWidth = 1; ctx.stroke();
+  const mw = ow - 46, mh = oh - 62, mx = ox + 40, my = oy + 34;
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(ctx, mx, my, mw, mh, 2); ctx.fill();
+  const f = clamp(lv[3], 0, 1);
+  const lg2 = ctx.createLinearGradient(0, my + mh, 0, my);
+  lg2.addColorStop(0, 'rgba(255,139,61,0.9)'); lg2.addColorStop(1, 'rgba(255,214,150,1)');
+  ctx.fillStyle = lg2; rr(ctx, mx, my + mh * (1 - f), mw, mh * f, 2); ctx.fill();
+  for (let i = 1; i < 5; i++){
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(mx, my + mh * i / 5, mw, 1);
+  }
+  ctx.strokeStyle = 'rgba(255,200,140,0.22)'; ctx.lineWidth = 1; rr(ctx, mx, my, mw, mh, 2); ctx.stroke();
+
+  /* ---- note-cycle bar ---- */
+  const per = notePeriod(), ph = ((sampleClock / SR) % per) / per;
+  const nb = { x:L.m, y:L.noteY, w:L.W - 2 * L.m, h:6 };
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; rr(ctx, nb.x, nb.y, nb.w, nb.h, 3); ctx.fill();
+  const hold = nb.w * HOLD;
+  ctx.fillStyle = 'rgba(92,230,255,0.16)'; rr(ctx, nb.x, nb.y, hold, nb.h, 3); ctx.fill();
+  const phx = nb.x + nb.w * ph;
+  const pg = ctx.createLinearGradient(nb.x, 0, phx, 0);
+  pg.addColorStop(0, 'rgba(92,230,255,0.85)'); pg.addColorStop(1, 'rgba(180,140,255,0.95)');
+  ctx.fillStyle = pg; rr(ctx, nb.x, nb.y, Math.max(2, phx - nb.x), nb.h, 3); ctx.fill();
+  ctx.fillStyle = '#dff4ff'; ctx.fillRect(phx - 1, nb.y - 3, 2, nb.h + 6);
+  /* segment ticks so the bar reads as a timeline */
+  ctx.fillStyle = 'rgba(150,210,240,0.30)';
+  for (let i = 1; i < 8; i++) ctx.fillRect(nb.x + nb.w * i / 8, nb.y + 1, 1, nb.h - 2);
+}
+
+function miniOsc(p){
+  const len = Math.min(1400, Math.max(200, Math.round(2.6 * SR / P.freq)));
+  const t0 = triggerIndex(ringRaw, len);
+  if (t0 === null) return;
+  const g = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
+  g.addColorStop(0, 'rgba(180,140,255,0.10)'); g.addColorStop(1, 'rgba(180,140,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(p.x, p.y + p.h);
+  for (let i = 0; i < len; i++){
+    const v = ringRaw[(t0 + i) % RING];
+    ctx.lineTo(p.x + p.w * i / (len - 1), p.y + p.h / 2 - v * p.h * 0.44);
+  }
+  ctx.lineTo(p.x + p.w, p.y + p.h); ctx.closePath(); ctx.fill();
+  strokeGlow(ctx, () => {
+    ctx.beginPath();
+    for (let i = 0; i < len; i++){
+      const v = ringRaw[(t0 + i) % RING];
+      const x = p.x + p.w * i / (len - 1), y = p.y + p.h / 2 - v * p.h * 0.44;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+  }, 'rgba(190,150,255,0.95)', 1.2);
+}
+
+function miniEnv(p){
+  const per = notePeriod();
+  const vis = Math.max(per * HOLD, P.a + P.d) + Math.max(P.r, 0.02);
+  const pts = [];
+  const NSEG = 90;
+  for (let i = 0; i <= NSEG; i++){
+    const t = vis * i / NSEG;
+    let v;
+    if (t < P.a) v = t / Math.max(P.a, 4e-4);
+    else if (t < P.a + P.d) v = P.s + (1 - P.s) * Math.exp(-(t - P.a) / (Math.max(P.d, 8e-3) * 0.32));
+    else if (t < per * HOLD) v = P.s;
+    else v = P.s * Math.exp(-(t - per * HOLD) / (Math.max(P.r, 8e-3) * 0.32));
+    pts.push([p.x + p.w * t / vis, p.y + p.h - 2 - v * (p.h - 6)]);
+  }
+  const tAbs = sampleClock / SR;
+  const envT = tAbs - lastNoteT;
+  const px = clamp(envT / vis, 0, 1) * p.w;
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y + p.h);
+  for (const q of pts) ctx.lineTo(q[0], q[1]);
+  ctx.lineTo(p.x + p.w, p.y + p.h); ctx.closePath();
+  ctx.clip();
+  const g = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
+  g.addColorStop(0, 'rgba(255,196,120,0.38)'); g.addColorStop(1, 'rgba(255,140,60,0.05)');
+  ctx.fillStyle = g; ctx.fillRect(p.x + px, p.y, p.w - px, p.h);
+  ctx.restore();
+  strokeGlow(ctx, () => {
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]));
+  }, 'rgba(255,190,110,0.95)', 1.3);
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(p.x + px, p.y); ctx.lineTo(p.x + px, p.y + p.h); ctx.stroke();
+  ctx.fillStyle = '#fff2df';
+  ctx.beginPath(); ctx.arc(p.x + px, p.y + p.h - 2 - envNow * (p.h - 6), 2.6, 0, TAU); ctx.fill();
+  const gx = p.x + p.w * (per * HOLD) / vis;
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.setLineDash([2, 3]);
+  ctx.beginPath(); ctx.moveTo(gx, p.y); ctx.lineTo(gx, p.y + p.h); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function miniFlt(p){
+  const y0 = p.y + p.h, h = p.h;
+  const yOf = db => y0 - (clamp(db, -48, 18) + 48) / 66 * h;
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(p.x, y0);
+  for (let i = 0; i < NF; i++){
+    const x = p.x + p.w * i / (NF - 1);
+    ctx.lineTo(x, yOf(RESPdB[i]));
+  }
+  ctx.lineTo(p.x + p.w, y0); ctx.closePath();
+  const g = ctx.createLinearGradient(0, p.y, 0, y0);
+  g.addColorStop(0, 'rgba(255,190,110,0.40)'); g.addColorStop(1, 'rgba(255,139,61,0.04)');
+  ctx.fillStyle = g; ctx.fill();
+  ctx.restore();
+  strokeGlow(ctx, () => {
+    ctx.beginPath();
+    for (let i = 0; i < NF; i++){
+      const x = p.x + p.w * i / (NF - 1), y = yOf(RESPdB[i]);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+  }, 'rgba(255,186,104,0.95)', 1.3);
+  /* cutoff marker */
+  const cx = p.x + p.w * (Math.log(P.cut / F_LO) / Math.log(F_HI / F_LO));
+  if (cx > p.x - 2 && cx < p.x + p.w + 2){
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, p.y); ctx.lineTo(cx, p.y + p.h); ctx.stroke(); ctx.setLineDash([]);
+  }
+  /* −3 dB point + resonance peak */
+  let lp = -1, pk = 0;
+  for (let i = 0; i < NF; i++){ if (RESPdB[i] <= -3 && lp < 0) lp = i; if (RESPdB[i] > RESPdB[pk]) pk = i; }
+  if (lp >= 0){
+    const x = p.x + p.w * lp / (NF - 1);
+    ctx.strokeStyle = 'rgba(92,230,255,0.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, p.y + p.h - 9); ctx.lineTo(x + 5, p.y + p.h - 15); ctx.stroke();
+  }
+  if (P.q > 1.2){
+    const x = p.x + p.w * pk / (NF - 1), y = yOf(RESPdB[pk]);
+    ctx.strokeStyle = 'rgba(180,140,255,0.9)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, 3.4, 0, TAU); ctx.stroke();
+  }
+}
+
+function miniOut(p){
+  const len = Math.min(1200, Math.max(200, Math.round(2.2 * SR / P.freq)));
+  const t0 = triggerIndex(ring, len);
+  if (t0 !== null){
+    strokeGlow(ctx, () => {
+      ctx.beginPath();
+      for (let i = 0; i < len; i++){
+        const v = ring[(t0 + i) % RING];
+        const x = p.x + p.w * i / (len - 1), y = p.y + p.h * 0.62 - v * p.h * 0.55;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+    }, 'rgba(120,240,255,0.98)', 1.3);
+  }
+  const my = p.y + p.h * 0.80, mh = p.h * 0.16, f = clamp(lv0Out(), 0, 1);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; rr(ctx, p.x, my, p.w, mh, 1.5); ctx.fill();
+  const g = ctx.createLinearGradient(p.x, 0, p.x + p.w, 0);
+  g.addColorStop(0, 'rgba(92,230,255,0.85)'); g.addColorStop(1, 'rgba(180,140,255,0.95)');
+  ctx.fillStyle = g; rr(ctx, p.x, my, p.w * f, mh, 1.5); ctx.fill();
+}
+function lv0Out(){ return clamp(rms * 3.4, 0, 1); }
+
+function drawScope(){
+  const a = plotArea(L.scope, 30, 22);
+  const p = L.scope;
+  rr(ctx, p.x, p.y, p.w, p.h, 4);
+  ctx.fillStyle = 'rgba(7,12,22,0.72)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(96,200,245,0.16)'; ctx.lineWidth = 1; ctx.stroke();
+
+  const win2 = Math.min(1024, RING >> 2);
+  const cy2 = a.y + a.h / 2;
+  ctx.strokeStyle = 'rgba(96,190,240,0.10)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 1; i < 8; i++){ const x = a.x + a.w * i / 8; ctx.moveTo(x, a.y); ctx.lineTo(x, a.y + a.h); }
+  for (let i = 1; i < 4; i++){ const y = a.y + a.h * i / 4; ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); }
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,215,255,0.30)';
+  ctx.beginPath(); ctx.moveTo(a.x, cy2 + .5); ctx.lineTo(a.x + a.w, cy2 + .5); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,215,255,0.16)';
+  for (const v of [0.5, -0.5]){
+    const y = cy2 - v * a.h * 0.46;
+    ctx.beginPath(); ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); ctx.stroke();
+  }
+  /* envelope ceiling guide */
+  const ey = cy2 - envNow * a.h * 0.46;
+  ctx.strokeStyle = 'rgba(255,190,110,0.34)'; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(a.x, ey); ctx.lineTo(a.x + a.w, ey);
+  ctx.moveTo(a.x, 2 * cy2 - ey); ctx.lineTo(a.x + a.w, 2 * cy2 - ey); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const t0 = triggerIndex(ring, win2);
+  if (t0 === null) return;
+  const tR = triggerIndex(ringRaw, win2);
+  const build = (buf, t, col, w, scale) => strokeGlow(ctx, () => {
+    ctx.beginPath();
+    for (let i = 0; i < win2; i++){
+      const v = buf[(t + i) % RING];
+      const x = a.x + a.w * i / (win2 - 1), y = cy2 - v * a.h * 0.46 * scale;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+  }, col, w);
+  if (tR !== null) build(ringRaw, tR, 'rgba(178,140,255,0.55)', 1.1, 0.62);
+  build(ring, t0, 'rgba(126,240,255,0.98)', 1.5, 1);
+
+  /* trigger marker */
+  ctx.fillStyle = 'rgba(126,240,255,0.85)';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + 5, a.y); ctx.lineTo(a.x, a.y + 7); ctx.closePath(); ctx.fill();
+}
+
+function drawSpectrum(){
+  const a = plotArea(L.spec, 30, 22);
+  const p = L.spec;
+  rr(ctx, p.x, p.y, p.w, p.h, 4);
+  ctx.fillStyle = 'rgba(7,12,22,0.72)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(96,200,245,0.16)'; ctx.lineWidth = 1; ctx.stroke();
+
+  const lf0 = Math.log(F_LO), lf1 = Math.log(F_HI);
+  const xOf = f => a.x + (Math.log(f) - lf0) / (lf1 - lf0) * a.w;
+  const yOf = db => a.y + a.h * (1 - (clamp(db, DB_MIN, DB_MAX) - DB_MIN) / (DB_MAX - DB_MIN));
+
+  ctx.strokeStyle = 'rgba(96,190,240,0.10)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]){ const x = xOf(f); ctx.moveTo(x, a.y); ctx.lineTo(x, a.y + a.h); }
+  for (let i = 1; i < 8; i++){ const y = a.y + a.h * i / 8; ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); }
+  ctx.stroke();
+  for (const db of [0, -24, -48, -72]){
+    ctx.strokeStyle = 'rgba(96,190,240,0.16)';
+    const y = yOf(db); ctx.beginPath(); ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); ctx.stroke();
+  }
+
+  /* harmonic reference stems (saw = 1/n, square = odd 1/n) */
+  if (P.osc === 'saw' || P.osc === 'square'){
+    ctx.strokeStyle = 'rgba(180,140,255,0.34)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let hn = 1; hn < 220; hn++){
+      if (P.osc === 'square' && (hn & 1) === 0) continue;
+      const f = P.freq * hn; if (f > F_HI) break;
+      const amp = 1 / hn;
+      const x = xOf(f), y1 = a.y + a.h - 1, y0 = a.y + a.h - amp * a.h * (DB_MAX / (DB_MAX - DB_MIN)) * 0.9;
+      ctx.moveTo(x, y1); ctx.lineTo(x, y0);
+    }
+    ctx.stroke();
+  }
+  if (P.osc === 'sine'){
+    const x = xOf(P.freq), y1 = a.y + a.h;
+    ctx.strokeStyle = 'rgba(180,140,255,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, a.y + a.h * 0.06); ctx.stroke();
+  }
+
+  /* measured |H(f)| through the same recurrence */
+  ctx.save();
+  ctx.setLineDash([4, 3]);
+  strokeGlow(ctx, () => {
+    ctx.beginPath();
+    for (let i = 0; i < NF; i++){
+      const x = a.x + a.w * i / (NF - 1), y = yOf(RESPdB[i]);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+  }, 'rgba(255,186,104,0.85)', 1.1);
+  ctx.restore();
+
+  /* measured FFT magnitude */
+  const pts = [];
+  for (let i = 0; i < NX; i++){
+    const f = F_LO * Math.pow(F_HI / F_LO, i / (NX - 1));
+    const k = clamp(Math.round(f * N / SR), 1, (N >> 1) - 1);
+    /* smooth the very low bins so the DC-ish floor does not spike */
+    const m = (MAG[k - 1] + 2 * MAG[k] + MAG[k + 1]) / 4;
+    pts.push([xOf(f), yOf(dbOf(m))]);
+  }
+  const g = ctx.createLinearGradient(0, a.y, 0, a.y + a.h);
+  g.addColorStop(0, 'rgba(92,230,255,0.42)');
+  g.addColorStop(0.55, 'rgba(60,170,235,0.16)');
+  g.addColorStop(1, 'rgba(60,170,235,0.02)');
+  ctx.beginPath(); ctx.moveTo(pts[0][0], a.y + a.h);
+  for (const q of pts) ctx.lineTo(q[0], q[1]);
+  ctx.lineTo(pts[pts.length - 1][0], a.y + a.h); ctx.closePath();
+  ctx.fillStyle = g; ctx.fill();
+  strokeGlow(ctx, () => {
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]));
+  }, 'rgba(140,244,255,0.98)', 1.4);
+
+  /* cutoff marker + fundamental marker */
+  const cx = xOf(clamp(P.cut, F_LO, F_HI));
+  ctx.strokeStyle = 'rgba(255,190,110,0.55)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, a.y); ctx.lineTo(cx, a.y + a.h); ctx.stroke(); ctx.setLineDash([]);
+  if (P.osc !== 'noise'){
+    const fx = xOf(clamp(P.freq, F_LO, F_HI));
+    ctx.fillStyle = 'rgba(92,230,255,0.7)';
+    ctx.fillRect(fx - 0.5, a.y, 1, a.h);
+  }
+}
+
+/* =======================================================================
+   7. UI WIRING
+   ======================================================================= */
+const SL = ['freq', 'rate', 'amp', 'a', 'd', 's', 'r', 'cut', 'q'];
+function syncUI(){
+  for (const k of SL){
+    const el = document.getElementById('s_' + k), o = document.getElementById('o_' + k);
+    const t = clamp(toNorm(k), 0, 1);
+    el.value = Math.round(t * 1000);
+    el.style.setProperty('--f', (t * 100).toFixed(1) + '%');
+    o.textContent = SPEC[k].fmt(P[k]);
+  }
+  document.querySelectorAll('#oscBtns button').forEach(b =>
+    b.classList.toggle('sel', b.dataset.osc === P.osc));
+}
+for (const k of SL){
+  document.getElementById('s_' + k).addEventListener('input', e => {
+    P[k] = fromNorm(k, (+e.target.value) / 1000);
+    if (k === 'cut' || k === 'q'){ retune(); respDirty = true; }
+    syncUI();
+  });
+}
+document.querySelectorAll('#oscBtns button').forEach(b =>
+  b.addEventListener('click', () => { P.osc = b.dataset.osc; syncUI(); }));
+document.querySelectorAll('#pre1 button').forEach(b =>
+  b.addEventListener('click', () => { Object.assign(P, PRESETS[b.dataset.pre]); retune(); respDirty = true; syncUI(); }));
+
+const el = id => document.getElementById(id);
+const nRatio = el('nRatio'), nPk = el('nPk'), nEnv = el('nEnv'), nAud = el('nAud'),
+      sFps = el('sFps'), sPk = el('sPk'), sRms = el('sRms'), sNote = el('sNote'),
+      ledRun = el('ledRun'), ledAud = el('ledAud'), bAud = el('bAud');
+
+/* =======================================================================
+   8. WEBAUDIO MIRROR  — same parameter object, same note grid.
+   ======================================================================= */
+let AC = null, live = false, schedTimer = 0, nextT = 0;
+function buildAudio(){
+  if (AC) return true;
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) throw new Error('WebAudio unavailable');
+  AC = new Ctor();
+  const master = AC.createGain(); master.gain.value = P.amp; master.connect(AC.destination);
+  const flt = AC.createBiquadFilter();
+  flt.type = 'lowpass'; flt.frequency.value = P.cut; flt.Q.value = P.q; flt.connect(master);
+  const envG = AC.createGain(); envG.gain.value = 0; envG.connect(flt);
+  AC._m = { master, flt, envG };
+  AC._src = null;
+  startSource();
+  return true;
+}
+function startSource(){
+  const isNoise = P.osc === 'noise';
+  if (AC._src){ try { AC._src.stop(); } catch (e) {} try { AC._src.disconnect(); } catch (e) {} AC._src = null; }
+  if (isNoise){
+    const buf = AC.createBuffer(1, SR * 2, SR);
+    const d = buf.getChannelData(0), rnd = mulberry32(0xA17E38);
+    for (let i = 0; i < d.length; i++) d[i] = rnd() * 2 - 1;
+    const s = AC.createBufferSource(); s.buffer = buf; s.loop = true;
+    s.connect(AC._m.envG); s.start(); AC._src = s;
+  } else {
+    const s = AC.createOscillator();
+    s.type = { sine:'sine', saw:'sawtooth', square:'square' }[P.osc];
+    s.frequency.value = P.freq;
+    s.connect(AC._m.envG); s.start(); AC._src = s;
+  }
+}
+function scheduleAhead(){
+  const m = AC._m, per = notePeriod();
+  const hz = AC.currentTime + 0.3;
+  while (nextT < hz){
+    const t0 = nextT, a = Math.max(P.a, 0.0015), d = Math.max(P.d, 0.01), r = Math.max(P.r, 0.01);
+    m.envG.gain.cancelScheduledValues(t0);
+    m.envG.gain.setValueAtTime(0, t0);
+    m.envG.gain.linearRampToValueAtTime(1, t0 + a);
+    m.envG.gain.setTargetAtTime(Math.max(P.s, 1e-4), t0 + a, d * 0.32);
+    m.envG.gain.setValueAtTime(Math.max(P.s, 1e-4), t0 + a + d);
+    m.envG.gain.setTargetAtTime(1e-4, t0 + per * HOLD, r * 0.32);
+    m.flt.frequency.cancelScheduledValues(t0);
+    m.flt.frequency.setValueAtTime(clamp(P.cut * 0.55, 40, 18000), t0);
+    m.flt.frequency.exponentialRampToValueAtTime(clamp(P.cut, 40, 18000), t0 + a + d * 0.5);
+    m.flt.Q.setValueAtTime(P.q, t0);
+    m.master.gain.setValueAtTime(P.amp, t0);
+    if (AC._src && AC._src.frequency) AC._src.frequency.setValueAtTime(P.freq, t0);
+    nextT += per;
+  }
+}
+async function toggleAudio(){
+  try {
+    if (!AC) buildAudio();
+    if (AC.state === 'suspended') await AC.resume();
+    if (live){
+      clearInterval(schedTimer); schedTimer = 0;
+      const t = AC.currentTime;
+      AC._m.master.gain.cancelScheduledValues(t);
+      AC._m.master.gain.setValueAtTime(AC._m.master.gain.value, t);
+      AC._m.master.gain.linearRampToValueAtTime(0, t + 0.06);
+      setTimeout(() => { if (!live && AC) AC.suspend(); }, 180);
+      live = false;
+    } else {
+      /* align the audio grid to the model's next note onset */
+      const per = notePeriod(), ph = ((sampleClock / SR) % per) / per;
+      const toNext = (ph < HOLD ? HOLD - ph : 1 + HOLD - ph) * per;
+      nextT = AC.currentTime + Math.max(toNext, 0.06);
+      startSource();
+      const t = AC.currentTime;
+      AC._m.master.gain.cancelScheduledValues(t);
+      AC._m.master.gain.setValueAtTime(0, t);
+      AC._m.master.gain.linearRampToValueAtTime(P.amp, t + 0.05);
+      scheduleAhead();
+      schedTimer = setInterval(scheduleAhead, 45);
+      live = true;
+    }
+  } catch (err){
+    live = false;
+    nAud.textContent = 'audio unavailable';
+    el('audNote').textContent = 'WebAudio refused to start here (' + (err && err.message || err) + ') — the offline model keeps running.';
+  }
+  bAud.classList.toggle('on', live);
+  bAud.textContent = live ? '■ AUDIO' : '▶ AUDIO';
+  ledAud.classList.toggle('on', live);
+  nAud.textContent = live ? 'webaudio live' : 'offline model';
+}
+bAud.addEventListener('click', toggleAudio);
+el('bTrig').addEventListener('click', () => { lastNoteT = sampleClock / SR - 0.0001; envS.stage = 0; envS.v = 0; });
+['freq', 'amp', 'cut', 'q', 'a', 'd', 's', 'r', 'rate', 'osc'].forEach(k => {
+  if (k === 'osc') return;
+  document.getElementById('s_' + k).addEventListener('input', () => {
+    if (!AC) return;
+    if (k === 'amp') AC._m.master.gain.setTargetAtTime(P.amp, AC.currentTime, 0.02);
+    if (k === 'q')   AC._m.flt.Q.setTargetAtTime(P.q, AC.currentTime, 0.02);
+    if (k === 'cut') AC._m.flt.frequency.setTargetAtTime(clamp(P.cut, 40, 18000), AC.currentTime, 0.02);
+    if (k === 'freq' && AC._src && AC._src.frequency)
+      AC._src.frequency.setTargetAtTime(P.freq, AC.currentTime, 0.01);
+  });
+});
+document.querySelectorAll('#oscBtns button').forEach(b =>
+  b.addEventListener('click', () => { if (AC && live) startSource(); }));
+
+/* =======================================================================
+   9. LOOP — fixed delta, deterministic, readiness after warm-up
+   ======================================================================= */
+let framesDrawn = 0, fpsT = 0, fps = 0, ready = false, holdCount = 0;
+/* Capture hold: the first frames after the ready flag repaint the *identical*
+   warm-up state — DSP, wire animation and all — so a screenshot taken the
+   instant __ready flips is byte-identical on a fast host and a slow one. */
+const HOLD_FRAMES = 20;
+let frozen = true;
+window.__probe = { fps:0, frames:0, simT:0, note:0, gate:false, peak:0, rms:0, osc:'saw', audio:false };
+const OSCNAME = { sine:'sine', saw:'saw', square:'square', noise:'noise' };
+
+function tick(){
+  if (respDirty){ measureResponse(); frozen = true; holdCount = 0; }
+  if (holdCount >= HOLD_FRAMES){ frozen = false; stepDSP(); }
+  holdCount++;
+  runFFT();
+
+  nodeLvl[0] = clamp(rawRms * 2.4, 0.05, 1);
+  nodeLvl[1] = envNow;
+  nodeLvl[2] = clamp(lv0Out(), 0, 1.2);
+  nodeLvl[3] = nodeLvl[2];
+
+  /* block read-outs */
+  const per = notePeriod(), ph = ((sampleClock / SR) % per) / per;
+  L_.bt[0].textContent = 'OSC · ' + OSCNAME[P.osc].toUpperCase();
+  L_.bv[0].textContent = P.freq.toFixed(P.freq < 100 ? 1 : 0) + ' Hz  ·  rms ' + (20 * Math.log10(Math.max(rawRms, 1e-6))).toFixed(1) + ' dB';
+  L_.bt[1].textContent = 'ADSR';
+  L_.bv[1].textContent = (P.a * 1e3).toFixed(0) + '/' + (P.d * 1e3).toFixed(0) + '/' +
+                         (P.s * 100).toFixed(0) + '/' + (P.r * 1e3).toFixed(0) + ' ms  ·  env ' + envNow.toFixed(2);
+  L_.bt[2].textContent = 'LPF 12 dB/oct';
+  L_.bv[2].textContent = P.cut >= 1000 ? (P.cut / 1000).toFixed(2) + ' kHz' : P.cut.toFixed(0) + ' Hz  ·  Q ' + P.q.toFixed(2);
+  L_.bt[3].textContent = 'AMP';
+  L_.bv[3].textContent = (P.amp * 100).toFixed(0) + ' %  ·  ' + (rms > 1e-6 ? dbOf(rms).toFixed(1) : '-inf') + ' dBFS rms';
+  for (let i = 0; i < 4; i++) L_.bn[i].textContent = '0' + (i + 1);
+  L_.gate.textContent = (gateNow ? 'GATE ON' : 'GATE OFF') + '  ·  ' + P.rate.toFixed(2) + ' notes/s';
+  L_.outT.textContent = 'OUT';
+  L_.outV.textContent = (P.amp * 100).toFixed(0) + ' %  ·  ' + (rms > 1e-6 ? dbOf(rms).toFixed(1) : '−inf') + ' dBFS';
+  L_.pt0.textContent = 'WAVEFORM';
+  L_.ps0.textContent = win2ms().toFixed(1) + ' ms · zero-cross trigger · ±1.0 FS';
+  L_.pt1.textContent = 'SPECTRUM';
+  L_.ps1.textContent = '2048-pt Hann · ' + (SR / N).toFixed(1) + ' Hz/bin · dBFS';
+  for (let i = 0; i < 5; i++) L_.tk.sx[i].textContent = (win2ms() * i / 4).toFixed(1);
+  L_.tk.sy[0].textContent = '+1.0'; L_.tk.sy[1].textContent = '0'; L_.tk.sy[2].textContent = '−1.0';
+  const fx = [30, 100, 1000, 5000, 20000];
+  for (let i = 0; i < 5; i++) L_.tk.fx[i].textContent = fx[i] >= 1000 ? (fx[i] / 1000) + 'k' : fx[i];
+  for (let i = 0; i < 4; i++) L_.tk.fy[i].textContent = (0 - i * 24) + '';
+  nRatio.textContent = (P.cut / Math.max(P.freq, 1)).toFixed(1) + '×';
+  nPk.textContent    = (respPeakDb > 0 ? '+' : '') + respPeakDb.toFixed(1) + ' dB';
+  nEnv.textContent   = envNow.toFixed(3);
+  sPk.textContent    = (peak > 1e-6 ? dbOf(peak).toFixed(1) : '-inf');
+  sRms.textContent   = (rms > 1e-6 ? dbOf(rms).toFixed(1) : '-inf');
+  sNote.textContent  = ((sampleClock / SR) / per).toFixed(2);
+
+  draw();
+  framesDrawn++;
+  const t = performance.now();
+  if (t - fpsT > 500){ fps = framesDrawn * 1000 / (t - fpsT); framesDrawn = 0; fpsT = t; sFps.textContent = fps.toFixed(1); }
+  window.__probe = { fps:+fps.toFixed(2), frames:framesDrawn, simT:+(sampleClock / SR).toFixed(3),
+    note:+(((sampleClock / SR) / per)).toFixed(3), gate:gateNow, peak:+peak.toFixed(4),
+    rms:+rms.toFixed(4), osc:P.osc, freq:P.freq, cut:P.cut, q:P.q, audio:live, delta:DT };
+  if (!ready){ ready = true; window.__ready = true; }
+  requestAnimationFrame(tick);
+}
+const win2 = 1024;
+function win2ms(){ return win2 / SR * 1000; }
+
+/* warm-up: advance a fixed number of deltas to a canonical point, and pin the
+   seed the wire animation starts from, so the first painted frame is a finished
+   scene AND identical on every load.  0.55 of the hold is the sustain plateau
+   — loud, stable, and the most interesting thing to photograph. */
+const WIRE_SEED = [[0.18, 0.51, 0.83, 0.34], [0.62, 0.12, 0.47, 0.91],
+                   [0.29, 0.76, 0.05, 0.58], [0.44, 0.93, 0.37, 0.71]];
+(function warmup(){
+  retune();
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 4; k++) wirePh[i][k] = WIRE_SEED[i][k];
+  const per0 = notePeriod();
+  const target = per0 + per0 * HOLD * 0.55;
+  let guard = 0;
+  while ((sampleClock / SR) < target && guard++ < 2000) stepDSP();
+  syncUI();
+  resize();              // sets respDirty
+  measureResponse();     // re-measure against final geometry
+  respDirty = false;
+  runFFT();
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 4; k++) wirePh[i][k] = WIRE_SEED[i][k];
+  nodeLvl[0] = clamp(rawRms * 2.4, 0.05, 1);
+  nodeLvl[1] = envNow;
+  nodeLvl[2] = clamp(lv0Out(), 0, 1.2);
+  nodeLvl[3] = nodeLvl[2];
+  draw();
+})();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OKLCH Harmony Console</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { width:100%; height:100%; overflow:hidden; background:#04050a; }
+  body { font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", Menlo, Consolas, monospace; }
+  canvas { position:absolute; left:0; top:0; display:block; }
+  #gl { z-index:1; }
+  #ui { z-index:2; }
+  #boot {
+    position:absolute; inset:0; z-index:9; display:flex; align-items:center; justify-content:center;
+    color:#5b6880; font-size:12px; letter-spacing:.22em; background:#04050a;
+    transition:opacity .5s ease; pointer-events:none;
+  }
+  #boot.gone { opacity:0; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="ui"></canvas>
+<div id="boot">COMPILING PERCEPTUAL FIELD…</div>
+<script>
+"use strict";
+/* =====================================================================
+   32 · COLOUR THEORY — OKLCH HARMONY CONSOLE
+   All colour work happens in OKLab / OKLCH (Ottosson 2020), never HSV.
+   The wheel is a (lightness x hue) plane evaluated per pixel in GLSL;
+   sRGB gamut boundaries come from a chroma bisection in the shader.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------- 0. rng */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/* ------------------------------------------------- 1. colour space math */
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+const clamp = (v,a,b)=> v<a?a:(v>b?b:v);
+const mod360 = h => ((h%360)+360)%360;
+const lerp = (a,b,t)=> a+(b-a)*t;
+
+function s2l(c){ return c<=0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4); }
+function l2s(c){ c=clamp(c,0,1); return c<=0.0031308 ? c*12.92 : 1.055*Math.pow(c,1/2.4)-0.055; }
+
+function oklabToLinear(L,a,b){
+  const l_ = L + 0.3963377774*a + 0.2158037573*b;
+  const m_ = L - 0.1055613458*a - 0.0638541728*b;
+  const s_ = L - 0.0894841775*a - 1.2914855480*b;
+  const l = l_*l_*l_, m = m_*m_*m_, s = s_*s_*s_;
+  return [
+     4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+    -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+    -0.0041960863*l - 0.7034186147*m + 1.7076147010*s];
+}
+function linearToOklab(r,g,b){
+  const l = 0.4122214708*r + 0.5363325363*g + 0.0514459929*b;
+  const m = 0.2119034982*r + 0.6806995451*g + 0.1073969566*b;
+  const s = 0.0883024619*r + 0.2817188376*g + 0.6299787005*b;
+  const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+  return [0.2104542553*l_ + 0.7936177850*m_ - 0.0040720468*s_,
+          1.9779984951*l_ - 2.4285922050*m_ + 0.4505937099*s_,
+          0.0259040371*l_ + 0.7827717662*m_ - 0.8086757660*s_];
+}
+function oklchToLinear(L,C,H){
+  const h = H*D2R;
+  return oklabToLinear(L, C*Math.cos(h), C*Math.sin(h));
+}
+const inGamut = v => v[0]>=-1e-4 && v[0]<=1.0001 && v[1]>=-1e-4 && v[1]<=1.0001 && v[2]>=-1e-4 && v[2]<=1.0001;
+
+/* max in-gamut chroma for a given L,H — 16-step bisection, identical to GLSL */
+function gamutCmax(L,H,hi){
+  if (hi===undefined) hi = 0.42;
+  let lo=0;
+  for (let i=0;i<16;i++){
+    const mid = 0.5*(lo+hi);
+    if (inGamut(oklchToLinear(L,mid,H))) lo=mid; else hi=mid;
+  }
+  return lo;
+}
+function fitChroma(L,C,H){ return Math.min(C, gamutCmax(L,H)); }
+function hexOf(L,C,H){
+  const c = fitChroma(L,C,H);
+  const v = oklchToLinear(L,c,H);
+  return { hex:'#'+[0,1,2].map(i=>{
+      const x = Math.round(clamp(l2s(v[i]),0,1)*255);
+      return (x<16?'0':'')+x.toString(16);
+    }).join('').toUpperCase(), rgb:[0,1,2].map(i=>Math.round(clamp(l2s(v[i]),0,1)*255)), C:c, lin:v };
+}
+const hexLin = hx => { const n=parseInt(hx.slice(1),16);
+  return [s2l((n>>16&255)/255), s2l((n>>8&255)/255), s2l((n&255)/255)]; };
+
+/* WCAG 2.1 relative luminance + contrast, measured on the *displayed* colour */
+function relLum(lin){ return 0.2126*lin[0] + 0.7152*lin[1] + 0.0722*lin[2]; }
+const WHITE = [1,1,1], BLACK = [0,0,0];
+function ratio(lin, other){
+  const a = relLum(lin), b = relLum(other);
+  return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
+}
+function grade(r){ return r>=7 ? 'AAA' : r>=4.5 ? 'AA' : r>=3 ? 'AA·L' : 'FAIL'; }
+
+/* perceptual mixing — both in LINEAR light, which is the whole point */
+const addMix = (a,b)=> [1-(1-a[0])*(1-b[0]), 1-(1-a[1])*(1-b[1]), 1-(1-a[2])*(1-b[2])];
+const subMix = (a,b)=> [a[0]*b[0], a[1]*b[1], a[2]*b[2]];
+const linHex = v => '#'+v.map(x=>{ const n=Math.round(clamp(l2s(x),0,1)*255); return (n<16?'0':'')+n.toString(16); }).join('').toUpperCase();
+
+/* interpolation paths used by the ramp comparison */
+function rampOklab(A,B,t){
+  const a = linearToOklab(A[0],A[1],A[2]), b = linearToOklab(B[0],B[1],B[2]);
+  return oklabToLinear(lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t));
+}
+function rampOklch(A,B,t){
+  const a = linearToOklab(A[0],A[1],A[2]), b = linearToOklab(B[0],B[1],B[2]);
+  const aL=Math.hypot(a[1],a[2]), bL=Math.hypot(b[1],b[2]);
+  let d = bL>1e-6 ? Math.atan2(b[1],b[2]) - Math.atan2(a[1],a[2]) : 0;
+  while (d >  Math.PI) d -= 2*Math.PI;
+  while (d < -Math.PI) d += 2*Math.PI;
+  const hl = (Math.atan2(a[1],a[2]) + d*t) * R2D;
+  return oklchToLinear(lerp(a[0],b[0],t), lerp(aL,bL,t), mod360(hl));
+}
+const rampSrgb = (A,B,t)=> [l2s(lerp(A[0],B[0],t)), l2s(lerp(A[1],B[1],t)), l2s(lerp(A[2],B[2],t))];
+function dEok(A,B){
+  const a = linearToOklab(A[0],A[1],A[2]), b = linearToOklab(B[0],B[1],B[2]);
+  return Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]);
+}
+
+/* --------------------------------------------------- 2. harmony schemes */
+/* each role: [hueDelta, lightnessDelta, chromaMul] */
+const SCHEMES = [
+  { key:'mono', label:'MONOCHROME', roles:[[0,0,1.00],[0,-0.22,0.50],[0,0.17,0.86],[0,0.34,0.42]] },
+  { key:'analogous', label:'ANALOGOUS', roles:[[0,0,1.00],[30,0.10,0.90],[-30,-0.14,0.96],[60,0.25,0.52]] },
+  { key:'complement', label:'COMPLEMENT', roles:[[0,0,1.00],[180,-0.05,0.92]] },
+  { key:'split', label:'SPLIT·COMP', roles:[[0,0,1.00],[150,0.13,0.86],[210,-0.13,0.80]] },
+  { key:'triad', label:'TRIADIC', roles:[[0,0,1.00],[120,0.15,0.86],[240,-0.11,0.78]] },
+  { key:'tetrad', label:'TETRADIC', roles:[[0,0,1.00],[90,0.17,0.80],[180,-0.08,0.92],[270,0.07,0.70]] }
+];
+const roleName = (s,i,rl)=> i===0 ? 'BASE' : (rl[0]>0?'+':'')+rl[0]+'°';
+
+function buildHarmony(L,C,H,si){
+  const sc = SCHEMES[si];
+  return sc.roles.map((rl,i)=>{
+    const l = clamp(L + rl[1], 0.32, 0.74);
+    const h = mod360(H + rl[0]);
+    const c = Math.max(0, C*rl[2]);
+    const o = hexOf(l,c,h);
+    return { name:roleName(sc,i,rl), dl:rl[1], dc:rl[2], L:l, C:o.C, h, hex:o.hex, rgb:o.rgb, lin:o.lin,
+             cW:ratio(o.lin,WHITE), cB:ratio(o.lin,BLACK) };
+  });
+}
+
+/* -------------------------------------------------------- 3. app state */
+const S = {
+  L: 0.665, C: 0.155, H: 262, scheme: 1, lock: false, seed: 0x0C01,
+  frame: 0, t: 0, fps: 0, dirty: true
+};
+const DT = 1/30, HUE_RATE = 360/90;   /* fixed step: 0.1333° per frame */
+
+const glc = document.getElementById('gl');
+const uic = document.getElementById('ui');
+const gl = glc.getContext('webgl', {antialias:false, alpha:false, depth:false, stencil:false, preserveDrawingBuffer:true});
+if (!gl) { document.getElementById('boot').textContent = 'WEBGL UNAVAILABLE'; throw new Error('no webgl'); }
+const ctx = uic.getContext('2d');
+
+const VERT = "attribute vec2 p; void main(){ gl_Position = vec4(p,0.0,1.0); }";
+const FRAG = [
+"uniform vec2 uRes; uniform vec2 uView; uniform float uS; uniform vec2 uO;",
+"uniform vec2 uWheel; uniform float uR;",
+"uniform float uBH, uBL, uBC;",
+"uniform vec3 uP1; uniform vec3 uP2; uniform vec3 uP3;",
+"uniform vec3 uVis; uniform float uG1; uniform float uG2; uniform float uG3;",
+"uniform float uTime;",
+"",
+"vec3 oklab2lin(vec3 lab){",
+"  float l_=lab.x+0.3963377774*lab.y+0.2158037573*lab.z;",
+"  float m_=lab.x-0.1055613458*lab.y-0.0638541728*lab.z;",
+"  float s_=lab.x-0.0894841775*lab.y-1.2914855480*lab.z;",
+"  vec3 t=vec3(l_*l_*l_, m_*m_*m_, s_*s_*s_);",
+"  return vec3(4.0767416621*t.x-3.3077115913*t.y+0.2309699292*t.z,",
+"            -1.2684380046*t.x+2.6097574011*t.y-0.3413193965*t.z,",
+"            -0.0041960863*t.x-0.7034186147*t.y+1.7076147010*t.z);",
+"}",
+"vec3 oklch2lin(float L,float C,float hd){",
+"  float a=radians(hd); return oklab2lin(vec3(L,C*cos(a),C*sin(a)));",
+"}",
+"vec3 lin2srgb(vec3 c){",
+"  c=clamp(c,0.0,1.0);",
+"  return mix(12.92*c, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(vec3(0.0031308),c));",
+"}",
+"float ing(vec3 v){ return (v.x>=-0.0001&&v.x<=1.0001&&v.y>=-0.0001&&v.y<=1.0001&&v.z>=-0.0001&&v.z<=1.0001)?1.0:0.0; }",
+"float cmax(float L,float hd,float hi){",
+"  float lo=0.0;",
+"  for(int i=0;i<16;i++){ float m=0.5*(lo+hi); if(ing(oklch2lin(L,m,hd))>0.5) lo=m; else hi=m; }",
+"  return lo;",
+"}",
+"float b2(vec2 a){ a=floor(a); return fract(a.x*0.5+a.y*a.y*0.75); }",
+"float bayer(vec2 p){ return b2(p*0.5)*0.25+b2(p); }",
+"float segd(vec2 p,vec2 a,vec2 b){ vec2 pa=p-a,ba=b-a; return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.0,1.0)); }",
+"vec2 onring(vec2 c,float hd,float L,float R){",
+"  float a=radians(hd);",
+"  return c + vec2(sin(a),-cos(a))*R*(0.36+0.54*L);",
+"}",
+"vec3 marker(vec3 col, vec2 q, vec2 c, vec3 lc, float vis){",
+"  if(vis < 0.5) return col;",
+"  float d = length(q-c);",
+"  col = mix(col, vec3(0.010,0.012,0.018), (1.0-smoothstep(8.0,11.5,d))*0.80);",
+"  float f = 1.0-smoothstep(5.2,6.4,d);",
+"  col = mix(col, lin2srgb(lc), f);",
+"  col = mix(col, vec3(0.95,0.97,1.0), (1.0-smoothstep(0.4,1.1,abs(d-6.9)))*0.34*f);",
+"  col = mix(col, vec3(0.80,0.87,0.98), (1.0-smoothstep(0.35,1.0,abs(d-7.1)))*0.26*f);",
+"  return col;",
+"}",
+"vec3 tick(vec3 col, vec2 q, vec2 c, vec2 t, float vis){",
+"  if(vis < 0.5 || length(t-c) < 4.0) return col;",
+"  float d = segd(q,c,t);",
+"  col = mix(col, vec3(0.90,0.94,1.0), (1.0-smoothstep(0.3,1.0,d))*0.50);",
+"  return col;",
+"}",
+"vec3 basemark(vec3 col, vec2 q, vec2 c, float pulse){",
+"  float d = length(q-c);",
+"  col = mix(col, vec3(0.012,0.014,0.020), (1.0-smoothstep(9.0,12.5,d))*0.85);",
+"  float ring = 1.0-smoothstep(0.5,1.4,abs(d-(9.5+0.7*pulse)));",
+"  col = mix(col, vec3(0.97,0.99,1.0), ring*0.80);",
+"  col = mix(col, vec3(0.90,0.94,1.0), 1.0-smoothstep(0.4,1.0,abs(d-2.4)));",
+"  return col;",
+"}",
+"",
+"void main(){",
+"  vec2 p = vec2(gl_FragCoord.x/uRes.x*uView.x, (1.0-gl_FragCoord.y/uRes.y)*uView.y);",
+"  vec2 q = (p - uO)/uS;",
+"",
+"  /* ---- ground: vertical ramp + perceptual glows, all mixed in linear light ---- */",
+"  float vy = clamp(p.y/max(uView.y,1.0), 0.0, 1.0);",
+"  vec3 col = mix(vec3(0.0165,0.0185,0.0270), vec3(0.0062,0.0072,0.0125), vy);",
+"  vec2 g1 = (q-uWheel)/430.0; col += oklch2lin(uBL*0.62,uBC*0.85,uBH)*0.062*exp(-dot(g1,g1)*0.5);",
+"  vec2 g2 = (q-vec2(1090.0,120.0))/470.0; col += oklch2lin(uBL*0.55,uBC*0.7,uG1)*0.030*exp(-dot(g2,g2)*0.5);",
+"  vec2 g3 = (q-vec2(250.0,730.0))/500.0; col += oklch2lin(uBL*0.45,uBC*0.6,uG2)*0.026*exp(-dot(g3,g3)*0.5);",
+"  vec2 g4 = (q-vec2(1210.0,760.0))/380.0; col += oklch2lin(uBL*0.40,uBC*0.5,uG3)*0.022*exp(-dot(g4,g4)*0.5);",
+"  float pulse = 0.5+0.5*sin(uTime*1.0472);",
+"",
+"  /* ---- harmony wheel: radius = OKLab lightness, angle = OKLCH hue ---- */",
+"  vec2 d = q - uWheel;",
+"  float r = length(d);",
+"  float rn = r/uR;",
+"  float a = mod(degrees(atan(d.x,-d.y)),360.0);",
+"  float Lr = clamp(0.74-0.42*(rn-0.36)/0.54, 0.30, 0.80);",
+"  /* the ring is literally the requested chroma, clipped to the sRGB gamut at (L,H) */",
+"  float Cr = min(uBC, cmax(Lr,a,0.42));",
+"  vec3 wc = oklch2lin(Lr,Cr,a);",
+"  wc *= 1.0 + 0.10*pulse*(0.5+0.5*sin(a*0.05235+1.7))*smoothstep(0.34,0.55,rn);",
+"  float ringA = smoothstep(0.335,0.362,rn)*(1.0-smoothstep(0.955,0.995,rn));",
+"  /* luminous outer fin = the true sRGB gamut boundary at each hue */",
+"  float finA = smoothstep(0.900,0.918,rn)*(1.0-smoothstep(0.952,0.994,rn));",
+"  float fl = mix(0.30,0.62,(rn-0.90)/0.094);",
+"  vec3 fin = oklch2lin(fl, cmax(fl,a,0.42), a);",
+"  /* core disc = the base colour, gently shaded */",
+"  float coreA = 1.0-smoothstep(0.285,0.320,rn);",
+"  vec3 core = oklch2lin(clamp(uBL*1.02,0.0,0.97)+0.10*(1.0-rn/0.32), uBC*1.02, a);",
+"  core = mix(core, oklch2lin(uBL,uBC,uBH), 0.55);",
+"  col = mix(col, fin, finA*0.94);",
+"  col = mix(col, wc, ringA);",
+"  col = mix(col, core, coreA);",
+"  col *= 1.0-0.45*smoothstep(0.300,0.336,rn)*(1.0-smoothstep(0.336,0.350,rn));",
+"",
+"  /* ---- harmony figure: chords + markers on the (L x H) plane ---- */",
+"  vec2 P0 = onring(uWheel,uBH,uBL,uR);",
+"  vec2 Q1 = onring(uWheel,uP1.z,uBL,uR);",
+"  vec2 Q2 = onring(uWheel,uP2.z,uBL,uR);",
+"  vec2 Q3 = onring(uWheel,uP3.z,uBL,uR);",
+"  vec2 T1 = onring(uWheel,uP1.z,uP1.x,uR);",
+"  vec2 T2 = onring(uWheel,uP2.z,uP2.x,uR);",
+"  vec2 T3 = onring(uWheel,uP3.z,uP3.x,uR);",
+"  /* each chord is its own antialiased stroke; alpha is clamped so overlapping",
+"     chords never sum past a single line and cannot wash the wheel out */",
+"  float a1 = (1.0-smoothstep(0.30,1.05,segd(q,P0,Q1)))*uVis.x;",
+"  float a2 = (1.0-smoothstep(0.30,1.05,segd(q,Q1,Q2)))*uVis.y*uVis.z;",
+"  float a3 = (1.0-smoothstep(0.30,1.05,segd(q,Q2,Q3)))*uVis.y*uVis.z;",
+"  float a4 = (1.0-smoothstep(0.30,1.05,segd(q,Q3,P0)))*uVis.z;",
+"  float ln = clamp(max(max(a1,a2),max(a3,a4)),0.0,1.0);",
+"  float pulse2 = 0.5+0.5*sin(uTime*1.0472+0.6);",
+"  vec3 linc = (oklch2lin(0.90,0.09,uG1)+oklch2lin(0.90,0.07,uG2)+oklch2lin(0.92,0.08,uG3))*(0.10+0.05*pulse2);",
+"  col = mix(col, linc, ln*0.85);",
+"  /* a hairline core, so the chord reads as a drawn line over the wheel */",
+"  float hline = 1.0-smoothstep(0.10,0.50,min(min(segd(q,P0,Q1),segd(q,Q2,Q3)),segd(q,Q1,Q2)));",
+"  col = mix(col, vec3(0.99,0.995,1.0), hline*0.55);",
+"  /* base spoke */",
+"  float sp = segd(q, uWheel, P0);",
+"  col = mix(col, col*1.0 + oklch2lin(uBL,uBC,uBH)*0.22, exp(-sp*sp*0.16)*(0.6+0.3*pulse));",
+"  float spoke = 1.0-smoothstep(0.4,1.1,sp);",
+"  col = mix(col, vec3(0.90,0.94,1.0), spoke*0.30);",
+"  /* markers */",
+"  col = tick(col,q,Q1,T1,uVis.x);",
+"  col = tick(col,q,Q2,T2,uVis.y);",
+"  col = tick(col,q,Q3,T3,uVis.z);",
+"  col = marker(col,q,Q1,oklch2lin(uP1.x,uP1.y,uP1.z),uVis.x);",
+"  col = marker(col,q,Q2,oklch2lin(uP2.x,uP2.y,uP2.z),uVis.y);",
+"  col = marker(col,q,Q3,oklch2lin(uP3.x,uP3.y,uP3.z),uVis.z);",
+"  col = marker(col,q,P0,oklch2lin(uBL,uBC,uBH),1.0);",
+"  col = basemark(col,q,P0,pulse);",
+"  col += oklch2lin(uBL,uBC,uBH)*exp(-r*r/(2.0*uR*uR*0.30))*0.030;",
+"",
+"  vec3 s = lin2srgb(col);",
+"  s += (bayer(gl_FragCoord.xy)-0.5)*(1.6/255.0);",
+"  gl_FragColor = vec4(clamp(s,0.0,1.0),1.0);",
+"}"
+].join("\n");
+const fullFrag = "precision highp float;\n" + FRAG;
+
+function sh(type, src){
+  const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o);
+  if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)+"\n"+src);
+  return o;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fullFrag));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const aP = gl.getAttribLocation(prog,'p');
+gl.enableVertexAttribArray(aP); gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+const U = {};
+['uRes','uView','uS','uO','uWheel','uR','uBH','uBL','uBC','uP1','uP2','uP3','uVis','uG1','uG2','uG3','uTime']
+  .forEach(n=> U[n] = gl.getUniformLocation(prog,n));
+
+/* -------------------------------------------------------- 4. viewports */
+const DW = 1280, DH = 800;
+let vw=0, vh=0, VS=1, OX=0, OY=0;
+const RING_IN = 0.90, RING_OUT = 0.36;      /* lightness ring radii (fractions of R) */
+const markR = L => clamp(0.36 + 0.54*(0.74-L)/0.42, RING_OUT, RING_IN);   /* inverse of the shader's L(r) */
+
+function resize(){
+  vw = window.innerWidth; vh = window.innerHeight;
+  VS = Math.min(vw/DW, vh/DH); OX = (vw - DW*VS)/2; OY = (vh - DH*VS)/2;
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  glc.width = Math.max(2, Math.round(640*vw/DW)); glc.height = Math.max(2, Math.round(400*vh/DH));
+  glc.style.width = vw+'px'; glc.style.height = vh+'px';
+  gl.viewport(0,0,glc.width,glc.height);
+  uic.width = Math.round(vw*dpr); uic.height = Math.round(vh*dpr);
+  uic.style.width = vw+'px'; uic.style.height = vh+'px';
+  ctx.setTransform(dpr*VS,0,0,dpr*VS, dpr*OX, dpr*OY);
+  S.dirty = true;
+}
+window.addEventListener('resize', resize);
+
+/* ------------------------------------------------------------ 5. layout */
+const LAY = {
+  wheel:{ cx:348, cy:340, r:264 },
+  ramp:{ x:78, y:618, w:600, h:21, gap:4.5, labelX:698 },
+  col:{ x:716, w:540 },
+  p1:{ y:44,  h:272 },
+  p2:{ y:328, h:196 },
+  p3:{ y:536, h:152 },
+  bar:{ x:24, y:686, w:1232, h:96 }
+};
+const widgets = [];
+function panel(x,y,w,h,tint){
+  ctx.fillStyle = 'rgba(255,255,255,'+(tint||0.032)+')';
+  ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle = 'rgba(255,255,255,0.085)'; ctx.lineWidth = 1;
+  ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+}
+function text(str,x,y,size,col,align,weight){
+  ctx.font = (weight||'400')+' '+size+'px ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace';
+  ctx.fillStyle = col; ctx.textAlign = align||'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText(str,x,y);
+}
+function tag(str,x,y,w,h,col,fill){
+  ctx.fillStyle = fill; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle = col; ctx.lineWidth=1; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+  text(str,x+w/2,y+h- (h-9)/2 + 1, 11, col, 'center');
+}
+function hair(x,y,w,col){ ctx.fillStyle=col; ctx.fillRect(x,y,w,1); }
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+}
+function roundFill(x,y,w,h,r,col){ ctx.fillStyle=col; roundRect(x,y,w,h,r); ctx.fill(); }
+
+/* --------------------------------------------------------- 6. UI drawing */
+const HUD = { ink:'#dde5f2', dim:'#8d9ab0', faint:'#5d6a80', acc:'#8fd8ff' };
+
+function drawOverlay(A){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,uic.width,uic.height);
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  ctx.setTransform(dpr*VS,0,0,dpr*VS, dpr*OX, dpr*OY);
+  ctx.lineWidth = 1;
+
+  /* ---- title block ---- */
+  text('OKLCH HARMONY CONSOLE', 24, 32, 15, HUD.ink, 'left', '600');
+  text('OKLab (Ottosson 2020) · per-pixel sRGB gamut bisection in GLSL · linear-light mixing · 640×400 internal',
+       24, 50, 11, HUD.faint);
+  hair(24, 58, 300, 'rgba(255,255,255,0.10)');
+
+  drawWheelChrome(A);
+  drawRamps(A);
+  drawHarmonyPanel(A);
+  drawMixPanel(A);
+  drawContrastPanel(A);
+  drawControlBar(A);
+}
+
+function drawWheelChrome(A){
+  const w = LAY.wheel;
+  /* rim + hue ticks */
+  ctx.strokeStyle = 'rgba(255,255,255,0.13)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(w.cx, w.cy, w.r*0.986, 0, 6.2832); ctx.stroke();
+  for (let hdeg=0; hdeg<360; hdeg+=15){
+    const big = hdeg % 90 === 0, mid = hdeg % 45 === 0;
+    const a = (hdeg-90)*D2R;                 /* 0deg at 12 o'clock, clockwise */
+    const r0 = w.r*0.986, r1 = w.r*0.986 + (big?9:mid?6:3.5);
+    ctx.strokeStyle = big ? 'rgba(255,255,255,0.34)' : mid ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.11)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(w.cx + Math.cos(a)*r0, w.cy + Math.sin(a)*r0);
+    ctx.lineTo(w.cx + Math.cos(a)*r1, w.cy + Math.sin(a)*r1);
+    ctx.stroke();
+    if (big){
+      const rt = w.r*0.986 + 24;
+      const tx = w.cx + Math.cos(a)*rt, ty = w.cy + Math.sin(a)*rt;
+      const live = Math.abs(((hdeg - S.H + 540)%360) - 180);
+      const on = live < 46;
+      text(hdeg+'°', tx, ty+4, 11, on ? HUD.acc : 'rgba(190,205,225,0.42)', 'center');
+    }
+  }
+  /* core readout */
+  const cr = w.r*0.30;
+  const best = A.sw[0].cB > A.sw[0].cW ? '#000' : '#fff';
+  const op = 0.82;
+  text(S.H.toFixed(1)+'°', w.cx, w.cy-30, 34, best===  '#000' ? 'rgba(0,0,0,'+op+')' : 'rgba(255,255,255,'+op+')', 'center', '600');
+  text('oklch('+A.sw[0].L.toFixed(3)+' '+A.sw[0].C.toFixed(3)+' '+mod360(S.H).toFixed(1)+')',
+       w.cx, w.cy+2, 12, best==='#000' ? 'rgba(0,0,0,0.70)' : 'rgba(255,255,255,0.78)', 'center');
+  text(A.sw[0].hex, w.cx, w.cy+22, 13, best==='#000' ? 'rgba(0,0,0,0.80)' : 'rgba(255,255,255,0.88)', 'center', '600');
+  /* radius = lightness legend */
+  ctx.save();
+  ctx.translate(w.cx - w.r - 34, w.cy);
+  ctx.rotate(-Math.PI/2);
+  text('RADIUS = OKLAB LIGHTNESS  ·  ANGLE = OKLCH HUE', 0, 0, 11, 'rgba(190,205,225,0.34)', 'center');
+  ctx.restore();
+  /* base marker ring on top of the shader marker (crisper) */
+  const a0 = S.H*D2R, rr = markR(S.L)*w.r;
+  const bx = w.cx + Math.sin(a0)*rr, by = w.cy - Math.cos(a0)*rr;
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(bx,by,9.5,0,6.2832); ctx.stroke();
+}
+
+function drawRamps(A){
+  const R = LAY.ramp;
+  text('GRADIENTS  ' + A.sw[0].hex + ' → ' + A.rampB.hex, R.x, R.y - 9, 11, HUD.dim);
+  const paths = [ ['OKLab', rampOklab, '#a8f0c8'], ['OKLCH', rampOklch, '#a8c8f0'], ['sRGB · naive', rampSrgb, '#f0a8b0'] ];
+  paths.forEach((p,i)=>{
+    const y = R.y + i*(R.h + R.gap);
+    const n = 132, g = ctx.createLinearGradient(R.x,0,R.x+R.w,0);
+    for (let k=0;k<=n;k++){
+      const t = k/n, v = p[1](A.linA, A.linB, t);
+      g.addColorStop(t, linHex(v));
+    }
+    ctx.fillStyle = g; ctx.fillRect(R.x,y,R.w,R.h);
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth=1; ctx.strokeRect(R.x+0.5,y+0.5,R.w-1,R.h-1);
+    text(p[0], R.labelX, y + R.h - (R.h-9)/2 + 1, 11, p[2], 'right');
+  });
+  const dE = dEok(rampOklab(A.linA,A.linB,0.5), rampSrgb(A.linA,A.linB,0.5));
+  text('midpoint ΔE(oklab) naive-vs-correct = '+dE.toFixed(4), R.x, R.y + 3*(R.h+R.gap) + 1, 11, HUD.faint);
+}
+
+function drawHarmonyPanel(A){
+  const {x,w} = LAY.col, y = LAY.p1.y;
+  panel(x,y,w,LAY.p1.h);
+  text('HARMONY', x+14, y+22, 12, HUD.ink, 'left', '600');
+  text(SCHEMES[S.scheme].label + '  ·  ' + A.sw.length + ' SWATCHES  ·  ΔH IN OKLCH°', x+w-14, y+22, 11, HUD.dim, 'right');
+  hair(x+14, y+30, w-28, 'rgba(255,255,255,0.09)');
+  const rows = A.sw.length, rh = 58, gap = 4;
+  const top = y + 36;
+  for (let i=0;i<rows;i++){
+    const s = A.sw[i], ry = top + i*(rh+gap);
+    const dark = s.cB > s.cW;
+    /* chip */
+    roundFill(x+10, ry, 140, rh-8, 4, s.hex);
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth=1;
+    roundRect(x+10.5, ry+0.5, 139, rh-9, 4); ctx.stroke();
+    const tc = dark ? 'rgba(0,0,0,0.86)' : 'rgba(255,255,255,0.92)';
+    text(s.name, x+20, ry+22, 12, tc, 'left','600');
+    text(s.hex, x+20, ry+38, 11, dark ? 'rgba(0,0,0,0.62)' : 'rgba(255,255,255,0.72)');
+    /* values */
+    text('oklch('+s.L.toFixed(3)+'  '+s.C.toFixed(3)+'  '+s.h.toFixed(1)+')', x+164, ry+22, 12, HUD.ink);
+    text('ΔL '+(s.dl>=0?'+':'')+s.dl.toFixed(2)+'   ΔC ×'+s.dc.toFixed(2), x+164, ry+38, 11, HUD.dim);
+    /* role tag */
+    const lbl = i===0 ? 'ANCHOR' : mod360(s.h).toFixed(0)+'°';
+    const tw = 62;
+    tag(lbl, x+w-14-tw, ry+16, tw, 22, 'rgba(160,190,220,0.55)', 'rgba(255,255,255,0.03)');
+  }
+}
+
+function drawMixPanel(A){
+  const {x,w} = LAY.col, y = LAY.p2.y;
+  panel(x,y,w,LAY.p2.h);
+  text('PERCEPTUAL MIXING', x+14, y+22, 12, HUD.ink,'left','600');
+  text('LINEAR LIGHT  ·  LUMINANCE WEIGHTS 0.2126/0.7152/0.0722', x+w-14, y+22, 11, HUD.dim,'right');
+  hair(x+14, y+30, w-28, 'rgba(255,255,255,0.09)');
+
+  const venn = (cx0, cy0, mixCol, mixHex, label, sub) => {
+    const r = 44, off = 40;
+    /* back discs: base A then B at 62% over the dark ground */
+    const ga = ctx.createRadialGradient(cx0-off, cy0-10, 2, cx0-off, cy0, r);
+    ga.addColorStop(0, A.sw[0].hex); ga.addColorStop(1, A.rampB.hex);
+    ctx.globalAlpha = 0.70; ctx.fillStyle = ga;
+    ctx.beginPath(); ctx.arc(cx0-off, cy0, r, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx0+off, cy0, r, 0, 6.2832); ctx.fill();
+    ctx.globalAlpha = 1;
+    /* the actual mix */
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx0-off, cy0, r, 0, 6.2832); ctx.arc(cx0+off, cy0, r, 0, 6.2832);
+    ctx.clip('evenodd');
+    ctx.fillStyle = mixHex; ctx.fillRect(cx0-off-r, cy0-r, 2*(r+off), 2*r);
+    ctx.restore();
+    /* rims */
+    ctx.strokeStyle = A.sw[0].hex; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx0-off, cy0, r, 0, 6.2832); ctx.stroke();
+    ctx.strokeStyle = A.rampB.hex; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx0+off, cy0, r, 0, 6.2832); ctx.stroke();
+    text(label, cx0, cy0 - r - 16, 11, HUD.ink, 'center','600');
+    text(mixHex, cx0, cy0 + r + 17, 12, mixCol, 'center','600');
+    text(sub, cx0, cy0 + r + 31, 11, HUD.faint, 'center');
+  };
+  venn(x+90, y+94, A.addHex, A.addHex, 'ADDITIVE', 'screen · Y rises');
+  venn(x+262, y+94, A.subHex, A.subHex, 'SUBTRACTIVE', 'Beer–Lambert · Y falls');
+
+  /* readout column */
+  const rx = x+350, ry = y+54;
+  let yy = ry;
+  const line = (k,v,c)=>{ text(k, rx, yy, 11, HUD.faint); text(v, rx+104, yy, 11, c||HUD.ink); yy += 15; };
+  line('A  base', A.sw[0].hex, A.sw[0].hex);
+  line('B  partner', A.rampB.hex, A.rampB.hex);
+  line('additive', A.addHex, A.addHex);
+  line('  Y', A.addY.toFixed(3));
+  line('subtractive', A.subHex, A.subHex);
+  line('  Y', A.subY.toFixed(3));
+  line('ΔE(oklab)', A.dE.toFixed(3), A.dE > 0.12 ? '#ffcf8a' : HUD.dim);
+  text('same pair, different operator:', x+350, y+LAY.p2.h-22, 11, HUD.faint);
+  text('additive lifts Y, subtractive drops it.', x+350, y+LAY.p2.h-9, 11, HUD.faint);
+}
+
+function drawContrastPanel(A){
+  const {x,w} = LAY.col, y = LAY.p3.y;
+  panel(x,y,w,LAY.p3.h);
+  text('CONTRAST vs TEXT', x+14, y+22, 12, HUD.ink,'left','600');
+  text('WCAG 2.1  ·  (Lmax+0.05)/(Lmin+0.05)  ·  MEASURED ON THE DISPLAYED sRGB', x+w-14, y+22, 11, HUD.dim,'right');
+  hair(x+14, y+30, w-28, 'rgba(255,255,255,0.09)');
+  const top = y+36, rh = 28;
+  for (let i=0;i<A.sw.length;i++){
+    const s = A.sw[i], ry = top + i*rh;
+    roundFill(x+10, ry+4, 20, 20, 3, s.hex);
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1; roundRect(x+10.5,ry+4.5,19,19,3); ctx.stroke();
+    text(s.name, x+40, ry+18, 11, HUD.ink);
+    text(s.hex, x+136, ry+18, 11, HUD.dim);
+    text('Y '+s.Y.toFixed(3), x+196, ry+18, 11, HUD.faint);
+    /* on-white sample */
+    roundFill(x+268, ry+4, 34, 20, 3, s.hex);
+    ctx.strokeStyle='rgba(255,255,255,0.20)'; ctx.lineWidth=1; roundRect(x+268.5,ry+4.5,33,19,3); ctx.stroke();
+    text('Aa', x+285, ry+18, 11, '#ffffff', 'center','600');
+    text(s.cW.toFixed(2)+':1', x+308, ry+18, 11, s.cW>=4.5 ? '#9ff0b4' : s.cW>=3 ? '#e8d08a' : HUD.dim);
+    /* on-black sample */
+    roundFill(x+386, ry+4, 34, 20, 3, s.hex);
+    ctx.strokeStyle='rgba(255,255,255,0.20)'; ctx.lineWidth=1; roundRect(x+386.5,ry+4.5,33,19,3); ctx.stroke();
+    text('Aa', x+403, ry+18, 11, '#000000', 'center','600');
+    text(s.cB.toFixed(2)+':1', x+426, ry+18, 11, s.cB>=4.5 ? '#9ff0b4' : s.cB>=3 ? '#e8d08a' : HUD.dim);
+    const bestR = Math.max(s.cW, s.cB), g = grade(bestR);
+    const gc = g==='AAA' ? 'rgba(120,235,170,0.85)' : g==='AA' ? 'rgba(150,215,255,0.85)' : g==='AA·L' ? 'rgba(240,205,130,0.85)' : 'rgba(255,120,120,0.85)';
+    tag(g + (s.cW>s.cB ? ' ·ON WHITE' : ' ·ON BLACK'), x+w-16-118, ry+5, 118, 19, gc, 'rgba(255,255,255,0.03)');
+  }
+}
+
+function drawControlBar(A){
+  const b = LAY.bar;
+  panel(b.x, b.y, b.w, b.h, 0.040);
+  text('CONTROLS', b.x+16, b.y+20, 11, HUD.dim, 'left', '600');
+  /* status */
+  const st = S.lock ? 'BASE PINNED AT ' + S.H.toFixed(1) + '°'
+                       : 'ORBITING ' + HUE_RATE.toFixed(2) + '°/s SIM-TIME · Δt FIXED 1/30 s · H ' + S.H.toFixed(1) + '°';
+  text(st, b.x+116, b.y+20, 11, S.lock ? '#ffd79a' : '#9fe8c4');
+  /* lock / random */
+  widgets.length = 0;
+  const lockW = 92, rndW = 96;
+  tag('RANDOM', b.x+b.w-16-rndW, b.y+8, rndW, 22, 'rgba(170,195,225,0.7)', 'rgba(255,255,255,0.035)');
+  widgets.push({t:'rand', x:b.x+b.w-16-rndW, y:b.y+8, w:rndW, h:22});
+  tag(S.lock ? '● LOCKED' : '○ LOCK', b.x+b.w-16-rndW-8-lockW, b.y+8, lockW, 22,
+      S.lock ? '#ffd79a' : 'rgba(170,195,225,0.7)', S.lock ? 'rgba(255,190,90,0.10)' : 'rgba(255,255,255,0.035)');
+  widgets.push({t:'lock', x:b.x+b.w-16-rndW-8-lockW, y:b.y+8, w:lockW, h:22});
+
+  /* sliders */
+  const sw = 236, sx0 = b.x+16, sy = b.y+48;
+  const sliders = [
+    {k:'hue', l:'HUE', v:S.H, min:0, max:360, fmt:v=>v.toFixed(1)+'°', grad:'hue'},
+    {k:'C',   l:'CHROMA', v:S.C, min:0, max:0.32, fmt:v=>v.toFixed(3), grad:'chroma'},
+    {k:'L',   l:'LIGHTNESS', v:S.L, min:0.32, max:0.74, fmt:v=>v.toFixed(3), grad:'light'}
+  ];
+  sliders.forEach((s,i)=>{
+    const x = sx0 + i*(sw+20);
+    text(s.l, x, sy-10, 11, HUD.dim);
+    text(s.fmt(s.v), x+sw, sy-10, 11, HUD.ink, 'right');
+    const ty = sy - 3, th = 6;
+    let g;
+    if (s.grad === 'hue'){
+      g = ctx.createLinearGradient(x,0,x+sw,0);
+      for (let k=0;k<=24;k++) g.addColorStop(k/24, hexOf(0.72, fitChroma(0.72,0.16,k*15), k*15).hex);
+    } else if (s.grad === 'chroma'){
+      g = ctx.createLinearGradient(x,0,x+sw,0);
+      for (let k=0;k<=24;k++) g.addColorStop(k/24, hexOf(S.L, (k/24)*0.32, S.H).hex);
+    } else {
+      g = ctx.createLinearGradient(x,0,x+sw,0);
+      for (let k=0;k<=24;k++) g.addColorStop(k/24, hexOf(0.32+(k/24)*0.42, fitChroma(0.32+(k/24)*0.42, S.C, S.H), S.H).hex);
+    }
+    roundFill(x, ty, sw, th, 3, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = g; roundRect(x, ty, sw, th, 3); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.16)'; ctx.lineWidth=1; roundRect(x+0.5,ty+0.5,sw-1,th-1,3); ctx.stroke();
+    const t = (s.v - s.min)/(s.max - s.min), kx = x + t*sw;
+    ctx.fillStyle = '#04050a'; ctx.fillRect(kx-7, ty-3, 14, th+6);
+    ctx.fillStyle = '#eaf1fb'; ctx.fillRect(kx-1, ty-4, 2, th+8);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth=1; ctx.strokeRect(kx-6.5, ty-2.5, 13, th+5);
+    widgets.push({t:'sl', k:s.k, x:x-8, y:ty-10, w:sw+16, h:th+20, min:s.min, max:s.max});
+  });
+  /* scheme chips */
+  const cw = 104, ch = 24, cy = b.y+50;
+  SCHEMES.forEach((sc,i)=>{
+    const x = b.x+16 + i*(cw+8);
+    const on = i === S.scheme;
+    roundFill(x, cy, cw, ch, 3, on ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.028)');
+    ctx.strokeStyle = on ? 'rgba(190,225,255,0.75)' : 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1; roundRect(x+0.5, cy+0.5, cw-1, ch-1, 3); ctx.stroke();
+    const A2 = buildHarmony(S.L, S.C, S.H, i);
+    /* scheme signature: 4 colour ticks */
+    A2.forEach((sw2,k)=>{
+      ctx.fillStyle = sw2.hex;
+      ctx.fillRect(x+7 + k*6, cy+9, 4, 6);
+    });
+    text(sc.label, x+33, cy+16, 11, on ? '#eaf3ff' : 'rgba(190,205,225,0.62)');
+    widgets.push({t:'sch', i, x, y:cy, w:cw, h:ch});
+  });
+  /* keyboard/pointer hint: its own row, right-aligned, fully inside the frame */
+  text('DRAG WHEEL OR SLIDER · CLICK CHIP · SPACE LOCK · R RANDOM · 1–6 SCHEME',
+       b.x + b.w - 16, b.y+84, 11, 'rgba(150,165,190,0.60)', 'right');
+  text('DETERMINISTIC: FIXED Δt, SEEDED RNG, NO WALL-CLOCK',
+       b.x + 16 + 6*(cw+8) + 4, cy+16, 11, 'rgba(130,145,170,0.50)');
+}
+
+/* --------------------------------------------------------- 7. app update */
+function analyse(){
+  const sw = buildHarmony(S.L, S.C, S.H, S.scheme);
+  const rampB = sw[1] || sw[0];
+  const linA = sw[0].lin, linB = rampB.lin;
+  const add = addMix(linA, linB), sub = subMix(linA, linB);
+  sw.forEach(s => { s.Y = relLum(s.lin); });
+  return {
+    sw, rampB, linA, linB,
+    addHex: linHex(add), subHex: linHex(sub),
+    addY: relLum(add), subY: relLum(sub),
+    dE: dEok(add, sub)
+  };
+}
+
+function drawGL(A){
+  gl.uniform2f(U.uRes, glc.width, glc.height);
+  gl.uniform2f(U.uView, vw, vh);
+  gl.uniform1f(U.uS, VS); gl.uniform2f(U.uO, OX, OY);
+  gl.uniform2f(U.uWheel, LAY.wheel.cx, LAY.wheel.cy);
+  gl.uniform1f(U.uR, LAY.wheel.r);
+  gl.uniform1f(U.uBH, S.H); gl.uniform1f(U.uBL, S.L); gl.uniform1f(U.uBC, S.C);
+  const p = [A.sw[1],A.sw[2],A.sw[3]];
+  ['uP1','uP2','uP3'].forEach((k,i)=>{
+    const s = p[i];
+    if (s) gl.uniform3f(U[k], s.L, s.C, s.h);
+    else  gl.uniform3f(U[k], S.L, S.C, mod360(S.H+180));
+  });
+  gl.uniform3f(U.uVis, p[0]?1:0, p[1]?1:0, p[2]?1:0);
+  const g = [A.sw[1]?A.sw[1].h:S.H+180, A.sw[2]?A.sw[2].h:S.H+240, A.sw[3]?A.sw[3].h:S.H+90];
+  gl.uniform1f(U.uG1, g[0]); gl.uniform1f(U.uG2, g[1]); gl.uniform1f(U.uG3, g[2]);
+  gl.uniform1f(U.uTime, S.t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+const probe = { ready:false, frames:0, fps:0, hue:0, L:0, C:0, scheme:'', swatches:0, lock:false,
+                internal:'', base:'', add:'', sub:'', dE:0 };
+let lastT = 0, fpsAcc = 0, fpsN = 0, warmed = false;
+
+function tick(){
+  S.frame++; S.t += DT;
+  if (!S.lock) S.H = mod360(S.H + HUE_RATE*DT);
+  const A = analyse();
+  drawGL(A);
+  if (S.dirty || S.frame % 3 === 0 || S.frame <= 4){ drawOverlay(A); S.dirty = false; }
+
+  probe.frames = S.frame; probe.hue = +S.H.toFixed(2); probe.L = +S.L.toFixed(3);
+  probe.C = +S.C.toFixed(3); probe.scheme = SCHEMES[S.scheme].key; probe.swatches = A.sw.length;
+  probe.lock = S.lock; probe.internal = glc.width + 'x' + glc.height;
+  probe.base = A.sw[0].hex; probe.add = A.addHex; probe.sub = A.subHex; probe.dE = +A.dE.toFixed(3);
+
+  if (!warmed && S.frame > 7){
+    warmed = true;
+    document.getElementById('boot').classList.add('gone');
+    window.__probe = probe; window.__ready = true; probe.ready = true;
+  }
+  const now = performance.now();
+  if (lastT){ fpsAcc += 1000/(now-lastT); fpsN++; if (fpsN>=6){ probe.fps = +(fpsAcc/fpsN).toFixed(1); fpsAcc=0; fpsN=0; } }
+  lastT = now;
+  requestAnimationFrame(tick);
+}
+
+/* --------------------------------------------------------- 8. interaction */
+const toQ = e => ({ x:(e.clientX - OX)/VS, y:(e.clientY - OY)/VS });
+function hit(q){
+  for (let i=widgets.length-1;i>=0;i--){
+    const w = widgets[i];
+    if (q.x>=w.x && q.x<=w.x+w.w && q.y>=w.y && q.y<=w.y+w.h) return w;
+  }
+  const c = LAY.wheel, dx = q.x-c.cx, dy = q.y-c.cy;
+  if (dx*dx+dy*dy < (c.r*1.04)*(c.r*1.04)) return { t:'wheel' };
+  return null;
+}
+function applySlider(w, qx){
+  const t = clamp((qx - (w.x+8)) / (w.w-16), 0, 1);
+  const v = w.min + t*(w.max-w.min);
+  if (w.k==='hue'){ S.H = mod360(v); }
+  else if (w.k==='C'){ S.C = v; }
+  else { S.L = v; }
+  S.lock = true; S.dirty = true;
+}
+let drag = null;
+uic.style.touchAction = 'none';
+uic.addEventListener('pointerdown', e => {
+  const q = toQ(e), w = hit(q);
+  if (!w) return;
+  if (w.t==='wheel'){ S.H = mod360(Math.atan2(q.x-LAY.wheel.cx, -(q.y-LAY.wheel.cy))*R2D); S.lock = true; drag = {t:'wheel'}; }
+  else if (w.t==='sl'){ applySlider(w, q.x); drag = w; }
+  else if (w.t==='sch'){ S.scheme = w.i; S.dirty = true; }
+  else if (w.t==='lock'){ S.lock = !S.lock; S.dirty = true; }
+  else if (w.t==='rand'){ randomise(); }
+  S.dirty = true;
+  uic.setPointerCapture(e.pointerId);
+});
+uic.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const q = toQ(e);
+  if (drag.t==='wheel'){ S.H = mod360(Math.atan2(q.x-LAY.wheel.cx, -(q.y-LAY.wheel.cy))*R2D); S.dirty = true; }
+  else applySlider(drag, q.x);
+});
+['pointerup','pointercancel'].forEach(ev => uic.addEventListener(ev, ()=>{ drag = null; }));
+uic.addEventListener('pointermove', e => {
+  if (drag) return;
+  const q = toQ(e), w = hit(q);
+  uic.style.cursor = !w ? 'default' : (w.t==='wheel' ? 'grab' : 'pointer');
+});
+function randomise(){
+  /* user-triggered: Math.random allowed here, seeded immediately after */
+  S.seed = (Math.random()*0xffffff)|0;
+  const r = mulberry32(S.seed);
+  S.H = mod360(r()*360); S.C = 0.09 + r()*0.12; S.L = 0.52 + r()*0.26;
+  S.scheme = (r()*SCHEMES.length)|0; S.lock = true; S.dirty = true;
+  probe.seed = S.seed.toString(16);
+}
+window.addEventListener('keydown', e => {
+  const k = e.key;
+  if (k===' '){ S.lock = !S.lock; S.dirty = true; e.preventDefault(); return; }
+  if (k==='r' || k==='R'){ randomise(); return; }
+  if (k>='1' && k<='6'){ S.scheme = +k-1; S.dirty = true; return; }
+  if (k==='[' || k===']'){ S.H = mod360(S.H + (k===']'?3:-3)); S.lock = true; S.dirty = true; return; }
+});
+
+/* ------------------------------------------------------------- 9. launch */
+resize();
+S.dirty = true;
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

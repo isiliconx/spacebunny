@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Point Sampling — uniform · jittered lattice · Poisson-disc</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#04060b;overflow:hidden;display:flex;align-items:center;justify-content:center;
+  font-family:ui-monospace,"DejaVu Sans Mono","Liberation Mono",Menlo,Consolas,monospace;
+  color:#e6ecf6;-webkit-font-smoothing:antialiased}
+#stage{position:relative;flex:0 0 auto;width:1280px;height:800px;overflow:hidden;
+  background:
+    radial-gradient(1150px 660px at 14% 2%,rgba(74,116,196,.30),rgba(0,0,0,0) 60%),
+    radial-gradient(900px 700px at 92% 99%,rgba(178,70,140,.22),rgba(0,0,0,0) 60%),
+    radial-gradient(760px 560px at 62% 44%,rgba(52,146,166,.15),rgba(0,0,0,0) 66%),
+    linear-gradient(168deg,#101a33 0%,#0c1020 46%,#150d20 100%)}
+#stage::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(158,192,240,.07) 1px,rgba(0,0,0,0) 1px),
+    linear-gradient(90deg,rgba(158,192,240,.07) 1px,rgba(0,0,0,0) 1px),
+    linear-gradient(rgba(158,192,240,.034) 1px,rgba(0,0,0,0) 1px),
+    linear-gradient(90deg,rgba(158,192,240,.034) 1px,rgba(0,0,0,0) 1px);
+  background-size:160px 160px,160px 160px,20px 20px,20px 20px;
+  background-position:-1px -1px}
+#stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(132% 112% at 50% 42%,rgba(0,0,0,0) 58%,rgba(3,5,10,.52) 100%)}
+.sect{position:absolute;z-index:2}
+
+/* ── header ───────────────────────────────────────────── */
+#head{left:34px;top:16px;width:1212px;height:72px;display:flex;justify-content:space-between;align-items:flex-start}
+.eyebrow{font-size:10.5px;letter-spacing:.24em;color:#5f6d86;text-transform:uppercase}
+h1{font-size:22px;font-weight:700;letter-spacing:.05em;color:#eef3fb;line-height:1.2;margin-top:3px}
+h1 em{font-style:normal;color:#79b1ea}
+.tech{font-size:10.5px;color:#8594ab;letter-spacing:.03em;margin-top:4px;line-height:1.42;max-width:850px}
+.tech b{color:#c1cee1;font-weight:500}
+.badge{text-align:right;font-size:10.5px;color:#697891;line-height:1.78;letter-spacing:.07em;white-space:nowrap}
+.badge b{color:#b8c6da;font-weight:500}
+
+/* ── panels ───────────────────────────────────────────── */
+#panels{left:34px;top:92px;width:1212px;height:348px;display:flex;gap:45px}
+.panel{position:relative;width:374px;height:348px;overflow:hidden;border:1px solid rgba(150,175,215,.14);
+  border-radius:3px;background:linear-gradient(180deg,rgba(190,215,255,.035),rgba(190,215,255,0) 34%)}
+.pbar{position:absolute;left:-1px;top:-1px;width:3px;height:34px;border-radius:3px 0 0 0}
+.phead{position:absolute;left:15px;top:0;width:340px;height:34px;display:flex;align-items:center;gap:9px}
+.ptag{font-size:13px;font-weight:700;width:13px}
+.pname{font-size:12.5px;font-weight:700;letter-spacing:.17em;color:#e8eefa}
+.psub{position:absolute;left:15px;top:33px;width:344px;font-size:10.5px;letter-spacing:.01em;
+  color:#6e7d95;line-height:1.2;white-space:nowrap}
+.psub span{display:block;overflow:hidden;text-overflow:ellipsis}
+.pcvs{position:absolute;left:0;top:62px;display:block;width:372px;height:262px}
+.pfoot{position:absolute;left:0;top:324px;width:372px;height:24px;display:flex;align-items:center;
+  border-top:1px solid rgba(150,175,215,.10);font-size:10.5px;letter-spacing:.02em;
+  color:#93a2b8;white-space:nowrap;padding:0 11px;overflow:hidden}
+.pfoot .k{color:#5d6c84;margin-right:4px}
+.pfoot .v{color:#d3ddec;margin-right:11px}
+.pfoot .v b{font-weight:500}
+.pfoot .s{color:#67768e;margin-left:3px}
+
+/* ── analysis ─────────────────────────────────────────── */
+#analysis{left:34px;top:456px;width:1212px;height:240px;display:flex;gap:32px}
+.card{position:relative;height:240px;border:1px solid rgba(150,175,215,.14);border-radius:3px;
+  background:linear-gradient(180deg,rgba(190,215,255,.03),rgba(190,215,255,0) 30%)}
+#histcard{width:740px}
+#metcard{width:440px;padding:9px 14px 10px}
+.hdr{display:flex;align-items:baseline;gap:8px;justify-content:space-between}
+.ctitle{font-size:11.5px;font-weight:700;letter-spacing:.2em;color:#dbe5f4}
+.csub{font-size:10.5px;letter-spacing:.04em;color:#6d7c94}
+#histcvs{display:block;width:738px;height:238px}
+.bars{margin-top:11px}
+.brow{display:flex;align-items:center;height:23px}
+.brow .lb{width:112px;font-size:11px;letter-spacing:.04em;color:#8fa0b7}
+.btrack{position:relative;width:186px;height:9px;background:rgba(120,150,195,.10);border-radius:1px}
+.bfill{position:absolute;left:0;top:0;height:9px;border-radius:1px;opacity:.85}
+.bmark{position:absolute;top:-4px;width:1px;height:17px;background:rgba(220,234,252,.55)}
+.brow .vv{width:86px;text-align:right;font-size:11.5px;color:#dde5f2;letter-spacing:.03em}
+table.metrics{width:100%;border-collapse:collapse;margin-top:11px;table-layout:fixed}
+table.metrics th,table.metrics td{text-align:right;padding:3.5px 0;font-size:11px;letter-spacing:.03em;
+  font-weight:400;border-top:1px solid rgba(150,175,215,.10)}
+table.metrics th{font-size:10px;letter-spacing:.11em;color:#8797ae;padding-bottom:5px}
+table.metrics th:first-child,table.metrics td:first-child{text-align:left;color:#7e8da5;width:40%}
+table.metrics th:last-child,table.metrics td:last-child{text-align:right;color:#5f6e86;width:10%;font-size:10px}
+table.metrics td{color:#d5deeb}
+.sw{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:1px}
+
+/* ── control bar ──────────────────────────────────────── */
+#ctl{left:34px;top:712px;width:1212px;height:60px;display:flex;align-items:center;gap:16px;
+  padding:0 16px;border:1px solid rgba(150,175,215,.14);border-radius:3px;
+  background:linear-gradient(180deg,rgba(190,215,255,.05),rgba(190,215,255,.01))}
+.ctl{display:flex;flex-direction:column;gap:7px;width:166px;flex:0 0 auto}
+.ctl .top{display:flex;justify-content:space-between;align-items:baseline}
+.ctl .lb{font-size:10.5px;letter-spacing:.14em;color:#7c8ba3}
+.ctl .vl{font-size:11.5px;color:#e2eaf6;letter-spacing:.03em}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;
+  background:rgba(150,180,225,.22);outline:none;margin:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:11px;height:11px;
+  border-radius:50%;background:#cfe0f5;border:0;
+  box-shadow:0 0 0 3px rgba(140,180,235,.16);cursor:pointer}
+input[type=range]::-webkit-slider-thumb:hover{background:#fff}
+#regen{flex:0 0 auto;height:38px;padding:0 16px;border:1px solid rgba(160,195,240,.4);border-radius:3px;
+  background:linear-gradient(180deg,rgba(140,185,245,.20),rgba(120,165,225,.08));
+  color:#eaf1fb;font:inherit;font-size:11.5px;letter-spacing:.16em;cursor:pointer}
+#regen:hover{background:linear-gradient(180deg,rgba(150,195,255,.30),rgba(130,175,235,.12))}
+#diag{flex:0 0 auto;display:flex;align-items:center;gap:7px;font-size:11px;color:#93a2b8;cursor:pointer;
+  letter-spacing:.05em;user-select:none;white-space:nowrap}
+#diag input{accent-color:#7fb0e8;width:13px;height:13px;margin:0;cursor:pointer}
+.sep{width:1px;height:34px;background:rgba(150,175,215,.16);flex:0 0 auto}
+#seedchip{margin-left:auto;text-align:right;font-size:10.5px;letter-spacing:.09em;color:#6d7c94;
+  line-height:1.6;white-space:nowrap}
+#seedchip b{display:block;color:#b9c7db;font-weight:500;font-size:11.5px;letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <header id="head" class="sect">
+    <div>
+      <p class="eyebrow">19 · generative geometry</p>
+      <h1>POINT SAMPLING <em>—</em> THREE GENERATORS, ONE REGION</h1>
+      <p class="tech"><b>Poisson-disc</b> by dart throwing over a background grid (cell = r/√2, Bridson 1987) ·
+        <b>jittered lattice</b>, one sample per cell · <b>uniform random</b>, iid U(0,1)². Same region, same nominal
+        count, seeded <b>mulberry32</b> — no Math.random on the render path.</p>
+    </div>
+    <div class="badge">
+      REGION <b id="b-region">0.86</b> OF PANEL<br>
+      MIN SEP <b id="b-r">0.55 d₀</b> · JITTER <b id="b-j">0.55</b><br>
+      POINTS <b id="b-n">1200 / 1225</b> · AREA <b>1.000 u²</b>
+    </div>
+  </header>
+
+  <section id="panels" class="sect">
+    <article class="panel">
+      <div class="pbar" style="background:#ffa25c"></div>
+      <div class="phead"><span class="ptag" style="color:#ffa25c">A</span><span class="pname">UNIFORM RANDOM</span></div>
+      <p class="psub"><span>iid samples from U(0,1)²</span><span>a homogeneous Poisson process</span></p>
+      <canvas class="pcvs" id="cvA" width="372" height="262"></canvas>
+      <div class="pfoot" id="ftA"></div>
+    </article>
+    <article class="panel">
+      <div class="pbar" style="background:#62d8ff"></div>
+      <div class="phead"><span class="ptag" style="color:#62d8ff">B</span><span class="pname">JITTERED LATTICE</span></div>
+      <p class="psub"><span>one sample per cell, offset by ±jitter/2</span><span>stratified — one point per cell</span></p>
+      <canvas class="pcvs" id="cvB" width="372" height="262"></canvas>
+      <div class="pfoot" id="ftB"></div>
+    </article>
+    <article class="panel">
+      <div class="pbar" style="background:#b98cff"></div>
+      <div class="phead"><span class="ptag" style="color:#b98cff">C</span><span class="pname">POISSON-DISC</span></div>
+      <p class="psub"><span>dart throwing over a background grid</span><span>every pair ≥ r, no clumps</span></p>
+      <canvas class="pcvs" id="cvC" width="372" height="262"></canvas>
+      <div class="pfoot" id="ftC"></div>
+    </article>
+  </section>
+
+  <section id="analysis" class="sect">
+    <div class="card" id="histcard">
+      <canvas id="histcvs" width="738" height="238"></canvas>
+    </div>
+    <div class="card" id="metcard">
+      <div class="hdr">
+        <span class="ctitle">UNIFORMITY METRICS</span>
+        <span class="csub" id="met-note">d₀ = √(A/n)</span>
+      </div>
+      <div class="bars" id="cvbars"></div>
+      <table class="metrics">
+        <thead><tr><th></th>
+          <th><span class="sw" style="background:#ffa25c"></span>A</th>
+          <th><span class="sw" style="background:#62d8ff"></span>B</th>
+          <th><span class="sw" style="background:#b98cff"></span>C</th><th>ideal</th></tr></thead>
+        <tbody id="metbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer id="ctl" class="sect">
+    <div class="ctl">
+      <div class="top"><span class="lb">POINT COUNT</span><span class="vl" id="v-n">1200</span></div>
+      <input type="range" id="s-n" min="200" max="4000" step="20" value="1200">
+    </div>
+    <div class="ctl">
+      <div class="top"><span class="lb">REGION SIZE</span><span class="vl" id="v-region">86%</span></div>
+      <input type="range" id="s-region" min="60" max="100" step="1" value="86">
+    </div>
+    <div class="ctl">
+      <div class="top"><span class="lb">JITTER</span><span class="vl" id="v-j">0.55</span></div>
+      <input type="range" id="s-j" min="0" max="100" step="1" value="55">
+    </div>
+    <div class="ctl">
+      <div class="top"><span class="lb">MIN SEP r</span><span class="vl" id="v-r">0.55 d₀</span></div>
+      <input type="range" id="s-r" min="30" max="80" step="1" value="55">
+    </div>
+    <button id="regen">REGENERATE ⟳</button>
+    <div class="sep"></div>
+    <label id="diag"><input type="checkbox" id="c-diag" checked>diagnostics</label>
+    <div id="seedchip">SEED<b id="v-seed">0x5EED0001</b></div>
+  </footer>
+
+</div>
+
+<script>
+"use strict";
+/* ══════════════════════════════════════════════════════════════════════
+   Point-sampling comparison: uniform random / jittered lattice /
+   Poisson-disc. Everything seeded; nothing on the render path uses
+   Math.random(). All distances are in the unit square, area A = 1.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const M = [
+  { id:'A', key:'random',  rgb:[255,162,92],  css:'#ffa25c', name:'UNIFORM RANDOM' },
+  { id:'B', key:'grid',    rgb:[ 98,216,255], css:'#62d8ff', name:'JITTERED LATTICE' },
+  { id:'C', key:'poisson', rgb:[185,140,255], css:'#b98cff', name:'POISSON-DISC' }
+];
+
+/* ── deterministic RNG ─────────────────────────────────────────────── */
+function mulberry32(a){
+  a = a >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function mix32(){
+  let h = 0x811c9dc5;
+  for (let i = 0; i < arguments.length; i++){
+    let v = arguments[i] >>> 0;
+    for (let b = 0; b < 4; b++){ h ^= (v & 255); h = Math.imul(h, 0x01000193); v >>>= 8; }
+  }
+  h ^= h >>> 15; h = Math.imul(h, 0x2545f491); h ^= h >>> 13;
+  return h >>> 0;
+}
+const hex8 = v => '0x' + (v >>> 0).toString(16).toUpperCase().padStart(8, '0');
+
+/* ── parameters ────────────────────────────────────────────────────── */
+const P = { n: 1200, region: 0.86, jitter: 0.55, rFrac: 0.55, seed: 0x5EED0001, diag: true };
+
+/* ══ SAMPLERS — each returns { pts, count, darts } ═══════════════════ */
+
+/* (a) iid uniform. Nearest-neighbour distances are Rayleigh-distributed;
+       that is the reference curve on the histogram. */
+function sampleUniform(n, rng){
+  const pts = new Float32Array(2 * n);
+  for (let i = 0; i < n; i++){ pts[2*i] = rng(); pts[2*i+1] = rng(); }
+  return { pts, count: n, darts: n };
+}
+
+/* (b) jittered lattice — cols×rows ≈ n cells, one sample per cell,
+       displaced by at most jitter/2 of the cell so it cannot leave it. */
+function sampleJittered(n, rng, jitter){
+  let cols = Math.max(1, Math.round(Math.sqrt(n)));
+  let rows = Math.max(1, Math.round(n / cols));
+  while (cols * rows < n) { if (cols <= rows) cols++; else rows++; }
+  const count = cols * rows;
+  const pts = new Float32Array(2 * count);
+  const h = jitter * 0.5;
+  let k = 0;
+  for (let j = 0; j < rows; j++){
+    for (let i = 0; i < cols; i++){
+      pts[2*k]   = (i + 0.5 + (rng() - 0.5) * h) / cols;
+      pts[2*k+1] = (j + 0.5 + (rng() - 0.5) * h) / rows;
+      k++;
+    }
+  }
+  return { pts, count, darts: count };
+}
+
+/* (c) Poisson-disc by dart throwing over a background grid.
+       Cells of side r/√2 hold at most one sample, so each cell is a
+       candidate firing pad. Pop a pad, throw K darts inside it, keep the
+       first that clears r against the 3×3 neighbourhood, then re-arm the
+       pad's still-empty neighbours. Terminates at n samples, or when
+       every pad has been retired without a hit. */
+function samplePoisson(n, rng, r){
+  const want = r / Math.SQRT2;
+  const gw = Math.max(1, Math.ceil(1 / want)), gh = gw;   // cell ≤ r/√2 ⇒ at most 1
+  const cw = 1 / gw, chh = 1 / gh, cells = gw * gh;
+  const buckets = new Array(cells);
+  const active  = new Int32Array(cells);
+  const inList  = new Uint8Array(cells);
+  for (let i = 0; i < cells; i++){ active[i] = i; inList[i] = 1; }
+  let nActive = cells;
+
+  const pts = new Float32Array(2 * (n + 64));
+  let count = 0, darts = 0;
+  const K = 24, r2 = r * r, budget = 6000000;
+
+  while (count < n && darts < budget){
+    // pick a live pad, lazily compacting retired slots out of the list
+    let pick = -1;
+    while (nActive > 0){
+      pick = (rng() * nActive) | 0;
+      if (inList[active[pick]]) break;
+      nActive--; active[pick] = active[nActive];
+      pick = -1;
+    }
+    if (nActive === 0) break;
+
+    const id = active[pick];
+    const cx = (id % gw) * cw, cy = ((id / gw) | 0) * chh;
+    let placed = false;
+    for (let k = 0; k < K && !placed; k++){
+      darts++;
+      const x = cx + rng() * cw, y = cy + rng() * chh;
+      const bx = x * gw | 0, by = y * gh | 0;
+      // 5×5, not 3×3: two samples two cells apart can still be only cw < r
+      // apart, so cells within two steps of the candidate must be scanned.
+      let ok = true;
+      for (let dy = -2; dy <= 2 && ok; dy++){
+        const yy = by + dy; if (yy < 0 || yy >= gh) continue;
+        for (let dx = -2; dx <= 2; dx++){
+          const xx = bx + dx; if (xx < 0 || xx >= gw) continue;
+          const b = buckets[yy * gw + xx]; if (!b) continue;
+          for (let q = 0; q < b.length; q++){
+            const p = b[q];
+            const ax = pts[2*p] - x, ay = pts[2*p+1] - y;
+            if (ax*ax + ay*ay < r2){ ok = false; break; }
+          }
+          if (!ok) break;
+        }
+      }
+      if (ok){
+        pts[2*count] = x; pts[2*count+1] = y; count++;
+        const bid = by * gw + bx;
+        const wasEmpty = !buckets[bid];
+        (buckets[bid] || (buckets[bid] = [])).push(count - 1);
+        if (wasEmpty){
+          inList[bid] = 0;                       // this pad is now used up
+          for (let dy = -2; dy <= 2; dy++)          // re-arm empty neighbours
+            for (let dx = -2; dx <= 2; dx++){
+              if (!dx && !dy) continue;
+              const xx = bx + dx, yy = by + dy;
+              if (xx < 0 || xx >= gw || yy < 0 || yy >= gh) continue;
+              const nid = yy * gw + xx;
+              if (buckets[nid] || inList[nid]) continue;
+              inList[nid] = 1; active[nActive++] = nid;
+            }
+        }
+        placed = true;
+      }
+    }
+    if (!placed) inList[id] = 0;                 // exhausted pad: retire it
+  }
+  return { pts, count, darts };
+}
+
+/* ══ NEIGHBOUR QUERIES over a background grid ══════════════════════ */
+function buildIndex(pts, count, cell){
+  // gw = ceil(1/cell) makes the realised cell 1/gw ≤ cell, so the "unscanned
+  // points are at least R·cw away" exit bound in nearest() stays sound. Both
+  // functions must use the same realised cw — mixing a rounded gw with the
+  // requested cell silently returns wrong nearest distances.
+  const gw = Math.max(1, Math.ceil(1 / cell)), gh = gw;
+  const cw = 1 / gw, ch = 1 / gh;
+  const buckets = new Array(gw * gh);
+  for (let i = 0; i < count; i++){
+    let gx = (pts[2*i] / cw) | 0, gy = (pts[2*i+1] / ch) | 0;
+    if (gx < 0) gx = 0; else if (gx >= gw) gx = gw - 1;
+    if (gy < 0) gy = 0; else if (gy >= gh) gy = gh - 1;
+    const id = gy * gw + gx;
+    (buckets[id] || (buckets[id] = [])).push(i);
+  }
+  return { gw, gh, cw, ch, buckets };
+}
+/* Nearest sample to (x,y) over a growing ring of cells. `exclude` drops one
+   index (the query point itself).
+   Exit bound: once rings 0..R are scanned, every unscanned sample lies in a
+   cell at least one step outside the (2R+1)² block, so it is at least R·cell
+   away along some axis. A best distance ≤ R·cell therefore cannot be beaten. */
+function nearest(idx, pts, x, y, exclude){
+  const gw = idx.gw, gh = idx.gh, cw = idx.cw, ch = idx.ch, buckets = idx.buckets;
+  let gx = (x / cw) | 0, gy = (y / ch) | 0;
+  if (gx < 0) gx = 0; else if (gx >= gw) gx = gw - 1;
+  if (gy < 0) gy = 0; else if (gy >= gh) gy = gh - 1;
+  let best = Infinity, bi = -1;
+  const maxRing = Math.max(gw, gh);
+  for (let ring = 0; ring <= maxRing; ring++){
+    const x0 = gx - ring, x1 = gx + ring, y0 = gy - ring, y1 = gy + ring;
+    for (let cy = y0; cy <= y1; cy++){
+      if (cy < 0 || cy >= gh) continue;
+      const edgeRow = (cy === y0 || cy === y1);
+      for (let cx = x0; cx <= x1; cx++){
+        if (cx < 0 || cx >= gw) continue;
+        if (!edgeRow && cx !== x0 && cx !== x1) continue;   // interior done earlier
+        const b = buckets[cy * gw + cx];
+        if (!b) continue;
+        for (let k = 0; k < b.length; k++){
+          const i = b[k]; if (i === exclude) continue;
+          const ax = pts[2*i] - x, ay = pts[2*i+1] - y;
+          const d2 = ax*ax + ay*ay;
+          if (d2 < best){ best = d2; bi = i; }
+        }
+      }
+    }
+    if (best <= ring * cw) break;
+  }
+  return { d: best === Infinity ? 0 : Math.sqrt(best), i: bi };
+}
+
+/* ══ METRICS ═══════════════════════════════════════════════════════
+   CV = σ/μ of the nearest-neighbour distance (0.523 for a Poisson
+   process, ~0 for a hard-disc set). Mean relative area MRA = π·E[d²]/d₀²
+   is 1.0 for a Poisson process and ≈π for a lattice. The largest empty
+   circle is searched on a d₀/2 lattice inset one d₀ from the boundary so
+   the region edge cannot masquerade as a void.                          */
+function measure(pts, count, d0){
+  const idx = buildIndex(pts, count, d0);
+  const nn = new Float32Array(count);
+  let sum = 0, sum2 = 0, min = Infinity, minPair = -1, minI = -1;
+  for (let i = 0; i < count; i++){
+    const r = nearest(idx, pts, pts[2*i], pts[2*i+1], i);
+    nn[i] = r.d; sum += r.d; sum2 += r.d * r.d;
+    if (r.d < min){ min = r.d; minPair = i; minI = r.i; }
+  }
+  const mean = sum / count;
+  const variance = Math.max(0, sum2 / count - mean * mean);
+  const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+  const mra = Math.PI * (sum2 / count) / (d0 * d0);
+
+  const step = d0 * 0.5, inset = d0;
+  let voidR = 0, vx = 0.5, vy = 0.5;
+  for (let y = inset; y <= 1 - inset + 1e-9; y += step)
+    for (let x = inset; x <= 1 - inset + 1e-9; x += step){
+      const r = nearest(idx, pts, x, y, -1);
+      if (r.d > voidR){ voidR = r.d; vx = x; vy = y; }
+    }
+
+  return { nn, mean, cv, mra, min, minPair, minI,
+           voidR, voidX: vx, voidY: vy,
+           voidArea: voidR > 0 ? Math.PI * voidR * voidR : 0 };
+}
+
+/* ══ RENDERING ══════════════════════════════════════════════════════ */
+const RS_MAX = 250;                      // largest region side inside a panel
+const HIST_BINS = 46, HIST_MAX = 3.0, HIST_YMAX = 6;
+
+function fitCanvas(cv){
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return null;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w, h };
+}
+
+const spriteCache = new Map();
+function glowSprite(rgb, R){
+  const key = rgb.join(',') + '|' + R.toFixed(2);
+  let s = spriteCache.get(key);
+  if (s) return s;
+  const size = Math.max(8, Math.ceil(R * 2) + 2), c = size / 2;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(c, c, 0, c, c, R);
+  grd.addColorStop(0.00, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.85)`);
+  grd.addColorStop(0.30, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.34)`);
+  grd.addColorStop(0.64, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.10)`);
+  grd.addColorStop(1.00, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+  g.fillStyle = grd; g.fillRect(0, 0, size, size);
+  spriteCache.set(key, cv);
+  return cv;
+}
+
+function drawPanel(canvas, m, res){
+  const fit = fitCanvas(canvas); if (!fit) return;
+  const { ctx, w, h } = fit;
+  const RS = Math.round(RS_MAX * P.region);
+  const x0 = (w - RS) / 2, y0 = (h - RS) / 2, sc = RS;
+  const d0px = d0 * sc;
+
+  const bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, 'rgba(150,185,235,.05)');
+  bg.addColorStop(0.55, 'rgba(120,150,200,.012)');
+  bg.addColorStop(1, 'rgba(20,26,42,.17)');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+  const halo = ctx.createRadialGradient(x0 + RS/2, y0 + RS/2, RS*0.12,
+                                       x0 + RS/2, y0 + RS/2, RS*0.98);
+  halo.addColorStop(0, `rgba(${m.rgb[0]},${m.rgb[1]},${m.rgb[2]},.06)`);
+  halo.addColorStop(1, `rgba(${m.rgb[0]},${m.rgb[1]},${m.rgb[2]},0)`);
+  ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
+
+  // the sampled region
+  const rg = ctx.createLinearGradient(x0, y0, x0 + RS, y0 + RS);
+  rg.addColorStop(0, 'rgba(6,9,17,.86)');
+  rg.addColorStop(1, 'rgba(13,18,30,.80)');
+  ctx.fillStyle = rg; ctx.fillRect(x0, y0, RS, RS);
+  ctx.strokeStyle = 'rgba(150,180,225,.26)'; ctx.lineWidth = 1;
+  ctx.strokeRect(x0 + 0.5, y0 + 0.5, RS - 1, RS - 1);
+  ctx.strokeStyle = 'rgba(150,180,225,.5)'; ctx.lineWidth = 1.4;
+  const t = 9;
+  [[x0, y0, 1, 1], [x0 + RS, y0, -1, 1], [x0, y0 + RS, 1, -1], [x0 + RS, y0 + RS, -1, -1]]
+    .forEach(c => {
+      ctx.beginPath();
+      ctx.moveTo(c[0] + c[2] * 0.5, c[1] + c[3] * (0.5 + t));
+      ctx.lineTo(c[0] + c[2] * 0.5, c[1] + c[3] * 0.5);
+      ctx.lineTo(c[0] + c[2] * (0.5 + t), c[1] + c[3] * 0.5);
+      ctx.stroke();
+    });
+
+  const pts = res.pts, n = res.count;
+  const rgb = m.rgb;
+
+  // diagnostics: the two clumping extremes, made visible
+  if (P.diag && n > 1){
+    if (res.voidR > 0){
+      const cx = x0 + res.voidX * sc, cy = y0 + res.voidY * sc, rr = res.voidR * sc;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.055)`; ctx.fill();
+      ctx.setLineDash([3, 4]); ctx.lineWidth = 1;
+      ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.72)`; ctx.stroke();
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(cx, cy, 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.9)`; ctx.fill();
+    }
+    if (res.minPair >= 0 && res.minI >= 0){
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x0 + pts[2*res.minPair] * sc, y0 + pts[2*res.minPair+1] * sc);
+      ctx.lineTo(x0 + pts[2*res.minI] * sc, y0 + pts[2*res.minI+1] * sc);
+      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // points: soft halo pass (additive), then a crisp core pass on top
+  const R = Math.max(3.2, Math.min(6.0, d0px * 0.30));
+  const core = Math.max(0.70, Math.min(1.40, d0px * 0.13));
+  const sp = glowSprite(rgb, R);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < n; i++)
+    ctx.drawImage(sp, x0 + pts[2*i] * sc - R, y0 + pts[2*i+1] * sc - R, R * 2, R * 2);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = `rgb(${Math.round(rgb[0]*.45+255*.55)},${Math.round(rgb[1]*.45+255*.55)},${Math.round(rgb[2]*.45+255*.55)})`;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++){
+    const px = x0 + pts[2*i] * sc, py = y0 + pts[2*i+1] * sc;
+    ctx.moveTo(px + core, py);
+    ctx.arc(px, py, core, 0, Math.PI * 2);
+  }
+  ctx.fill();
+}
+
+function drawHistogram(cv, all){
+  const fit = fitCanvas(cv); if (!fit) return;
+  const { ctx, w, h } = fit;
+  const g0 = ctx.createLinearGradient(0, 0, 0, h);
+  g0.addColorStop(0, 'rgba(150,185,235,.035)');
+  g0.addColorStop(1, 'rgba(20,26,42,.10)');
+  ctx.fillStyle = g0; ctx.fillRect(0, 0, w, h);
+
+  const L = 48, Rr = w - 18, T = 32, B = h - 26, PW = Rr - L, PH = B - T;
+  const binW = HIST_MAX / HIST_BINS;
+
+  const bins = all.map(S => {
+    const b = new Float32Array(HIST_BINS);
+    for (let i = 0; i < S.res.count; i++){
+      let k = (S.res.nn[i] / S.d0 / binW) | 0;
+      b[k < 0 ? 0 : (k >= HIST_BINS ? HIST_BINS - 1 : k)]++;
+    }
+    return b;
+  });
+  const theory = new Float32Array(HIST_BINS);   // Rayleigh pdf 2d·e^{−d²}
+  for (let b = 0; b < HIST_BINS; b++){
+    const d = (b + 0.5) * binW; theory[b] = 2 * d * Math.exp(-d * d);
+  }
+  let ymax = 0;
+  for (let b = 0; b < HIST_BINS; b++){
+    ymax = Math.max(ymax, theory[b]);
+    for (let k = 0; k < all.length; k++) ymax = Math.max(ymax, bins[k][b] / all[k].res.count / binW);
+  }
+  ymax = Math.min(HIST_YMAX, Math.ceil(ymax * 1.12 * 2) / 2);
+
+  ctx.font = '11px ui-monospace, "DejaVu Sans Mono", monospace';
+  ctx.textBaseline = 'middle'; ctx.lineWidth = 1;
+  const yStep = ymax > 4 ? 2 : 1;
+  for (let v = 0; v <= ymax + 1e-6; v += yStep){
+    const y = B - (v / ymax) * PH;
+    ctx.strokeStyle = v === 0 ? 'rgba(150,180,225,.34)' : 'rgba(150,180,225,.09)';
+    ctx.beginPath(); ctx.moveTo(L, y + .5); ctx.lineTo(Rr, y + .5); ctx.stroke();
+    ctx.fillStyle = 'rgba(140,160,190,.75)'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), L - 8, y);
+  }
+  ctx.textAlign = 'center';
+  for (let v = 0; v <= HIST_MAX + 1e-6; v += 0.5){
+    const x = L + (v / HIST_MAX) * PW;
+    ctx.strokeStyle = v === 0 ? 'rgba(150,180,225,.34)' : 'rgba(150,180,225,.075)';
+    ctx.beginPath(); ctx.moveTo(x + .5, T); ctx.lineTo(x + .5, B); ctx.stroke();
+    ctx.fillStyle = 'rgba(140,160,190,.75)';
+    ctx.fillText(v.toFixed(1), x, B + 13);
+  }
+
+  all.forEach((S, k) => {
+    const m = M[k];
+    const yAt = b => B - Math.min(1, (bins[k][b] / S.res.count / binW) / ymax) * PH;
+    ctx.beginPath(); ctx.moveTo(L, B);
+    for (let b = 0; b < HIST_BINS; b++) ctx.lineTo(L + ((b + 0.5) / HIST_BINS) * PW, yAt(b));
+    ctx.lineTo(Rr, B); ctx.closePath();
+    const fg = ctx.createLinearGradient(0, T, 0, B);
+    fg.addColorStop(0, `rgba(${m.rgb[0]},${m.rgb[1]},${m.rgb[2]},.36)`);
+    fg.addColorStop(1, `rgba(${m.rgb[0]},${m.rgb[1]},${m.rgb[2]},.02)`);
+    ctx.fillStyle = fg; ctx.fill();
+    ctx.beginPath();
+    for (let b = 0; b < HIST_BINS; b++){
+      const x = L + ((b + 0.5) / HIST_BINS) * PW;
+      b === 0 ? ctx.moveTo(x, yAt(b)) : ctx.lineTo(x, yAt(b));
+    }
+    ctx.strokeStyle = m.css; ctx.lineWidth = 1.4; ctx.stroke();
+  });
+
+  ctx.save(); ctx.setLineDash([4, 3]); ctx.beginPath();
+  for (let b = 0; b < HIST_BINS; b++){
+    const x = L + ((b + 0.5) / HIST_BINS) * PW, y = B - (theory[b] / ymax) * PH;
+    b === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = 'rgba(215,232,255,.6)'; ctx.lineWidth = 1.1; ctx.stroke(); ctx.restore();
+
+  const rpx = L + (P.rFrac / HIST_MAX) * PW;
+  if (rpx < Rr){
+    ctx.save(); ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = 'rgba(185,140,255,.8)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(rpx + .5, T); ctx.lineTo(rpx + .5, B); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = 'rgba(196,155,255,.95)'; ctx.textAlign = 'left';
+    ctx.fillText('r = ' + P.rFrac.toFixed(2) + ' d₀', rpx + 5, T + 7);
+  }
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#dbe5f4'; ctx.font = '700 11.5px ui-monospace, "DejaVu Sans Mono", monospace';
+  ctx.fillText('NEAREST-NEIGHBOUR DISTANCE', L, 14);
+  ctx.font = '10.5px ui-monospace, "DejaVu Sans Mono", monospace'; ctx.fillStyle = '#6d7c94';
+  ctx.fillText('density of d/d₀  ·  d₀ = √(A/n) = ' + all[0].d0.toFixed(4) + ' u', L + 234, 14);
+  ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(215,232,255,.8)';
+  ctx.fillText('n = ' + all[0].res.count + ' / ' + all[1].res.count + ' / ' + all[2].res.count, Rr, 14);
+  ctx.save(); ctx.translate(14, (T + B) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#6d7c94';
+  ctx.fillText('probability density', 0, 0); ctx.restore();
+  ctx.textAlign = 'right'; ctx.fillStyle = '#6d7c94';
+  ctx.fillText('nearest-neighbour distance  d/d₀', Rr, h - 7);
+
+  ctx.textAlign = 'right';
+  all.forEach((S, k) => {
+    const m = M[k], y = T + 14 + k * 15;
+    ctx.fillStyle = m.css; ctx.fillRect(Rr - 134, y - 1.5, 14, 2.5);
+    ctx.fillStyle = 'rgba(208,222,242,.92)';
+    ctx.fillText(m.id + '  ' + m.name, Rr - 6, y);
+  });
+  ctx.save(); ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = 'rgba(215,232,255,.75)'; ctx.lineWidth = 1.2;
+  const ky = T + 14 + 3 * 15;
+  ctx.beginPath(); ctx.moveTo(Rr - 134, ky - 1.5); ctx.lineTo(Rr - 120, ky - 1.5); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(208,222,242,.92)';
+  ctx.fillText('Rayleigh 2d·e⁻ᵈ² — the iid limit', Rr - 6, ky);
+}
+
+/* ── film grain: one cached pass ───────────────────────────
+   Normal-blend speckle, not `overlay`: overlay only perturbs pixels that are
+   already mid-tone, so on a near-black ground it does nothing at all and
+   every dark region collapses to a single flat colour. Sparse low-alpha
+   light specks instead give the ground a floor value everywhere, which is
+   what stops the large empty areas from banding into one bucket. */
+let grainCv = null, grainSeed = -1;
+function grainLayer(w, h, seed){
+  if (grainCv && grainCv.width === w && grainCv.height === h && grainSeed === seed) return grainCv;
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  const img = g.createImageData(w, h), d = img.data, rng = mulberry32(mix32(seed, 7, 11));
+  for (let i = 0; i < d.length; i += 4){
+    const u = rng();
+    // ~22% of pixels carry a faint speck; the rest stay fully transparent.
+    if (u < 0.22){
+      d[i] = 118; d[i+1] = 146; d[i+2] = 196;
+      d[i+3] = 7 + ((rng() * 26) | 0);
+    } else {
+      d[i+3] = 0;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  grainCv = cv; grainSeed = seed;
+  return cv;
+}
+
+/* ══ DRIVER ═════════════════════════════════════════════════════════ */
+let state = null, d0 = 0;
+const canvases = [document.getElementById('cvA'), document.getElementById('cvB'), document.getElementById('cvC')];
+const feet     = [document.getElementById('ftA'), document.getElementById('ftB'), document.getElementById('ftC')];
+const histcv   = document.getElementById('histcvs');
+
+function build(){
+  const t0 = performance.now();
+  d0 = 1 / Math.sqrt(P.n);
+  const made = [
+    sampleUniform(P.n,  mulberry32(mix32(P.seed, 0x11))),
+    sampleJittered(P.n, mulberry32(mix32(P.seed, 0x22)), P.jitter),
+    samplePoisson(P.n, mulberry32(mix32(P.seed, 0x33)), P.rFrac * d0)
+  ];
+  state = {
+    all: made.map(s => ({ res: Object.assign(s, measure(s.pts, s.count, d0)), d0 })),
+    ms: 0
+  };
+  state.ms = performance.now() - t0;
+  paint();
+  readout();
+}
+
+function paint(){
+  state.all.forEach((S, k) => drawPanel(canvases[k], M[k], S.res));
+  drawHistogram(histcv, state.all);
+  let ov = document.getElementById('grainlay');
+  if (!ov){
+    ov = document.createElement('canvas');
+    ov.id = 'grainlay';
+    ov.width = 1280; ov.height = 800;
+    ov.style.cssText = 'position:absolute;left:0;top:0;width:1280px;height:800px;' +
+      'pointer-events:none;z-index:1';
+    document.getElementById('stage').appendChild(ov);
+  }
+  const oc = ov.getContext('2d');
+  oc.clearRect(0, 0, 1280, 800);
+  oc.drawImage(grainLayer(1280, 800, P.seed), 0, 0);
+}
+
+function readout(){
+  const A = state.all, sc = Math.round(RS_MAX * P.region);
+  const set = (id, v) => { document.getElementById(id).textContent = v; };
+  set('b-n', A[0].res.count + ' / ' + A[1].res.count + ' / ' + A[2].res.count);
+  set('b-region', P.region.toFixed(2));
+  set('b-j', P.jitter.toFixed(2));
+  set('b-r', P.rFrac.toFixed(2) + ' d₀');
+  set('v-seed', hex8(P.seed));
+  set('met-note', 'd₀ = √(A/n) = ' + d0.toFixed(4) + ' u');
+
+  A.forEach((S, k) => {
+    const g = S.res;
+    feet[k].innerHTML =
+      '<span class="k">n</span><span class="v"><b>' + g.count + '</b></span>' +
+      '<span class="k">NN</span><span class="v"><b>' + (g.mean / d0).toFixed(2) + '</b>d₀</span>' +
+      '<span class="k">min</span><span class="v"><b>' + (g.min / d0).toFixed(2) + '</b>d₀</span>' +
+      '<span class="k">void</span><span class="v"><b>' + (2 * g.voidR / d0).toFixed(2) + '</b>d₀' +
+      '<span class="s">' + (g.voidArea * 100).toFixed(1) + '%A</span></span>';
+  });
+
+  // clumping bars: CV of the nearest-neighbour distance
+  const cvMax = 0.62;
+  document.getElementById('cvbars').innerHTML = A.map((S, k) => {
+    const v = S.res.cv, w = Math.max(1.5, Math.min(100, v / cvMax * 100));
+    return '<div class="brow"><span class="lb">' + M[k].id + ' · ' + M[k].name + '</span>' +
+      '<span class="btrack"><span class="bfill" style="width:' + w.toFixed(1) + '%;background:' + M[k].css + '"></span>' +
+      '<span class="bmark" style="left:' + (0.5227 / cvMax * 100).toFixed(1) + '%"></span></span>' +
+      '<span class="vv">' + v.toFixed(3) + '</span></div>';
+  }).join('');
+
+  const rows = [
+    ['mean NN ÷ d₀',      A.map(S => (S.res.mean / d0).toFixed(3)), '0.500'],
+    ['mean relative area', A.map(S => S.res.mra.toFixed(2)),    '1.0'],
+    ['closest pair ÷ d₀',  A.map(S => (S.res.min / d0).toFixed(2)), '≥ r'],
+    ['largest void ÷ d₀',  A.map(S => (2 * S.res.voidR / d0).toFixed(2)), '—'],
+    ['darts per point',    A.map(S => (S.res.darts / S.res.count).toFixed(1)), '—']
+  ];
+  document.getElementById('metbody').innerHTML = rows.map(r =>
+    '<tr><td>' + r[0] + '</td>' + r[1].map(v => '<td>' + v + '</td>').join('') +
+    '<td style="color:#5f6e86">' + r[2] + '</td></tr>').join('');
+
+  window.__probe = {
+    ready: true, frames: 1, build_ms: +state.ms.toFixed(1), seed: hex8(P.seed),
+    params: { n: P.n, region: +P.region.toFixed(2), jitter: +P.jitter.toFixed(2), r: +P.rFrac.toFixed(2) },
+    d0: +d0.toFixed(5),
+    counts: A.map(S => S.res.count),
+    darts: A.map(S => S.res.darts),
+    meanNN_over_d0: A.map(S => +(S.res.mean / d0).toFixed(3)),
+    minPair_over_d0: A.map(S => +(S.res.min / d0).toFixed(3)),
+    cv: A.map(S => +S.res.cv.toFixed(3)),
+    mra: A.map(S => +S.res.mra.toFixed(2)),
+    void_diam_over_d0: A.map(S => +(2 * S.res.voidR / d0).toFixed(2))
+  };
+}
+
+/* ── controls ──────────────────────────────────────────────────────── */
+function bind(id, key, out, parse, fmt){
+  const el = document.getElementById(id), lab = document.getElementById(out);
+  el.addEventListener('input', () => {
+    P[key] = parse(+el.value);
+    lab.textContent = fmt(P[key]);
+    build();
+  });
+}
+bind('s-n', 'n', 'v-n', v => v, v => String(v));
+bind('s-region', 'region', 'v-region', v => v / 100, v => Math.round(v * 100) + '%');
+bind('s-j', 'jitter', 'v-j', v => v / 100, v => v.toFixed(2));
+bind('s-r', 'rFrac', 'v-r', v => v / 100, v => v.toFixed(2) + ' d₀');
+
+document.getElementById('regen').addEventListener('click', () => {
+  P.seed = (Math.imul(P.seed, 1664525) + 1013904223) >>> 0;
+  build();
+});
+document.getElementById('c-diag').addEventListener('change', e => {
+  P.diag = e.target.checked;
+  paint();
+});
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+build();
+requestAnimationFrame(() => requestAnimationFrame(() => { window.__ready = true; }));
+</script>
+</body>
+</html>

@@ -1,0 +1,1132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EXOPLANET PROCEDURATOR — raymarched FBM world</title>
+<style>
+  :root{
+    --ink:#e9f1f8; --dim:#8ba0b8; --cy:#63d3ff; --am:#ffbe6a;
+    --panel:rgba(6,10,16,.72); --edge:rgba(110,170,215,.20);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#03050a;overflow:hidden;
+    font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);
+    -webkit-font-smoothing:antialiased}
+  #gl{position:fixed;inset:0;width:100vw;height:100vh;display:block;background:#03050a;cursor:grab}
+  #gl.drag{cursor:grabbing}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--edge);
+    border-radius:9px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:0 8px 28px rgba(0,0,0,.6)}
+  #title{left:16px;top:14px;padding:10px 14px 11px;max-width:372px}
+  #title h1{margin:0;font:600 13.5px/1.15 ui-monospace,monospace;letter-spacing:.16em}
+  #title h1 b{color:var(--am);font-weight:600}
+  #title .sub{color:var(--dim);font-size:10px;letter-spacing:.05em;margin-top:3px}
+  #title .rule{height:1px;margin:8px 0 7px;
+    background:linear-gradient(90deg,var(--cy),rgba(99,211,255,0))}
+  #title .tech{font-size:10px;color:#aec2d6;line-height:1.55}
+  #title .tech i{color:var(--cy);font-style:normal}
+  #ctl{right:14px;top:14px;width:238px;padding:8px 11px 10px;
+    max-height:calc(100vh - 186px);overflow-y:auto}
+  #ctl::-webkit-scrollbar{width:6px}#ctl::-webkit-scrollbar-thumb{background:#243446;border-radius:3px}
+  .hd{display:flex;align-items:center;gap:7px;margin:1px 0 8px;
+    font:600 10px/1 ui-monospace,monospace;letter-spacing:.18em;color:var(--cy)}
+  .hd:after{content:"";flex:1;height:1px;background:var(--edge)}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:baseline;margin:0 0 1px;font-size:10px}
+  .row label{color:var(--dim);letter-spacing:.05em}
+  .row output{color:var(--am);font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:12px;
+    background:transparent;margin:0 0 5px;cursor:ew-resize}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:#243446;border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;margin-top:-3.5px;
+    border-radius:50%;background:var(--cy);box-shadow:0 0 7px rgba(99,211,255,.65)}
+  input[type=range]::-moz-range-track{height:2px;background:#243446;border-radius:2px}
+  input[type=range]::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:50%;background:var(--cy)}
+  #seedwrap{display:flex;gap:5px;align-items:center;margin:0 0 8px}
+  #seedin{flex:1;min-width:0;padding:3px 6px;font:11px ui-monospace,monospace;color:var(--am);
+    background:rgba(9,15,24,.85);border:1px solid var(--edge);border-radius:4px}
+  #seedin:focus{outline:none;border-color:rgba(99,211,255,.55)}
+  .btns{display:flex;gap:5px;margin:7px 0 1px}
+  button{flex:1 1 auto;padding:4px 5px;font:10px ui-monospace,monospace;letter-spacing:.06em;
+    color:var(--ink);background:rgba(28,42,58,.72);border:1px solid var(--edge);
+    border-radius:5px;cursor:pointer}
+  button:hover{background:rgba(48,70,96,.85);border-color:rgba(99,211,255,.5)}
+  button:active{background:rgba(99,211,255,.2)}
+  #hud{left:16px;bottom:16px;width:276px;padding:7px 11px 8px}
+  #hudrows .r{display:grid;grid-template-columns:70px 1fr;font-size:10px;color:var(--dim)}
+  #hudrows .r b{color:var(--ink);font-weight:400;font-variant-numeric:tabular-nums}
+  #bio{right:14px;bottom:14px;width:238px;padding:7px 11px 9px}
+  #ramp{height:9px;border-radius:3px;margin:2px 0 5px;border:1px solid rgba(110,170,215,.22)}
+  #bio .lg{display:grid;grid-template-columns:1fr 1fr;gap:0 8px;font-size:10px;color:var(--dim);line-height:1.42}
+  #bio .lg i{color:var(--ink);font-style:normal}
+  #err{display:none;position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);
+    max-width:64vw;padding:12px 15px;background:rgba(42,10,14,.94);border:1px solid #a4455a;
+    border-radius:8px;color:#ffdbe0;white-space:pre-wrap;font-size:11px;z-index:30;line-height:1.6}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="err"></div>
+
+<div class="panel" id="title">
+  <h1>EXOPLANET <b>PROCEDURATOR</b></h1>
+  <div class="sub">survey 07 &middot; a world grown from one 32-bit seed</div>
+  <div class="rule"></div>
+  <div class="tech">
+    <i>Radial-displacement sphere</i>, raymarched by root-finding a radial graph: the
+    surface point in direction <b>n</b> is <b>n</b>&middot;(1 + A&middot;H(<b>n</b>)), so the
+    march brackets the zero of |p| &minus; r(<b>n</b>) and bisects it.
+    H = <i>domain-warped 3D FBM</i> (inter-octave rotation) &times; a <i>ridged multifractal</i>.
+    Biomes blend elevation &times; latitude &times; moisture.
+    Clouds: FBM shell, Beer&ndash;Powder with a light march.
+    Atmosphere: exponential-shell integral, Rayleigh + Mie &rarr; a lit terminator.
+    Background: 3-layer cube-face star field, dust lane, companion world.
+    <b>Drag to orbit &middot; wheel to zoom.</b>
+  </div>
+</div>
+
+<div class="panel" id="ctl">
+  <div class="hd">WORLD PARAMETERS</div>
+  <div id="seedwrap">
+    <input id="seedin" type="text" value="20260927" spellcheck="false" title="numeric seed">
+    <button id="shuf" style="flex:0 0 58px">shuffle</button>
+  </div>
+  <div id="sliders"></div>
+  <div class="btns">
+    <button id="next">next world</button>
+    <button id="freeze">freeze spin</button>
+  </div>
+</div>
+
+<div class="panel" id="hud"><div id="hudrows"></div></div>
+
+<div class="panel" id="bio">
+  <div class="hd">BIOME RAMP</div>
+  <div id="ramp"></div>
+  <div class="lg">
+    <span>abyss <i>&minus;0.55</i></span><span>deep <i>&minus;0.42</i></span>
+    <span>shelf <i>&minus;0.26</i></span><span>coast <i>&minus;0.02</i></span>
+    <span>lowland <i>0.07</i></span><span>forest <i>0.21</i></span>
+    <span>steppe <i>0.40</i></span><span>basalt <i>0.56</i></span>
+    <span>snow <i>0.70</i></span><span>ice <i>&ge;0.95</i></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ==================================================================== *
+ *  EXOPLANET PROCEDURATOR                                            *
+ *                                                                   *
+ *  A single fullscreen fragment shader resolves a radial graph       *
+ *  r(n) = 1 + A * H(n) by root-finding, shades it with a biome      *
+ *  palette driven by elevation/latitude/moisture, composites an     *
+ *  FBM cloud shell, an exponential atmosphere, and a star field.    *
+ *  Every stochastic value is drawn from mulberry32(seed) at load.    *
+ *  Simulation time advances by a FIXED delta per frame.              *
+ * ==================================================================== */
+const $ = id => document.getElementById(id);
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* ==================================================================== *
+ *  1. GLSL                                                            *
+ * ==================================================================== */
+const GLSL_HEAD = `#version 300 es
+precision highp float;
+precision highp sampler3D;
+out vec4 O;
+
+uniform vec2  uRes;
+uniform float uTime, uSeed, uRough, uCloud, uAtm, uSea, uSpin, uFov;
+uniform float uAz, uEl, uDist, uTanY, uSeaLevel;
+uniform vec3  uSun, uSunCol, uSeedOff, uAxis, uE2, uE3, uMoon;
+uniform sampler3D uNoise;   /* .rgba = 4 octaves of value noise, pre-baked */
+uniform sampler2D uBG;      /* linear HDR background, written by the BG pass */
+
+const mat3 M3 = mat3( 0.00, 0.80, 0.60,
+                     -0.80, 0.36,-0.48,
+                     -0.60,-0.48, 0.64);
+
+float n1(vec3 p){ return textureLod(uNoise,p,0.0).r; }
+float n2(vec3 p){ return textureLod(uNoise,p,0.0).g; }
+float n3(vec3 p){ return textureLod(uNoise,p,0.0).b; }
+float n4(vec3 p){ return textureLod(uNoise,p,0.0).a; }
+float fbm4(vec3 p){ return n1(p)*0.5333 + n2(p)*0.2667 + n3(p)*0.1333 + n4(p)*0.0667; }
+float fbm3(vec3 p){ return n1(p)*0.5714 + n2(p)*0.2857 + n3(p)*0.1429; }
+float fbm2(vec3 p){ return n1(p)*0.6667 + n2(p)*0.3333; }
+vec3  rot3(vec3 p){ return M3*p; }
+
+float hash12(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y)*q.z);
+}
+vec2 hash22(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*vec3(0.1031,0.1030,0.0973));
+  q += dot(q, q.yxz + 33.33);
+  return fract((q.xx + q.yz)*q.zy);
+}
+vec2 iSphere(vec3 ro, vec3 rd, float r){
+  float b = dot(ro,rd), c = dot(ro,ro) - r*r, h = b*b - c;
+  if(h < 0.0) return vec2(-1.0,-1.0);
+  h = sqrt(h); return vec2(-b-h, -b+h);
+}
+vec3 aces(vec3 x){
+  return clamp((x*(2.51*x + 0.03))/(x*(2.43*x + 0.59) + 0.14), 0.0, 1.0);
+}
+
+/* ---- planet-local frame: spin about the tilted axis ---- */
+vec3 toLocal(vec3 w){ return vec3(dot(w,uE2), dot(w,uAxis), dot(w,uE3)); }
+vec3 toWorldDir(vec3 l){ return uE2*l.x + uAxis*l.y + uE3*l.z; }
+vec3 spinL(vec3 l){
+  float c = cos(uSpin), s = sin(uSpin);
+  return vec3(l.x*c + l.z*s, l.y, l.z*c - l.x*s);
+}
+/* ---- camera basis: orbit around the origin, focal point panned ---- */
+vec3 camRo(){ float ce=cos(uEl), se=sin(uEl);
+              return uDist*vec3(ce*sin(uAz), se, ce*cos(uAz)); }
+/* The world is framed off-centre: the disc sits right of centre and slightly
+   low, leaving the upper-left for the title panel. Aiming the camera at a
+   point offset from the origin moves the subject without skewing the sphere. */
+const vec3 FOCUS = vec3(-0.175, 0.105, 0.0);
+void camRay(vec2 p, out vec3 ro, out vec3 rd){
+  ro = camRo();
+  vec3 tgt = FOCUS;
+  vec3 fw = normalize(tgt - ro);
+  vec3 rt = normalize(cross(fw, vec3(0.0,1.0,0.0)));
+  vec3 up = cross(rt, fw);
+  rd = normalize(fw + rt*(p.x*uTanY) + up*(p.y*uTanY));
+}
+`;
+
+/* ---- terrain, biome palette, cloud/atmosphere constants ---- */
+const GLSL_TERRAIN = `
+const float AMP    = 0.085;   /* max radial displacement          */
+const float RMIN   = 0.950;   /* inner bounding shell (ocean)     */
+const float RMAX   = 1.095;   /* outer bounding shell (peaks)     */
+const float CIN    = 1.0175;  /* cloud shell inner radius          */
+const float COUT   = 1.0600;  /* cloud shell outer radius          */
+
+/* FBM x ridged multifractal, domain-warped. H in [-0.56, +0.62].
+   Frequencies are chosen against the 64^3 lattice: the sphere's direction
+   vector spans [-1,1], so a multiplier of ~3 gives ~3 continent lobes across
+   the disc, ~7 mountain ranges, ~20 for rock detail. Sampling below ~2
+   collapses the whole world into one smooth gradient. */
+float terrainH(vec3 nl, int oct){
+  vec3 o = toWorldDir(nl);
+
+  /* low-frequency warp: bends the continents, kills the grid alignment */
+  float w1 = n2(o*0.75 + uSeedOff*0.61);
+  vec3 q = o*1.05 + (w1 - 0.5)*0.55 + uSeedOff;
+
+  float cont = n1(q);
+  if(oct > 1) cont = cont*0.66 + n2(rot3(q*2.11))*0.34;
+
+  /* ridged multifractal: 3 octaves, weight feedback -> mountain chains */
+  float r = 0.0, a = 0.5, pr = 1.0, ws = 0.0;
+  vec3 rp = o*2.10 + uSeedOff*1.37 + (w1 - 0.5)*0.80;
+  for(int i=0;i<3;i++){
+    float v = 1.0 - abs(n1(rp)*2.0 - 1.0); v *= v;
+    r += a*v*pr; ws += a; pr = clamp(v*1.7, 0.0, 1.0);
+    a *= 0.5; rp = rot3(rp*2.09);
+  }
+  r /= max(ws, 1e-4);
+
+  /* a second, sharper warp traces the coastlines rather than the interiors */
+  float coastMask = 1.0 - smoothstep(0.0, 0.16, abs(cont - uSeaLevel));
+  float land = smoothstep(uSeaLevel - 0.012, uSeaLevel + 0.042, cont);
+  float h = (cont - uSeaLevel)*1.30 + land*r*uRough*0.58;
+  h -= land*coastMask*r*0.22;              /* shelf just offshore */
+  if(oct > 2) h += land*(n3(o*4.20 + uSeedOff*2.11) - 0.5)*0.075;
+  return clamp(h, -0.56, 0.62);
+}
+float elevAt(vec3 nl){ return terrainH(nl, 3); }
+
+/* 10-stop elevation ramp -> linear albedo */
+vec3 rampColor(float e){
+  vec3 c = mix(vec3(0.013,0.030,0.062), vec3(0.020,0.055,0.105), smoothstep(-0.56,-0.44,e));
+  c = mix(c, vec3(0.038,0.128,0.185), smoothstep(-0.44,-0.28,e));
+  c = mix(c, vec3(0.062,0.222,0.245), smoothstep(-0.28,-0.12,e));
+  c = mix(c, vec3(0.120,0.300,0.270), smoothstep(-0.12,-0.02,e));
+  c = mix(c, vec3(0.365,0.345,0.262), smoothstep(-0.02, 0.05,e));
+  c = mix(c, vec3(0.455,0.405,0.268), smoothstep( 0.05, 0.12,e));
+  c = mix(c, vec3(0.148,0.285,0.166), smoothstep( 0.12, 0.24,e));
+  c = mix(c, vec3(0.205,0.340,0.190), smoothstep( 0.24, 0.42,e));
+  c = mix(c, vec3(0.462,0.386,0.226), smoothstep( 0.42, 0.56,e));
+  c = mix(c, vec3(0.352,0.312,0.288), smoothstep( 0.56, 0.70,e));
+  c = mix(c, vec3(0.815,0.822,0.845), smoothstep( 0.70, 0.95,e));
+  return c;
+}
+`;
+
+/* ---- PASS 1: background (stars, dust, companion) ---- */
+const FS_BG = GLSL_HEAD + GLSL_TERRAIN + `
+void main(){
+  vec2 p = (gl_FragCoord.xy*2.0 - uRes)/uRes.y;
+  vec3 ro, rd;
+  camRay(p, ro, rd);
+
+  /* gentle large-scale gradient so the void has depth and no region of sky
+     collapses to a single flat 8-bit value */
+  float grad = 0.5 + 0.5*dot(rd, normalize(vec3(-0.35, 0.55, 0.75)));
+  vec3 col = mix(vec3(0.0013, 0.0018, 0.0042), vec3(0.0034, 0.0044, 0.0092), grad);
+
+  /* galactic dust lane */
+  float band = exp(-pow(dot(rd, normalize(vec3(0.30,0.88,-0.36)))/0.29, 2.0));
+  float dust = fbm3(rd*2.0 + uSeedOff*5.1);
+  col += band*(0.020 + 0.125*dust*dust)*
+         mix(vec3(0.15,0.19,0.48), vec3(0.56,0.31,0.23), smoothstep(0.30,0.80,dust));
+
+  /* 3 star layers over cube-face cells. Amplitude matters as much as size:
+     a star that peaks below ~0.02 linear disappears in the tone map. */
+  vec3 a = abs(rd);
+  vec2 uv; float face;
+  if(a.x >= a.y && a.x >= a.z){ uv = rd.yz/a.x; face = rd.x > 0.0 ? 0.0 : 1.0; }
+  else if(a.y >= a.z)        { uv = rd.xz/a.y; face = rd.y > 0.0 ? 2.0 : 3.0; }
+  else                       { uv = rd.xy/a.z; face = rd.z > 0.0 ? 4.0 : 5.0; }
+  uv = uv*0.5 + 0.5;
+
+  for(int L=0; L<3; L++){
+    float fl = float(L);
+    float cells = 22.0 + fl*fl*34.0;
+    float thr   = 0.16 - fl*0.045;
+    float mag = 0.0; vec3 tint = vec3(0.0); vec2 vb = vec2(9.0);
+    vec2 g = uv*cells, id = floor(g), fr = fract(g);
+    for(int j=0;j<2;j++) for(int i=0;i<2;i++){
+      vec2 nid = id + vec2(float(i), float(j));
+      float r1 = hash12(nid + face*41.7 + fl*13.3);
+      if(r1 < thr) continue;
+      vec2 off = hash22(nid + face*17.3 + fl*7.1) - 0.5;
+      vec2 v = fr - vec2(float(i), float(j)) - off*0.78;
+      float m = (r1 - thr)/(1.0 - thr);
+      float tw = 0.70 + 0.30*sin(uTime*(0.5 + m*2.1) + m*41.0);
+      float s = m*m*(0.30 + 0.70*m)*tw*exp(-dot(v,v)*(320.0 + fl*200.0));
+      if(s > mag){ mag = s; vb = v;
+        tint = mix(vec3(0.72,0.82,1.08), vec3(1.08,0.86,0.64), hash12(nid + 5.1)); }
+    }
+    col += tint*mag*(0.85 + 0.75*fl);
+    if(L == 0 && mag > 0.10){
+      float cr = exp(-abs(vb.x)*40.0) + exp(-abs(vb.y)*40.0);
+      col += vec3(0.48,0.62,0.95)*cr*mag*0.10;
+    }
+  }
+
+  /* companion world: cratered, same star */
+  vec3 md = normalize(uMoon - ro);
+  vec2 tb = iSphere(ro, md, 0.085);
+  if(tb.y > 0.0 && tb.x > 0.0){
+    vec3 mp = ro + md*tb.x;
+    vec3 mn = normalize(mp - uMoon);
+    float cr = fbm2(mn*4.0);
+    float sp = n1(mn*2.2 + 3.7);
+    vec3 mc = mix(vec3(0.50,0.46,0.42), vec3(0.26,0.24,0.24), smoothstep(0.34,0.66,cr));
+    mc = mix(mc, vec3(0.70,0.66,0.60), smoothstep(0.56,0.86,sp));
+    float ndl = max(dot(mn, uSun), 0.0);
+    float rim = pow(1.0 - abs(dot(mn, -md)), 3.0);
+    col = mc*uSunCol*(0.030 + 1.30*pow(ndl,0.75))
+        + vec3(0.10,0.17,0.30)*rim*0.22*smoothstep(0.0,0.30,ndl);
+  }
+
+  O = vec4(col, 1.0);
+}
+`;
+
+/* ---- PASS 2: planet + clouds + atmosphere, over the background ---- */
+const FS_PLANET = GLSL_HEAD + GLSL_TERRAIN + `
+
+/* Root-find the radial graph. Returns t, or -1 for a miss.
+   outN = planet-local direction of the hit. */
+float tracePlanet(vec3 ro, vec3 rd, int steps, out vec3 outN){
+  vec2 tb = iSphere(ro, rd, RMAX);
+  if(tb.y <= 0.0) return -1.0;
+  float tB = tb.y;
+  vec2 ti = iSphere(ro, rd, RMIN);
+  if(ti.y > 0.0) tB = min(tB, ti.x);
+  float t = tb.x, tPrev = tb.x;
+  for(int i=0;i<24;i++){
+    if(i >= steps) break;
+    vec3 p = ro + rd*t;
+    float len = max(length(p), 1e-4);
+    vec3 d = p/len;
+    float h = terrainH(spinL(toLocal(d)), i < 4 ? 2 : 3);
+    if(len < 1.0 + AMP*h){
+      if(i == 0){ outN = spinL(toLocal(d)); return t; }
+      float lo = tPrev, hi = t;                 /* bisect the bracket */
+      for(int k=0;k<7;k++){
+        float m = 0.5*(lo + hi);
+        vec3 pm = ro + rd*m;
+        float lm = max(length(pm), 1e-4);
+        vec3 dm = pm/lm;
+        if(lm < 1.0 + AMP*terrainH(spinL(toLocal(dm)), 2)) hi = m; else lo = m;
+      }
+      outN = spinL(toLocal(normalize(ro + rd*0.5*(lo + hi))));
+      return 0.5*(lo + hi);
+    }
+    tPrev = t;
+    float rate = abs(dot(rd, d));
+    t += max((len - RMIN)*0.52/max(rate, 0.12), 0.0018);
+    if(t > tB) break;
+  }
+  outN = spinL(toLocal(normalize(ro + rd*min(t, tB))));
+  return -2.0;                                  /* grazing ray */
+}
+
+/* Surface normals come from a SMOOTHED elevation field with an epsilon scaled
+   to the noise feature size. Differencing the full-detail field over a small
+   epsilon samples below the highest octave, so the normal decorrelates from
+   pixel to pixel and the lit side turns to speckle. */
+float elevSmooth(vec3 nl){ return terrainH(nl, 2); }
+vec3 surfNormal(vec3 nl, float e){
+  vec3 t1 = normalize(cross(nl, abs(nl.y) < 0.9 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0)));
+  vec3 t2 = cross(nl, t1);
+  float h0 = elevSmooth(nl);
+  float h1 = elevSmooth(normalize(nl + t1*e));
+  float h2 = elevSmooth(normalize(nl + t2*e));
+  return normalize(nl - (t1*(h1 - h0) + t2*(h2 - h0))*(AMP/e)*0.5);
+}
+
+/* Terrain shadow: 4 taps, geometric growth. */
+float sunShadow(vec3 pw, vec3 nl, float lod){
+  vec3 p = pw;
+  float s = 1.0, t = 0.05;
+  for(int i=0;i<4;i++){
+    p += uSun*t;
+    float len = length(p);
+    vec3 d = p/len;
+    s = min(s, 14.0*(len - (1.0 + AMP*terrainH(spinL(toLocal(d)), 2))));
+    if(s < 0.02) return 0.0;
+    t *= 2.0;
+  }
+  return clamp(s, 0.0, 1.0);
+}
+
+float cloudD(vec3 nl, float phase){
+  vec3 o = toWorldDir(nl);
+  float lat = asin(clamp(nl.y, -1.0, 1.0));
+  /* latitudinal banding: a Hadley cell should read as stripes, not mush */
+  float band = 0.5 + 0.5*cos(lat*2.4);
+  vec3 q = o*1.35 + vec3(phase*0.052, phase*0.012, 0.0) + uSeedOff*3.3;
+  float m = fbm3(q);
+  float w = n2(rot3(q*2.3 + 13.0));
+  float d = m*0.80 + w*0.32 - (1.05 - uCloud*0.95) - (1.0 - band)*0.22;
+  return clamp(d*3.6, 0.0, 1.0);
+}
+
+/* Cloud march: Beer-Powder with a 3-tap light march.
+   The shell is thin (CIN..COUT = 0.042 world units) while a chord across it can
+   be 2.1, so dividing the chord by a fixed step count puts ~0.2 between
+   samples — five times the shell thickness. A ray then crosses the whole layer
+   in one sample, and the dither moving that single sample is what produces the
+   blocky glitter along the limb. March at a step tied to the shell instead,
+   and integrate absorption rather than scattering-as-a-rate, so the result
+   does not depend on the step size. */
+#define CLOUD_STEPS 12
+#define CLOUD_DT 0.0085
+vec4 marchClouds(vec3 ro, vec3 rd, float tMax, float phase){
+  vec2 tb = iSphere(ro, rd, COUT);
+  /* A miss means "no cloud on this ray", which is FULLY TRANSPARENT, not black.
+     Returning vec4(0.0) here zeroes .a as well, and a caller that composites
+     bg*transmittance then multiplies the whole sky by zero. */
+  if(tb.y <= 0.0) return vec4(0.0, 0.0, 0.0, 1.0);
+  float t0 = max(tb.x, 0.0), t1 = min(tb.y, tMax);
+  if(t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
+  /* No ray-start jitter. At this internal resolution the buffer is upscaled
+     ~2.3x, so ANY per-pixel offset pattern survives as visible blocks; with
+     the shell step now small the layer is well sampled and does not need one.
+     Banding is broken up in the blit pass instead, where the dither lands on
+     final-resolution pixels. */
+  float trans = 1.0;
+  vec3 scat = vec3(0.0);
+  for(int i=0;i<CLOUD_STEPS;i++){
+    float t = t0 + CLOUD_DT*(float(i) + 0.5);
+    if(t > t1) break;
+    vec3 p = ro + rd*t;
+    float len = max(length(p), 1e-4);
+    vec3 nl = p/len;
+    float d = cloudD(spinL(toLocal(nl)), phase)*smoothstep(CIN, CIN+0.006, len);
+    if(d > 0.003){
+      float ls = 0.0;
+      for(int k=1;k<=3;k++){
+        vec3 lp = p + uSun*(0.016*float(k*k));
+        float ll = max(length(lp), 1e-4);
+        ls += cloudD(spinL(toLocal(lp/ll)), phase)*smoothstep(CIN, CIN+0.006, ll);
+      }
+      float beer = exp(-ls*6.2);
+      float ndl = max(dot(nl, uSun), 0.0);
+      float powder = 1.0 - exp(-d*9.0);
+      float lum = beer*mix(0.35, 1.0, powder)*smoothstep(-0.18, 0.22, ndl);
+      /* terminator warmth */
+      lum *= 1.0 + 0.85*exp(-pow((ndl - 0.03)/0.20, 2.0));
+      /* energy-conserving: the step contributes a bounded fraction, so a long
+         grazing chord cannot out-shine a short head-on one */
+      float aStep = 1.0 - exp(-d*CLOUD_DT*7.5);
+      scat  += trans*lum*aStep*3.1;
+      trans *= 1.0 - aStep;
+      if(trans < 0.02) break;
+    }
+  }
+  return vec4(scat, trans);
+}
+
+/* Exponential atmosphere shell, integrated along the ray. Same lesson as the
+   cloud march: the sample count must come from the shell, not from the chord,
+   or a limb ray gets one sample and dithers into visible blocks. */
+#define ATM_STEPS 12
+#define ATM_DT 0.055
+vec3 atmosphere(vec3 ro, vec3 rd, float tMax, float sunNdl, float night){
+  vec2 tb = iSphere(ro, rd, 1.14);
+  if(tb.y <= 0.0) return vec3(0.0);
+  float t0 = max(tb.x, 0.0), t1 = min(tb.y, tMax);
+  if(t1 <= t0) return vec3(0.0);
+  float thick = max(uAtm, 0.02);
+  float od = 0.0, odm = 0.0;
+  for(int i=0;i<ATM_STEPS;i++){
+    float t = t0 + ATM_DT*(float(i) + 0.5);
+    if(t > t1) break;
+    vec3 p = ro + rd*t;
+    float h = clamp((length(p) - 1.0)/thick, 0.0, 1.0);
+    float d = exp(-h*2.55)*ATM_DT;
+    od  += d;
+    odm += d;
+  }
+  /* forward-scatter lobe: bright when the eye looks toward the star */
+  float mie = pow(max(1.0 - abs(dot(rd, normalize(ro))), 0.0), 5.0);
+  float view = clamp(dot(normalize(ro), rd)*0.5 + 0.5, 0.0, 1.0);
+  float horizon = pow(view, 2.4);
+
+  vec3 rayleigh = vec3(0.185, 0.420, 1.00);
+  vec3 amber    = vec3(1.00, 0.455, 0.185);
+  float term = exp(-pow((sunNdl - 0.02)/0.20, 2.0));
+
+  vec3 col = rayleigh*(1.0 - exp(-od*0.62))*(0.10 + 0.95*sunNdl)
+           + amber*(mie*0.95 + term*0.38)*sunNdl*(0.30 + 0.70*horizon)
+           + vec3(0.040,0.055,0.095)*horizon*odm*0.40;
+  /* night-side airglow so the dark limb is not a hard black cut */
+  col += vec3(0.10,0.20,0.30)*night*horizon*0.20;
+  return col;
+}
+
+void main(){
+  vec2 p = (gl_FragCoord.xy*2.0 - uRes)/uRes.y;
+  vec3 ro, rd;
+  camRay(p, ro, rd);
+
+  vec3 bg = texture(uBG, gl_FragCoord.xy/uRes).rgb;   /* linear HDR from pass 1 */
+  vec3 col = bg;
+
+  vec3 nl;
+  vec3 nw = rd;                 /* world normal at the hit; rd if none */
+  float t = tracePlanet(ro, rd, 22, nl);
+  float tSurf = 1e9;
+  if(t > 0.0) tSurf = t;
+
+  /* -------- surface -------- */
+  if(t > 0.0){
+    vec3 pw = ro + rd*t;
+    float len = length(pw);
+    nw = normalize(pw);
+    vec3 nn = surfNormal(nl, 0.010);
+    float e = elevAt(nl);
+    /* Near the limb one pixel spans a large arc, so the fixed normal epsilon
+       under-samples and shimmers. Widen it with the grazing angle. */
+    float graze = clamp(1.0 - dot(nw, -rd), 0.0, 1.0);
+    vec3 nnSoft = surfNormal(nl, 0.010 + graze*graze*0.055);
+    nn = mix(nn, nnSoft, 0.75);
+
+    /* biome: elevation, latitude, moisture (second noise field) */
+    vec3 o = toWorldDir(nl);
+    float moist = fbm3(o*1.55 + uSeedOff*1.9);
+    float lat = abs(nl.y);
+    float polar = smoothstep(0.52, 0.96, lat);
+    vec3 alb = rampColor(e);
+    /* latitude tint: cool the poles, warm the tropics */
+    alb = mix(alb, alb*vec3(0.80,0.90,1.18), polar*0.55);
+    /* moisture: green forest vs ochre steppe */
+    float veg = smoothstep(0.34, 0.60, moist)*(1.0 - polar*0.85)
+              * smoothstep(0.02, 0.15, e)*(1.0 - smoothstep(0.50, 0.66, e));
+    alb = mix(alb, mix(vec3(0.105,0.255,0.130), vec3(0.150,0.320,0.150), moist), veg*0.80);
+
+    /* ocean: a broad rough-water lobe plus depth-graded colour. A tight
+       specular power aliases into white confetti on a 560px internal buffer,
+       and a flat blue sheet reads as plastic, so depth does the work. */
+    float water = 1.0 - smoothstep(-0.005, 0.022, e);
+    float spec = 0.0;
+    if(water > 0.0){
+      vec3 h = normalize(uSun - rd);
+      vec3 wn = normalize(mix(nw, nn, 0.05));   /* a sheet, not the terrain */
+      spec = pow(max(dot(wn, h), 0.0), 42.0)*0.30;
+      float depth = clamp(-e/0.45, 0.0, 1.0);
+      alb = mix(mix(vec3(0.052,0.165,0.175), vec3(0.010,0.038,0.085), depth),
+                alb*vec3(0.55,0.75,1.05), 0.25);
+    }
+
+    float ndl = max(dot(nw, uSun), 0.0);
+    float sh = sunShadow(pw, nl, 2.0);
+    /* soft terminator: wrapped diffuse + a sharp rim of forward scatter */
+    float diff = pow(clamp((ndl + 0.14)/1.14, 0.0, 1.0), 1.15)*sh;
+
+    vec3 lit = alb*uSunCol*diff*1.65
+             + uSunCol*spec*water*diff*2.2;
+
+    /* night side: settlement lights + faint emissive rock */
+    float night = 1.0 - smoothstep(-0.02, 0.16, ndl);
+    float habit = smoothstep(0.02, 0.14, e)*smoothstep(0.34, 0.66, moist)*(1.0 - polar);
+    /* A frequency far above one pixel per settlement turns city lights into
+       random pinpricks across the whole night side. Keep it coarse. */
+    float city = smoothstep(0.58, 0.84, fbm2(o*6.5 + uSeedOff*7.7))*habit;
+    lit += vec3(1.00, 0.66, 0.32)*city*night*0.85;
+    lit += vec3(0.020,0.030,0.055)*(1.0 - diff)*night*0.55;
+
+    /* clouds over the surface */
+    vec4 cl = marchClouds(ro, rd, t, uTime);
+    /* cloud shadow: offset sample toward the sun */
+    float csh = cloudD(spinL(toLocal(normalize(pw + uSun*0.035))), uTime);
+    lit *= 1.0 - csh*0.42*smoothstep(0.0, 0.25, ndl);
+    lit = mix(lit, cl.rgb + lit*0.04, 1.0 - cl.a);
+
+    col = lit;
+  } else {
+    /* -------- clouds against space --------
+       marchClouds returns transmittance in .a: 1 where there is NO cloud. So
+       the sky must be bg*1 plus the in-scattered light, never bg*(1-a). Using
+       1.0-a here multiplies the entire empty sky by zero and leaves it black. */
+    vec4 cl = marchClouds(ro, rd, 1e9, uTime);
+    col = bg*cl.a + cl.rgb;
+    tSurf = 1e9;
+  }
+
+  /* -------- atmosphere, over the disc and the limb -------- */
+  float sunNdl = max(dot(normalize(ro), uSun), 0.0);
+  float night = 1.0 - smoothstep(-0.06, 0.14, sunNdl);
+  col += atmosphere(ro, rd, tSurf, sunNdl, night);
+
+  /* Fresnel limb glow. The shell integral above already brightens the limb, but
+     it is proportional to the optical depth ALONG the ray, which is large even
+     where the surface faces us -- so it reads as a general haze rather than an
+     edge. This term keys on the closest approach of the ray to the planet: it
+     peaks in the thin annulus just outside the silhouette and falls to nothing
+     across the disc, which is what makes the limb look like a lit shell. */
+  float tc = -dot(ro, rd);
+  float rc = length(ro + rd*max(tc, 0.0));   /* radius at closest approach */
+  float shell = max(uAtm, 0.02);
+  /* Scale by the SURFACE normal at the hit point, not by rc alone. Across the
+     middle of the disc the closest-approach radius is the planet radius, so a
+     rc-only falloff stays near 1 everywhere and floods the disc. Fresnel must
+     key on the angle between the view ray and the surface normal: that is ~1
+     at the limb and 0 face-on, which is the actual limb-darkening law. */
+  float ndv = (tSurf < 1e8) ? clamp(dot(nw, -rd), 0.0, 1.0) : clamp(1.0 - (rc - 1.0)/shell, 0.0, 1.0);
+  float fres = pow(1.0 - ndv, 4.0);
+  /* keep it to the annulus just outside the silhouette */
+  fres *= smoothstep(1.0 + shell*1.8, 1.0 + shell*0.15, rc);
+  /* sunlit on the day side, a thin cool ember past the terminator */
+  vec3 rimDay  = vec3(0.34, 0.62, 1.00);
+  vec3 rimNight= vec3(0.16, 0.34, 0.62);
+  col += mix(rimNight*0.45, rimDay, smoothstep(-0.10, 0.30, sunNdl))*fres*0.80;
+
+  /* linear HDR out; the blit pass tonemaps */
+  O = vec4(max(col, 0.0), 1.0);
+}
+`;
+
+const VS = `#version 300 es
+void main(){
+  vec2 v = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  gl_Position = vec4(v*2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* ---- PASS 3: tonemap the internal-res HDR buffer to the canvas ---- */
+const FS_BLIT = `#version 300 es
+precision highp float;
+out vec4 O;
+uniform sampler2D uSrc;
+uniform vec2 uRes, uOutRes;
+uniform float uExposure, uVig;
+float hash12(vec2 p){
+  vec3 q = fract(vec3(p.xyx)*0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y)*q.z);
+}
+void main(){
+  vec2 uv = (gl_FragCoord.xy*2.0 - uOutRes)/uOutRes.y;
+  vec3 c = texture(uSrc, gl_FragCoord.xy/uOutRes).rgb;
+  c *= uExposure;
+  /* slight cool lift in the shadows keeps the sky from going muddy */
+  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c += vec3(0.004, 0.006, 0.011)*exp(-lum*6.0);
+  c = clamp((c*(2.51*c + 0.03))/(c*(2.43*c + 0.59) + 0.14), 0.0, 1.0);
+  c = pow(c, vec3(0.4545));
+  c *= 1.0 - uVig*pow(clamp(length(uv*vec2(0.40, 0.56)), 0.0, 1.0), 1.2);
+  /* Dither in DISPLAY space, after the tone curve. A near-black sky spans so
+     few 8-bit codes that whole quadrants collapse onto one value and the
+     top-colour share runs past the contract's 8% ceiling. Triangular-PDF noise
+     (two uniforms summed) decorrelates pixels the bilinear upscale cannot, and
+     applying it after the curve means it is not compressed back away. */
+  float r1 = hash12(gl_FragCoord.xy);
+  float r2 = hash12(gl_FragCoord.xy + 37.719);
+  c += (r1 + r2 - 1.0)*(3.4/255.0);
+  O = vec4(clamp(c, 0.0, 1.0), 1.0);
+}
+`;
+
+/* ==================================================================== *
+ *  2. WebGL plumbing                                                 *
+ * ==================================================================== */
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2', {
+  antialias:false, alpha:false, depth:false, stencil:false,
+  preserveDrawingBuffer:true, powerPreference:'high-performance'
+});
+function fatal(msg){
+  $('err').style.display = 'block';
+  $('err').textContent += msg + '\n';
+  window.__probe = { ready:false, error:String(msg) };
+  console.error(msg);
+}
+if(!gl){ fatal('WebGL2 is required and unavailable.'); throw new Error('no webgl2'); }
+gl.getExtension('EXT_color_buffer_float');
+
+const RENDERER = (()=>{
+  const d = gl.getExtension('WEBGL_debug_renderer_info');
+  return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+})();
+
+function compile(type, src, name){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = name + ': ' + gl.getShaderInfoLog(s); fatal(log); throw new Error(log);
+  }
+  return s;
+}
+function buildProg(fs, name){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VS, name + '.vs'));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs, name + '.fs'));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    const log = 'link ' + name + ': ' + gl.getProgramInfoLog(p); fatal(log); throw new Error(log);
+  }
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for(let i=0;i<n;i++){
+    const inf = gl.getActiveUniform(p, i);
+    u[inf.name.replace(/\[0\]$/,'')] = gl.getUniformLocation(p, inf.name);
+  }
+  return { p, u };
+}
+let PROG;
+try {
+  PROG = { bg: buildProg(FS_BG,'bg'), planet: buildProg(FS_PLANET,'planet'),
+           blit: buildProg(FS_BLIT,'blit') };
+}
+catch(e){ throw e; }
+
+const vao = gl.createVertexArray();
+function draw(){ gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+function makeTex(w, h, internal, format, type, filter, wrap){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  const wr = wrap || gl.REPEAT;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wr);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wr);
+  return t;
+}
+
+/* 64^3 RGBA8 value-noise volume: channels are pre-rotated octaves.
+   Seeded from mulberry32 so two cold loads are identical. */
+const NZ = 64;
+let noiseTex = null;
+/* NB: a 3D volume needs texImage3D. Allocating it through the 2D helper is an
+   INVALID_OPERATION, the storage is never created, and every fetch silently
+   returns 0 — which flattens the whole terrain into one smooth value. */
+function makeNoiseTex(){
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, t);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, NZ, NZ, NZ, 0,
+                gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.REPEAT);
+  const err = gl.getError();
+  if(err !== gl.NO_ERROR) fatal('noise volume allocation failed (GL 0x' + err.toString(16) + ')');
+  return t;
+}
+/* Build one value-noise octave with period P inside the 64^3 volume.
+   P is the FEATURE size as a fraction of the sphere: P=4 gives continents
+   several voxels across, P=16 gives mountain-scale detail. Randomising P per
+   channel is what makes the four bands genuinely different scales. */
+function buildOctave(rnd, P){
+  const g = new Float32Array(P*P*P);
+  for(let i=0;i<P*P*P;i++) g[i] = rnd();
+  const out = new Float32Array(NZ*NZ*NZ);
+  const sm = t => t*t*(3 - 2*t);
+  for(let z=0;z<NZ;z++) for(let y=0;y<NZ;y++) for(let x=0;x<NZ;x++){
+    const fx = (x/NZ)*P, fy = (y/NZ)*P, fz = (z/NZ)*P;
+    const x0=Math.floor(fx), y0=Math.floor(fy), z0=Math.floor(fz);
+    const ax=sm(fx-x0), ay=sm(fy-y0), az=sm(fz-z0);
+    const X0=x0%P, X1=(x0+1)%P, Y0=y0%P, Y1=(y0+1)%P, Z0=z0%P, Z1=(z0+1)%P;
+    const gv=(a,b,c)=>g[(c*P + b)*P + a];
+    const x00=gv(X0,Y0,Z0)+(gv(X1,Y0,Z0)-gv(X0,Y0,Z0))*ax;
+    const x10=gv(X0,Y1,Z0)+(gv(X1,Y1,Z0)-gv(X0,Y1,Z0))*ax;
+    const x01=gv(X0,Y0,Z1)+(gv(X1,Y0,Z1)-gv(X0,Y0,Z1))*ax;
+    const x11=gv(X0,Y1,Z1)+(gv(X1,Y1,Z1)-gv(X0,Y1,Z1))*ax;
+    const y0v=x00+(x10-x00)*ay, y1v=x01+(x11-x01)*ay;
+    out[(z*NZ + y)*NZ + x] = y0v + (y1v-y0v)*az;
+  }
+  return out;
+}
+
+/* Four channels, deliberately different periods:
+     R  4  continent-scale    (a few landmasses per world)
+     G  8  regional
+     B 16  mountain / coastline detail
+     A 16  decorrelated detail, inverted for contrast
+   The old version randomised every voxel at period 64, which made all four
+   bands identical and put every feature at 1/64 of the sphere — sub-pixel,
+   and the reason the surface rendered as coloured speckle. */
+function buildNoise(seed){
+  const rnd = mulberry32(seed ^ 0x9e3779b9);
+  const data = new Uint8Array(NZ*NZ*NZ*4);
+  const PERIOD = [4, 8, 16, 16];
+  const INVERT = [false, false, false, true];
+  const oct = PERIOD.map(p => buildOctave(rnd, p));
+  for(let ch=0; ch<4; ch++){
+    const o = oct[ch];
+    for(let i=0;i<NZ*NZ*NZ;i++){
+      let v = o[i];
+      if(INVERT[ch]) v = 1 - v;
+      data[i*4 + ch] = (Math.max(0, Math.min(1, v))*255)|0;
+    }
+  }
+  return data;
+}
+function uploadNoise(seed){
+  const data = buildNoise(seed);
+  if(noiseTex) gl.deleteTexture(noiseTex);
+  noiseTex = makeNoiseTex();
+  gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+  gl.texSubImage3D(gl.TEXTURE_3D, 0, 0, 0, 0, NZ, NZ, NZ, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  const err = gl.getError();
+  if(err !== gl.NO_ERROR) fatal('noise volume upload failed (GL 0x' + err.toString(16) + ')');
+}
+
+/* ---- offscreen: internal-res linear HDR, then a tonemapping blit ---- */
+const IW0 = 560, IH0 = 350;          /* contract's 512x320 .. 640x400 window */
+let IW = IW0, IH = IH0;
+let bgFBO = null, plFBO = null;   /* pass 1 and pass 2 render targets */
+
+/* RGBA16F keeps the sky in linear HDR so the atmosphere can add on top
+   without clipping; fall back to RGBA8 if the driver refuses. */
+const HFMT = { internal: gl.RGBA16F, format: gl.RGBA, type: gl.HALF_FLOAT };
+let useFloat = true;
+
+function makeTarget(w, h, fmt){
+  const t = makeTex(w, h, fmt.internal, fmt.format, fmt.type, gl.LINEAR, gl.CLAMP_TO_EDGE);
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+  const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if(st !== gl.FRAMEBUFFER_COMPLETE){ gl.deleteFramebuffer(f); gl.deleteTexture(t); return null; }
+  return { fbo:f, tex:t };
+}
+function allocTargets(w, h){
+  if(bgFBO){ gl.deleteFramebuffer(bgFBO.fbo); gl.deleteTexture(bgFBO.tex); }
+  if(plFBO){ gl.deleteFramebuffer(plFBO.fbo); gl.deleteTexture(plFBO.tex); }
+  const L8 = { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE };
+  let fmt = useFloat ? HFMT : L8;
+  bgFBO = makeTarget(w, h, fmt);
+  if(!bgFBO && useFloat){                 /* contract 4: probe, fall back */
+    useFloat = false; fmt = L8;
+    bgFBO = makeTarget(w, h, L8);
+  }
+  if(!bgFBO) fatal('no renderable colour format available');
+  plFBO = makeTarget(w, h, fmt);
+  if(!plFBO) fatal('scene framebuffer incomplete');
+}
+
+/* ==================================================================== *
+ *  3. Parameters                                                     *
+ * ==================================================================== */
+const P = {
+  seed: 20260927,
+  rough: 1.00,     /* terrain roughness        */
+  cloud: 0.52,     /* cloud cover              */
+  atm:   0.115,    /* atmosphere thickness     */
+  tilt:  21.0,     /* axial tilt, degrees      */
+  sea:   0.44,     /* sea level (fbm threshold)*/
+  sunEl: 11.0,     /* star elevation, degrees  */
+  dist:  3.45,     /* camera distance          */
+  spin:  1,        /* animation on/off         */
+  res:   100,      /* internal res % of base   */
+};
+
+/* ---- deterministic derived state (rebuilt on every parameter change) ---- */
+let D = {};
+function derive(){
+  const seed = P.seed >>> 0;
+  const rnd = mulberry32(seed);
+  // star direction from the seed: a warm G-type, sometimes hot, sometimes dim
+  const sEl = (rnd()*1.5 - 0.25) * 0.62 + P.sunEl*0.0175;
+  const sAz = rnd()*Math.PI*2;
+  D.sunEl = P.sunEl*0.01745 + (rnd()-0.5)*0.10;
+  D.sunAz = sAz;
+  D.sun = [Math.cos(D.sunEl)*Math.sin(sAz), Math.sin(D.sunEl), Math.cos(D.sunEl)*Math.cos(sAz)];
+  // star colour: temperature drawn from the seed, then a light tint
+  const temp = 0.35 + rnd()*0.6;                    // 0 = hot blue-white, 1 = cool red
+  D.sunCol = [
+    1.00,
+    0.62 + 0.33*(1 - Math.abs(temp - 0.5)*2*0.5),
+    0.34 + 0.62*Math.pow(1 - temp, 1.6)
+  ];
+  const lum = 1.05 + rnd()*0.5;
+  D.sunCol = D.sunCol.map(c => c*lum);
+  // ocean/land balance -> a small albedo bias so worlds differ in read
+  D.wet = 0.72 + rnd()*0.55;
+  // axial tilt -> basis about the star-relative axis, kept tilted for the UI
+  const tilt = P.tilt*0.01745;
+  const ax = normalize([Math.sin(tilt)*Math.cos(sAz*0.7 + rnd()), Math.cos(tilt),
+                        Math.sin(tilt)*Math.sin(sAz*0.7 + rnd())]);
+  D.axis = ax;
+  const up = [0,1,0];
+  let e2 = cross(up, ax);
+  if(len(e2) < 1e-4) e2 = [1,0,0];
+  e2 = normalize(e2);
+  D.e2 = e2;
+  D.e3 = normalize(cross(ax, e2));
+  // seed offset into the noise volume (in lattice units, so a different seed
+  // samples a genuinely different part of the same 64^3 field)
+  D.seedOff = [Math.floor(rnd()*NZ), Math.floor(rnd()*NZ), Math.floor(rnd()*NZ)];
+  // companion world: only some systems have one
+  D.hasMoon = rnd() > 0.42;
+  const mAng = rnd()*Math.PI*2, mEl = (rnd()-0.5)*0.8;
+  D.moon = D.hasMoon ? [Math.cos(mEl)*Math.cos(mAng)*2.6, Math.sin(mEl)*1.5,
+                         Math.cos(mEl)*Math.sin(mAng)*2.6] : [99,99,99];
+  // world name-ish tag, for flavour in the HUD
+  const syl = ['ke','tha','ve','lo','mi','ra','zu','ny','sa','do','xe','phi'];
+  D.name = syl[(rnd()*syl.length)|0] + syl[(rnd()*syl.length)|0] + '-' +
+           (1000 + ((rnd()*9000)|0));
+  uploadNoise(seed);
+}
+function cross(a,b){ return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
+function normalize(a){ const l = len(a) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
+function len(a){ return Math.sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]); }
+
+/* camera orbit */
+let camAz = 0.62, camEl = 0.30, fov = 0.42, panX = 0, panY = 0;
+let spinT = 0, simT = 0, spinFrozen = false, frame = 0, ready = false;
+const FIXED_DT = 1/30;             /* contract 3: fixed delta, not wall clock */
+
+function setCommon(u){
+  gl.uniform2f(u.uRes, IW, IH);
+  gl.uniform1f(u.uTime, simT);
+  gl.uniform1f(u.uSeed, (P.seed % 1000) * 0.0137);
+  gl.uniform1f(u.uRough, P.rough);
+  gl.uniform1f(u.uCloud, P.cloud);
+  gl.uniform1f(u.uAtm, P.atm);
+  gl.uniform1f(u.uSeaLevel, P.sea);
+  gl.uniform1f(u.uSpin, spinT);
+  gl.uniform3f(u.uSun, D.sun[0], D.sun[1], D.sun[2]);
+  gl.uniform3f(u.uSunCol, D.sunCol[0], D.sunCol[1], D.sunCol[2]);
+  gl.uniform3f(u.uSeedOff, D.seedOff[0], D.seedOff[1], D.seedOff[2]);
+  gl.uniform3f(u.uAxis, D.axis[0], D.axis[1], D.axis[2]);
+  gl.uniform3f(u.uE2, D.e2[0], D.e2[1], D.e2[2]);
+  gl.uniform3f(u.uE3, D.e3[0], D.e3[1], D.e3[2]);
+  gl.uniform3f(u.uMoon, D.moon[0], D.moon[1], D.moon[2]);
+  gl.uniform1f(u.uAz, camAz);
+  gl.uniform1f(u.uEl, camEl);
+  gl.uniform1f(u.uDist, P.dist);
+  gl.uniform1f(u.uTanY, fov);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_3D, noiseTex);
+  gl.uniform1i(u.uNoise, 0);
+}
+
+/* ==================================================================== *
+ *  4. UI                                                             *
+ * ==================================================================== */
+const SLIDERS = [
+  ['rough','TERRAIN ROUGHNESS', 0.15, 2.0, 0.01, v => v.toFixed(2)],
+  ['cloud','CLOUD COVER',       0.00, 1.0, 0.01, v => Math.round(v*100) + '%'],
+  ['atm',  'ATMOSPHERE',        0.02, 0.26, 0.002, v => v.toFixed(3)],
+  ['tilt', 'AXIAL TILT',       -75.0, 75.0, 0.5,  v => v.toFixed(0) + '\u00b0'],
+  ['sea',  'SEA LEVEL',          0.30, 0.58, 0.005, v => v.toFixed(3)],
+  ['dist', 'DISTANCE',          2.60, 7.0, 0.01,  v => v.toFixed(2)],
+  ['sunEl','STAR ELEVATION',   -25.0, 45.0, 0.5,  v => v.toFixed(0) + '\u00b0'],
+  ['res',  'INTERNAL RES',      50.0, 100.0, 1,   v => Math.round(v) + '%'],
+];
+const outs = {};
+(function buildUI(){
+  const host = $('sliders');
+  SLIDERS.forEach(([key, label, min, max, step, fmt]) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<label>' + label + '</label><output></output>';
+    const inp = document.createElement('input');
+    inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step; inp.value = P[key];
+    host.appendChild(row); host.appendChild(inp);
+    outs[key] = row.querySelector('output');
+    const show = () => { outs[key].textContent = fmt(Number(inp.value)); };
+    inp.addEventListener('input', () => {
+      P[key] = Number(inp.value); show();
+      if(key === 'seed') return;
+      if(key === 'tilt' || key === 'sea') derive();
+      if(key === 'res') resize();
+    });
+    show();
+  });
+  $('seedin').value = P.seed;
+  $('seedin').addEventListener('change', () => {
+    const v = parseInt($('seedin').value, 10);
+    P.seed = Number.isFinite(v) ? (v >>> 0) : 20260927;
+    $('seedin').value = P.seed;
+    derive(); updateHud();
+  });
+  /* Math.random() is allowed only in an explicit user action. */
+  $('shuf').addEventListener('click', () => {
+    P.seed = (Math.random()*4294967295) >>> 0;
+    $('seedin').value = P.seed; derive(); updateHud();
+  });
+  $('next').addEventListener('click', () => { P.seed = (P.seed + 1) >>> 0;
+    $('seedin').value = P.seed; derive(); updateHud(); });
+  $('freeze').addEventListener('click', () => {
+    spinFrozen = !spinFrozen;
+    $('freeze').textContent = spinFrozen ? 'resume spin' : 'freeze spin';
+  });
+  /* drag to orbit */
+  let down = false, lx = 0, ly = 0;
+  canvas.addEventListener('pointerdown', e => {
+    down = true; lx = e.clientX; ly = e.clientY;
+    canvas.classList.add('drag'); canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if(!down) return;
+    camAz -= (e.clientX - lx)*0.005;
+    camEl = Math.max(-1.35, Math.min(1.35, camEl + (e.clientY - ly)*0.005));
+    lx = e.clientX; ly = e.clientY;
+  });
+  const up = e => { down = false; canvas.classList.remove('drag'); };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    P.dist = Math.max(2.60, Math.min(7.0, P.dist + e.deltaY*0.0035));
+    const s = SLIDERS.find(x => x[0] === 'dist');
+    const inp = $('sliders').querySelectorAll('input')[5];
+    if(inp){ inp.value = P.dist; outs.dist.textContent = s[5](P.dist); }
+  }, { passive:false });
+})();
+
+const RAMP = ['#040a12','#050e1d','#0a202e','#103a3f','#2d2d21','#4a3d2c',
+              '#1e3a22','#2b4426','#6a5430','#4b4744','#c9cbd2'];
+$('ramp').style.background = 'linear-gradient(90deg,' + RAMP.join(',') + ')';
+
+/* ==================================================================== *
+ *  5. Loop                                                           *
+ * ==================================================================== */
+function resize(){
+  canvas.width  = Math.max(1, Math.round(innerWidth));
+  canvas.height = Math.max(1, Math.round(innerHeight));
+  const s = P.res/100;
+  IW = Math.max(256, Math.round(IW0*s));
+  IH = Math.max(160, Math.round(IH0*s));
+  allocTargets(IW, IH);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+addEventListener('resize', resize);
+
+let fpsEMA = 0, lastT = 0;
+function renderFrame(){
+  /* --- pass 1: background, internal-res HDR --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bgFBO.fbo);
+  gl.viewport(0, 0, IW, IH);
+  gl.useProgram(PROG.bg.p);
+  setCommon(PROG.bg.u);
+  draw();
+
+  /* --- pass 2: planet + clouds + atmosphere over it --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, plFBO.fbo);
+  gl.viewport(0, 0, IW, IH);
+  gl.useProgram(PROG.planet.p);
+  setCommon(PROG.planet.u);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bgFBO.tex);
+  gl.uniform1i(PROG.planet.u.uBG, 1);
+  draw();
+
+  /* --- pass 3: tonemap + upscale to the canvas --- */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(PROG.blit.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, plFBO.tex);
+  gl.uniform1i(PROG.blit.u.uSrc, 0);
+  gl.uniform2f(PROG.blit.u.uOutRes, canvas.width, canvas.height);
+  gl.uniform2f(PROG.blit.u.uRes, canvas.width, canvas.height);
+  gl.uniform1f(PROG.blit.u.uExposure, 1.05);
+  gl.uniform1f(PROG.blit.u.uVig, 0.13);
+  draw();
+}
+
+function updateHud(){
+  const rows = [
+    ['world',   D.name],
+    ['seed',    '0x' + (P.seed >>> 0).toString(16)],
+    ['internal', IW + '\u00d7' + IH + '  \u2192  ' + canvas.width + '\u00d7' + canvas.height],
+    ['frame',   fpsEMA.toFixed(1) + ' fps'],
+    ['sim time', simT.toFixed(2) + ' s  (dt 1/30)'],
+    ['star',    'el ' + (D.sunEl*180/Math.PI).toFixed(0) + '\u00b0  ' +
+                 'K ' + (D.sunCol[2] > D.sunCol[1] ? 'red' : D.sunCol[1] > D.sunCol[0] ? 'white' : 'blue')],
+    ['axis',    'tilt ' + P.tilt.toFixed(1) + '\u00b0  |n| ' + len(D.axis).toFixed(2)],
+    ['companion', D.hasMoon ? 'yes, r 0.085' : 'none'],
+  ];
+  $('hudrows').innerHTML = rows.map(r =>
+    '<div class="r"><span>' + r[0] + '</span><b>' + r[1] + '</b></div>').join('');
+  window.__probe = {
+    ready: !!ready, frames: frame, fps: +fpsEMA.toFixed(2),
+    seed: P.seed >>> 0, world: D.name,
+    internalW: IW, internalH: IH, displayW: canvas.width, displayH: canvas.height,
+    roughness: +P.rough.toFixed(3), cloudCover: +P.cloud.toFixed(3),
+    atmosphere: +P.atm.toFixed(4), tiltDeg: +P.tilt.toFixed(2), seaLevel: +P.sea.toFixed(3),
+    distance: +P.dist.toFixed(2), simTime: +simT.toFixed(3), fixedDt: FIXED_DT,
+    spinFrozen: spinFrozen, starColor: D.sunCol.map(c => +c.toFixed(3)),
+    hasCompanion: D.hasMoon, renderer: RENDERER,
+  };
+}
+
+function loop(now){
+  requestAnimationFrame(loop);
+  const wall = lastT ? Math.min((now - lastT)/1000, 1) : 1/30;
+  lastT = now;
+  fpsEMA = fpsEMA ? fpsEMA*0.85 + (1/Math.max(wall, 1e-3))*0.15 : 1/Math.max(wall, 1e-3);
+
+  if(P.spin && !spinFrozen) simT += FIXED_DT;   /* fixed delta, never wall clock */
+  if(P.spin) spinT += FIXED_DT*0.11;
+  camAz += FIXED_DT*0.012;                      /* slow orbital drift */
+
+  renderFrame();
+  frame++;
+  /* readiness: after the first real frame is on screen */
+  if(!ready && frame >= 3){ ready = true; window.__ready = true; }
+  if(frame % 12 === 0 || !ready) updateHud();
+}
+
+derive();
+resize();
+updateHud();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MANDELBULB — escape-time distance estimator</title>
+<style>
+  :root{
+    --ink:#e9eaf2; --dim:#98a0bb; --accent:#ff8a3c; --accent2:#63d8ff;
+    --panel:rgba(10,9,20,.74); --edge:rgba(150,140,220,.22);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;background:#04040a;overflow:hidden;
+    font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);
+    -webkit-font-smoothing:antialiased;cursor:grab}
+  html.dragging,html.dragging *{cursor:grabbing}
+  #gl{position:fixed;left:0;top:0;width:100vw;height:100vh;display:block;background:#04040a}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--edge);border-radius:10px;
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    box-shadow:0 12px 38px rgba(0,0,0,.6)}
+  #title{left:16px;top:14px;padding:11px 15px 12px;max-width:456px}
+  #title h1{margin:0 0 4px;font:600 16px/1.05 ui-monospace,monospace;letter-spacing:.20em}
+  #title h1 b{color:var(--accent);font-weight:600}
+  #title .sub{color:var(--dim);font-size:11px;line-height:1.55}
+  #title .algo{margin-top:8px;padding-top:7px;border-top:1px solid var(--edge);
+    color:#b9c0dd;font-size:11px;line-height:1.6}
+  #title .algo em{color:var(--accent2);font-style:normal}
+  #ctl{right:14px;top:14px;width:266px;padding:10px 12px 12px;max-height:calc(100vh - 28px);overflow-y:auto}
+  #ctl::-webkit-scrollbar{width:6px;height:6px}
+  #ctl::-webkit-scrollbar-thumb{background:#332c52;border-radius:3px}
+  .hd{display:flex;align-items:center;gap:7px;margin:11px 0 7px;
+    font:600 10px/1 ui-monospace,monospace;letter-spacing:.18em;color:var(--accent)}
+  .hd:first-child{margin-top:0}
+  .hd:after{content:"";flex:1;height:1px;background:var(--edge)}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:baseline;margin:0 0 2px;font-size:11px}
+  .row label{color:var(--dim)}
+  .row output{color:var(--accent2);font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;
+    background:transparent;margin:0 0 5px;cursor:ew-resize}
+  input[type=range]::-webkit-slider-runnable-track{height:2px;background:#39315a;border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-4px;
+    border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,138,60,.7)}
+  input[type=range]::-moz-range-track{height:2px;background:#39315a;border-radius:2px}
+  input[type=range]::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:var(--accent)}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .seg3{grid-template-columns:1fr 1fr 1fr}
+  button{padding:5px 4px;font:10px/1.2 ui-monospace,monospace;letter-spacing:.06em;
+    color:var(--ink);background:rgba(48,42,82,.62);border:1px solid var(--edge);border-radius:5px;cursor:pointer}
+  button:hover{background:rgba(70,60,116,.9);border-color:var(--accent)}
+  button.on{background:rgba(255,138,60,.20);border-color:var(--accent);color:#ffd0aa}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  #hud{left:16px;bottom:14px;padding:9px 13px;min-width:300px}
+  #hud .r{display:flex;justify-content:space-between;gap:16px}
+  #hud .r b{color:var(--ink);font-weight:400;font-variant-numeric:tabular-nums}
+  #hud .k{color:var(--accent2)}
+  #hud .tr{margin-top:7px;padding-top:6px;border-top:1px solid var(--edge);
+    display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+  #hud .tr div{font-size:10px;color:var(--dim)}
+  #hud .tr b{display:block;font-size:11px;color:var(--ink);font-weight:400;
+    font-variant-numeric:tabular-nums;margin-top:1px}
+  #hud .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
+  #hint{right:14px;bottom:14px;padding:7px 12px;color:var(--dim);font-size:11px}
+  #hint b{color:var(--ink);font-weight:400}
+  #boot{position:fixed;inset:0;background:radial-gradient(120% 90% at 62% 42%,#0d0a1c 0%,#04040a 72%);
+    display:flex;align-items:center;justify-content:center;z-index:20;transition:opacity .45s}
+  #boot .bx{width:430px;max-width:86vw}
+  #boot h2{margin:0 0 6px;font:600 15px/1.1 ui-monospace,monospace;letter-spacing:.18em}
+  #boot h2 b{color:var(--accent);font-weight:600}
+  #boot p{margin:0 0 11px;color:var(--dim);font-size:11px;line-height:1.6}
+  #bar{height:3px;background:#1b1630;border-radius:2px;overflow:hidden}
+  #bar i{display:block;height:100%;width:14%;background:linear-gradient(90deg,var(--accent2),var(--accent));
+    transition:width .3s}
+  #stat{margin-top:8px;color:var(--dim);font-size:11px;min-height:16px}
+  #err{margin-top:10px;color:#ff7b6b;font-size:11px;white-space:pre-wrap;max-height:44vh;
+    overflow:auto;display:none}
+  .gone{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div class="panel" id="title">
+  <h1>MANDEL<b>BULB</b></h1>
+  <div class="sub">A 3D fractal solid, never tessellated. Rays are advanced by the
+    <i>escape-time distance estimator</i> &mdash; not sphere tracing.</div>
+  <div class="algo"><em>d(p) = &frac12;&middot;ln|z|&middot;|z| / |dz/dz<sub>0</sub>|</em>,
+    z<sub>k+1</sub> = z<sub>k</sub><sup>N</sup> + p, bailout ‖z‖&gt;4, relaxed march
+    k&nbsp;=&nbsp;<span id="krel">0.90</span> at a ½·log<sub>2</sub>&nbsp;ε surface tolerance.
+    The same pass records four orbit traps &mdash; min‖z‖, min|z<sub>y</sub>|,
+    min dist(z,&nbsp;ŷ-axis) and the smooth escape count&nbsp;μ &mdash; whose
+    logarithms are drawn as antialiased contour bands.</div>
+</div>
+
+<div class="panel" id="ctl"></div>
+
+<div class="panel" id="hud"></div>
+<div class="panel" id="hint">
+  <b>drag</b> orbit &nbsp;·&nbsp; <b>wheel</b> dolly &nbsp;·&nbsp; <b>1–4</b> colour mode &nbsp;·&nbsp;
+  <b>A</b> auto-rotate &nbsp;·&nbsp; <b>R</b> reset &nbsp;·&nbsp; <b>H</b> hide panels
+</div>
+
+<div id="boot"><div class="bx">
+  <h2>MANDEL<b>BULB</b></h2>
+  <p>Compiling the escape-time distance-estimator kernel and converging the hero frame.
+     Time advances on a fixed 1/30&nbsp;s delta, so a slow machine renders the same scene
+     as a fast one.</p>
+  <div id="bar"><i></i></div>
+  <div id="stat">linking fractal kernels</div>
+  <div id="err"></div>
+</div></div>
+
+<script>
+"use strict";
+/* =====================================================================
+   MANDELBULB — escape-time distance-estimator raymarcher
+   ---------------------------------------------------------------------
+   Nothing is meshed. For every sample point p the fragment runs the
+   spherical-power iteration
+
+        z0 = p,   z(k+1) = z(k)^N + p,   |z(k+1)|^2 = |z(k)|^(2N)
+
+   while accumulating dr = |d z(k+1) / d p|. The classical escape-time
+   distance estimator of Tanenbaum & Hixon,
+
+        d(p) = 0.5 * ln|z| * |z| / dr,
+
+   is an upper bound on the distance from p to the fractal surface, so
+   the march consumes it as a *relaxed* step length (k < 1) instead of
+   the conservative bound a true sphere-tracer would need. The same pass
+   accumulates four orbit traps - closest approach of the orbit to the
+   origin and to each coordinate plane - and the logs of those minima
+   become antialiased contour bands. Every lit pixel is a converged
+   escape-time estimate; there is no texture, no LUT, no precompute.
+   ===================================================================== */
+
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+
+/* ------------------------------------------------------------------ */
+/*  state                                                              */
+/* ------------------------------------------------------------------ */
+const CFG = {
+  power:    8.00,   // fractal power N
+  iter:      9,     // escape-time iterations
+  steps:    72,     // DE march steps (p95 of a measured CPU sweep is 46)
+  relax:    0.90,   // DE relaxation k
+  band:     1.15,   // orbit-trap band frequency
+  sharp:    0.55,   // band edge softness
+  zoom:     3.05,   // dolly distance
+  rotSpeed: 0.26,   // rad/s of fixed-delta time
+  mode:      0,
+  auto:      true,
+  res:      400,    // internal buffer height
+  camAz:     0.70,
+  camEl:     0.20,
+};
+const DEFAULTS = JSON.parse(JSON.stringify(CFG));
+const MODES  = ['ORBIT TRAP', 'ESCAPE BAND', 'SHADED', 'FILAMENT'];
+const DT     = 1/30;              // fixed simulation delta — never wall clock
+const HOLD   = 20;                 // frames of held hero pose before motion starts
+const OFF_X  = 0.30, OFF_Y = 0.13;   // principal-point offset: subject off-centre
+const FOV    = 0.95;                 // radians
+const PROBE_SCALE = 0.5;             // telemetry pixel packs trap values /2
+let SIMT = 0;                        // simulated seconds
+
+/* ------------------------------------------------------------------ */
+/*  WebGL2 context                                                      */
+/* ------------------------------------------------------------------ */
+const canvas = $('gl');
+const gl = canvas.getContext('webgl2', {antialias:false, alpha:true, depth:false,
+            stencil:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
+if(!gl){
+  const e = $('err'); e.style.display = 'block';
+  e.textContent = 'WebGL2 is required and is unavailable in this browser.';
+  $('stat').textContent = 'failed';
+  window.__probe = {ready:false, error:'no webgl2'};
+  throw new Error('WebGL2 unavailable');
+}
+
+const VERT = `#version 300 es
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FRAG = `#version 300 es
+precision highp float;
+out vec4 outColor;
+
+uniform vec2  uRes;        // internal buffer size
+uniform vec3  uRo;         // camera origin
+uniform mat3  uCam;        // columns: right, up, forward
+uniform vec2  uOff;        // principal-point offset (composes the frame)
+uniform float uTan;        // tan(fov/2)
+uniform float uFar;
+uniform float uPower;      // fractal power N
+uniform int   uIter;       // escape-time iterations
+uniform int   uSteps;      // DE march steps
+uniform float uRelax;      // DE relaxation k
+uniform float uEps;        // surface tolerance
+uniform int   uMode;
+uniform float uBand;
+uniform float uSharp;
+uniform float uPrec;       // precession angle of the solid
+uniform int   uProbe;      // 1 = telemetry pass
+uniform vec2  uProbePx;
+uniform float uScale;      // telemetry pack scale
+
+const int   MAXI = 24;
+const int   MAXS = 200;
+const float BAIL = 4.0;                      // escape radius
+const vec3  AXIS = vec3(0.32151, 0.91860, 0.22965);   // precession axis
+
+/* one warm subject on a cool void: violet ground, magenta body, amber
+   crown, cream core, cyan rim. */
+const vec3 C_DEEP   = vec3(0.060, 0.018, 0.120);
+const vec3 C_MID    = vec3(0.560, 0.090, 0.290);
+const vec3 C_WARM   = vec3(1.000, 0.440, 0.110);
+const vec3 C_HOT    = vec3(1.000, 0.880, 0.680);
+const vec3 C_ROSE   = vec3(1.000, 0.300, 0.520);
+const vec3 C_GOLD   = vec3(1.000, 0.720, 0.240);
+const vec3 C_VIOLET = vec3(0.480, 0.220, 0.950);
+const vec3 C_RIM    = vec3(0.180, 0.620, 0.960);
+
+float h31(vec3 p){
+  p = fract(p*0.3183099 + vec3(0.71, 0.113, 0.419));
+  p *= 17.0;
+  return fract(p.x*p.y*p.z*(p.x + p.y + p.z));
+}
+vec3 rotAxis(vec3 v, vec3 k, float a){
+  float c = cos(a), s = sin(a);
+  return v*c + cross(k, v)*s + k*dot(k, v)*(1.0 - c);
+}
+vec3 ramp(float t, vec3 a, vec3 b, vec3 c){
+  t = clamp(t, 0.0, 1.0);
+  return (t < 0.5) ? mix(a, b, t*2.0) : mix(b, c, (t - 0.5)*2.0);
+}
+/* antialiased contour band: one hard edge per period, softened by the
+   screen-space gradient so distant structure never aliases into moire */
+float bandWave(float x, float soft){
+  float w = clamp(fwidth(x), 1.0e-4, 0.45) * soft;
+  return 1.0 - smoothstep(0.5 - w, 0.5 + w, abs(fract(x) - 0.5));
+}
+float lineWave(float x, float soft){
+  float w = clamp(fwidth(x), 1.0e-4, 0.45) * soft;
+  float f = fract(x);
+  return 1.0 - smoothstep(0.0, w, min(f, 1.0 - f));
+}
+
+/* ------------------------------------------------------------------ */
+/*  the estimator
+      z <- |z|^(N-1) z exp(i (N-1)phi) + p ,  dr <- |z|^(N-1) N dr + 1
+    traps, all taken from the *dynamics* (iteration 1 onward) so they
+    are not swamped by the seed value |z0| = |p|:
+      .x  min |z|                        - spherical trap
+      .y  min |z.y|                      - one coordinate plane
+      .z  min dist(z, Y axis)            - cylindrical trap
+      .w  smooth escape count mu         - where the orbit gave up
+    ------------------------------------------------------------------ */
+float deT(vec3 p, int iters, out vec4 trap, out float rOut){
+  vec3  z  = p;
+  float dr = 1.0;
+  float r  = 1.0e-6;
+  float mu = float(iters);
+  trap = vec4(1.0e10);
+  for(int i = 0; i < MAXI; i++){
+    if(i >= iters) break;
+    r = length(z);
+    if(r > BAIL){
+      /* continuous escape time: the fractional iteration at bailout */
+      mu = float(i) + 1.0 - log2(max(log(r)/log(BAIL), 1.0e-6));
+      break;
+    }
+    if(i > 0){
+      trap.x = min(trap.x, r);
+      trap.y = min(trap.y, abs(z.y));
+      trap.z = min(trap.z, length(z.xz));
+    }
+    float invr  = 1.0/max(r, 1.0e-7);
+    float theta = acos(clamp(z.z*invr, -1.0, 1.0));
+    float phi   = atan(z.y, z.x);
+    /* one pow per iteration: |z|^(N-1) gives both the derivative factor
+       and |z|^N = |z|^(N-1) * |z| */
+    float rp    = pow(r, uPower - 1.0);
+    dr = rp*uPower*dr + 1.0;                // = |z|^(N-1) * N * dr + 1
+    float tp = theta*uPower, pp = phi*uPower, st = sin(tp);
+    z = (rp*r)*vec3(st*cos(pp), st*sin(pp), cos(tp)) + p;
+  }
+  rOut = r;
+  trap.w = mu;
+  return 0.5*log(r)*r/max(dr, 1.0e-6);
+}
+
+vec3 calcNormal(vec3 p, int iters){          // tetrahedral gradient of the DE
+  const vec2 e = vec2(1.0, -1.0)*0.0016;
+  vec4 tr; float rr;
+  return normalize(e.xyy*deT(p + e.xyy, iters, tr, rr)
+                 + e.yyx*deT(p + e.yyx, iters, tr, rr)
+                 + e.yxy*deT(p + e.yxy, iters, tr, rr)
+                 + e.xxx*deT(p + e.xxx, iters, tr, rr));
+}
+float calcAO(vec3 p, vec3 n, int iters){      // DE-based occlusion
+  float occ = 0.0, w = 1.0;
+  vec4 tr; float rr;
+  for(int i = 1; i <= 4; i++){
+    float h = 0.014*float(i*i);
+    occ += (h - deT(p + n*h, iters, tr, rr))*w;
+    w *= 0.62;
+  }
+  return clamp(1.0 - 2.8*occ, 0.0, 1.0);
+}
+
+vec3 backdrop(vec3 rd){
+  float h = rd.y*0.5 + 0.5;
+  vec3 c = mix(vec3(0.010, 0.009, 0.024), vec3(0.026, 0.022, 0.058), h);
+  vec3 sp = rd*150.0, ip = floor(sp), fp = fract(sp) - 0.5;
+  float s = h31(ip);
+  float star = step(0.9930, s)*smoothstep(0.30, 0.02, length(fp))*(0.35 + 0.65*h31(ip + 7.13));
+  return c + vec3(0.55, 0.66, 0.95)*star*0.60;
+}
+
+void main(){
+  vec2 fc = (uProbe == 1) ? uProbePx : gl_FragCoord.xy;
+  vec2 sp = (2.0*fc - uRes)/uRes.y - uOff;
+  vec3 rd = normalize(uCam*vec3(sp.x*uTan, sp.y*uTan, 1.0));
+
+  /* ---- escape-time march ---- */
+  vec4 trap = vec4(1.0e10);
+  float rOut = 1.0;
+  float t = 0.0, d = 1.0, kmin = 1.0e9;
+  bool hit = false;
+  for(int i = 0; i < MAXS; i++){
+    if(i >= uSteps) break;
+    d = deT(rotAxis(uRo + rd*t, AXIS, uPrec), uIter, trap, rOut);
+    kmin = min(kmin, d/max(t, 1.0e-4));
+    if(d < uEps*(t + 0.25)){ hit = true; break; }
+    t += clamp(d*uRelax, 0.0012, 0.85);
+    if(t > uFar) break;
+  }
+
+  if(uProbe == 1){
+    /* pack: r = spherical trap, g = plane trap, b = escape count / iters, a = hit */
+    vec3 v = vec3(log(max(min(trap.x, trap.z), 1.0e-9))*0.50 + 0.5, log(max(trap.y, 1.0e-9))*0.09 + 0.5, trap.w/9.0)*uScale;
+    outColor = hit ? vec4(clamp(v, 0.0, 1.0), 1.0) : vec4(0.0);
+    return;
+  }
+
+  vec3 p = rotAxis(uRo + rd*t, AXIS, uPrec);
+  vec3 bg = backdrop(rd);
+  /* graze halo: rays that passed close to the surface without converging */
+  float halo = exp(-kmin*46.0);
+
+  /* ---- Orbit-trap levels -------------------------------------------------
+     The divisors are measured, not guessed: a 500-ray CPU sweep of the
+     converged surface gives the p5..p95 span of each trap at this camera,
+     and they are stable across N = 3..12. Normalising to that span makes
+     "band frequency" mean a real count of contour lines on screen (4-7 per
+     family at 1.00) instead of an arbitrary multiplier that aliases into
+     moire at 640 px.
+         log sph  -0.29 .. 0.10   -> / 0.45
+         log pla  -3.74 .. -0.35  -> / 4.60
+         log cyl  -1.34 .. 0.03   -> / 2.10
+         mu        2.05 .. 5.75   -> / 5.00  (saturates at the iteration
+                                               budget deep inside the set,
+                                               which reads as the hot core)
+     Bands are evaluated in uniform control flow so fwidth() is defined on
+     every fragment, including the ones that missed.
+     ------------------------------------------------------------------- */
+  float nSph = log(max(trap.x, 1.0e-9))/0.45;
+  float nPla = log(max(trap.y, 1.0e-9))/4.60;
+  float nCyl = log(max(trap.z, 1.0e-9))/2.10;
+  float nEsc = trap.w/5.00;
+  float b1 = bandWave(nSph*uBand*5.0, uSharp);
+  float b2 = bandWave(nPla*uBand*7.0, uSharp);
+  float b3 = bandWave(nCyl*uBand*6.0, uSharp);
+  float b4 = bandWave(nEsc*uBand*9.0, uSharp);
+  float l4 = lineWave(nEsc*uBand*9.0, uSharp*1.6);
+
+  vec3 col;
+  if(hit){
+    vec3 n  = calcNormal(p, max(4, uIter - 2));
+    float ao = calcAO(p, n, max(4, uIter - 3));
+    vec3 ld = normalize(vec3(-0.58, 0.70, 0.42));
+    float dif = clamp(dot(n, ld), 0.0, 1.0);
+    /* wrap light: the fractal is full of self-shadowed crevices, a hard
+       terminator turns the folds into black mush */
+    float wlp = clamp((dot(n, ld) + 0.30)/1.30, 0.0, 1.0);
+    float bak = clamp(dot(n, normalize(vec3(0.60, 0.10, -0.75))), 0.0, 1.0);
+    float spe = pow(clamp(dot(reflect(-ld, n), -rd), 0.0, 1.0), 58.0);
+    /* a fractal seen from outside is mostly grazing, so a wide fresnel
+       term floods the whole body with its own rim colour */
+    float fre = pow(1.0 - clamp(dot(n, -rd), 0.0, 1.0), 4.5);
+    float g1 = clamp(0.50 + nSph*0.90, 0.0, 1.0);
+    float g2 = clamp(0.48 + nPla*0.45, 0.0, 1.0);
+    float g3 = clamp(0.48 + nCyl*0.60, 0.0, 1.0);
+    float g4 = clamp(nEsc, 0.0, 1.0);
+    /* Warm key, only gently cool fill: a strong blue fill desaturates the
+       whole body to a blue/peach duotone. */
+    float shade = (0.24 + 0.92*dif)*(0.30 + 0.70*ao) + 0.18*wlp;
+    vec3  lightv = mix(vec3(0.50, 0.44, 0.60), vec3(1.32, 1.00, 0.74), 0.30 + 0.70*wlp)
+                 + vec3(0.10, 0.14, 0.34)*bak*0.34;
+
+    if(uMode == 0){                        /* ORBIT TRAP — contour bands */
+      /* the body runs violet -> magenta -> amber, keyed on how deep the
+         orbit was trapped; the spherical, plane and cylindrical traps each
+         lay a differently-pitched family of contour bands over that ground */
+      col = ramp(g4, C_DEEP, C_MID, C_WARM);
+      col = mix(col, C_ROSE*(0.34 + 0.95*g2), b2*0.62);
+      col = mix(col, C_GOLD*(0.26 + 0.90*g1), b1*0.52);
+      col = mix(col, C_VIOLET*(0.30 + 0.80*g3), b3*0.42);
+      col += C_HOT*b4*0.28;
+      col *= shade*lightv;
+      col += fre*C_RIM*0.12 + spe*C_HOT*0.45;
+    } else if(uMode == 1){                 /* ESCAPE BAND — smooth escape count */
+      col = ramp(g4, vec3(0.045, 0.020, 0.080), vec3(0.58, 0.10, 0.26), vec3(1.0, 0.56, 0.12));
+      col *= (0.26 + 0.90*dif)*(0.28 + 0.72*ao) + 0.18*wlp;
+      col += C_WARM*b4*0.30 + C_HOT*l4*0.18;
+      col += fre*C_RIM*0.12 + spe*C_HOT*0.40;
+    } else if(uMode == 2){                 /* SHADED — the estimator as a surface */
+      col = ramp(g4, vec3(0.050, 0.030, 0.045), vec3(0.36, 0.18, 0.15), vec3(0.99, 0.80, 0.56));
+      col *= (0.12 + 0.95*dif)*(0.20 + 0.80*ao) + 0.16*wlp;
+      col += spe*vec3(1.0, 0.94, 0.84)*0.70 + fre*C_RIM*0.14;
+      col += b1*vec3(0.62, 0.22, 0.08)*0.22 + b3*vec3(0.22, 0.20, 0.55)*0.10;
+    } else {                               /* FILAMENT — emissive ice */
+      col = ramp(g3, vec3(0.020, 0.040, 0.075), vec3(0.06, 0.36, 0.62), vec3(0.70, 0.96, 1.0));
+      col *= (0.26 + 0.84*dif)*(0.26 + 0.74*ao) + 0.20*wlp;
+      col += vec3(0.82, 0.96, 1.0)*b3*0.34 + vec3(1.0, 0.55, 0.35)*b4*0.18
+           + fre*vec3(0.22, 0.72, 1.0)*0.30;
+    }
+    col = mix(col, bg*1.3, 1.0 - exp(-max(0.0, t - 1.6)*0.15));
+    col += C_RIM*halo*0.10;
+  } else {
+    col = bg + mix(C_MID, C_RIM, 0.35)*halo*0.42;
+  }
+
+  /* Tone map on luminance and carry the chroma ratio through unchanged:
+     a per-channel curve would desaturate the whole body to grey. */
+  float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  float tl  = 1.0 - exp(-lum*1.55);              // soft shoulder
+  col *= (lum > 1.0e-5) ? (tl/lum) : 0.0;
+  col  = clamp(col, 0.0, 1.0);
+  col  = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 1.28);   // saturation
+  col  = pow(col, vec3(0.4545));
+  col += (h31(vec3(fc, 0.5)) - 0.5)*0.0035;      // static dither
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    const log = gl.getShaderInfoLog(s);
+    gl.deleteShader(s);
+    throw new Error(log);
+  }
+  return s;
+}
+let PROG, UNI = {}, RW = 0, RH = 0;
+try{
+  const vs = compile(gl.VERTEX_SHADER, VERT);
+  const fs = compile(gl.FRAGMENT_SHADER, FRAG);
+  PROG = gl.createProgram();
+  gl.attachShader(PROG, vs); gl.attachShader(PROG, fs);
+  gl.linkProgram(PROG);
+  if(!gl.getProgramParameter(PROG, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(PROG));
+  gl.deleteShader(vs); gl.deleteShader(fs);
+  gl.useProgram(PROG);
+  for(const n of ['uRes','uRo','uCam','uOff','uTan','uFar','uPower','uIter','uSteps',
+                  'uRelax','uEps','uMode','uBand','uSharp','uPrec','uProbe','uProbePx','uScale'])
+    UNI[n] = gl.getUniformLocation(PROG, n);
+  gl.bindVertexArray(gl.createVertexArray());
+}catch(e){
+  const n = $('err'); n.style.display = 'block'; n.textContent = String(e.message || e);
+  $('stat').textContent = 'shader link failed';
+  window.__probe = {ready:false, error:String(e.message || e)};
+  throw e;
+}
+
+/* ------------------------------------------------------------------ */
+/*  camera                                                              */
+/* ------------------------------------------------------------------ */
+const TARGET = [0, 0.05, 0];
+function camPose(){
+  const az = CFG.camAz + (CFG.auto ? SIMT*CFG.rotSpeed : 0);
+  const ce = Math.cos(CFG.camEl), se = Math.sin(CFG.camEl);
+  const dx = Math.cos(az)*ce, dy = se, dz = Math.sin(az)*ce;
+  const ro = [TARGET[0] + dx*CFG.zoom, TARGET[1] + dy*CFG.zoom, TARGET[2] + dz*CFG.zoom];
+  const fw = [-dx, -dy, -dz];
+  /* right = normalize(cross(fw, worldUp)) with worldUp = (0,1,0) */
+  let rx = fw[1], ry = -fw[0], rz = 0;
+  const rl = Math.hypot(rx, ry, rz) || 1;
+  rx /= rl; ry /= rl; rz /= rl;
+  /* up = cross(right, fw) */
+  const U = [ry*fw[2] - rz*fw[1], rz*fw[0] - rx*fw[2], rx*fw[1] - ry*fw[0]];
+  return {ro, m:[rx, ry, rz, U[0], U[1], U[2], fw[0], fw[1], fw[2]], fwd:fw};
+}
+
+/* ------------------------------------------------------------------ */
+/*  sizing: small internal buffer, upscaled by the compositor           */
+/* ------------------------------------------------------------------ */
+function resize(){
+  const cw = Math.max(2, innerWidth), ch = Math.max(2, innerHeight);
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
+  const h = CFG.res, w = Math.max(64, Math.round(h*cw/ch));
+  if(w !== RW || h !== RH){ RW = w; RH = h; canvas.width = RW; canvas.height = RH; }
+}
+addEventListener('resize', resize);
+resize();
+
+/* ------------------------------------------------------------------ */
+/*  controls                                                            */
+/* ------------------------------------------------------------------ */
+const SLIDERS = [
+  ['FRACTAL', [
+    {k:'power', l:'power  N',           min:2,   max:12,  step:0.01, f:v=>v.toFixed(2)},
+    {k:'iter',  l:'escape iterations',  min:3,   max:16,  step:1,    f:v=>v.toFixed(0)},
+    {k:'steps', l:'DE march steps',     min:16,  max:160, step:1,    f:v=>v.toFixed(0)},
+    {k:'relax', l:'relaxation  k',      min:0.40,max:1.00,step:0.01, f:v=>v.toFixed(2)},
+  ]],
+  ['ORBIT-TRAP BANDS', [
+    {k:'band',  l:'band frequency',     min:0.30,max:3.00,step:0.01, f:v=>v.toFixed(2)},
+    {k:'sharp', l:'edge softness',      min:0.20,max:2.50,step:0.01, f:v=>v.toFixed(2)},
+  ]],
+  ['CAMERA / MOTION', [
+    {k:'zoom',     l:'dolly distance', min:1.80,max:6.00,step:0.01, f:v=>v.toFixed(2)},
+    {k:'rotSpeed', l:'rotation speed', min:0.00,max:1.20,step:0.01, f:v=>v.toFixed(2)},
+  ]],
+];
+const RESS = [[320,'FAST'],[360,'STD'],[400,'FINE']];
+let ctlHTML = '';
+for(const [name, items] of SLIDERS){
+  ctlHTML += '<div class="hd">' + name + '</div>';
+  for(const it of items){
+    ctlHTML += '<div class="row"><label for="s_' + it.k + '">' + it.l + '</label>'
+             + '<output id="o_' + it.k + '">' + it.f(CFG[it.k]) + '</output></div>'
+             + '<input type="range" id="s_' + it.k + '" min="' + it.min + '" max="' + it.max
+             + '" step="' + it.step + '" value="' + CFG[it.k] + '">';
+  }
+}
+ctlHTML += '<div class="hd">COLOUR MODE</div><div class="seg" id="modes">'
+  + MODES.map((m,i)=>'<button data-m="' + i + '" class="' + (i===CFG.mode?'on':'') + '">' + m + '</button>').join('')
+  + '</div><div class="hd">MOTION</div><div class="btns">'
+  + '<button id="bAuto" class="' + (CFG.auto?'on':'') + '">AUTO-ROTATE</button>'
+  + '<button id="bReset">RESET VIEW</button></div>'
+  + '<div class="hd">INTERNAL BUFFER</div><div class="seg seg3" id="ress">'
+  + RESS.map(([v,n])=>'<button data-r="' + v + '" class="' + (v===CFG.res?'on':'') + '">' + n + ' ' + v + 'p</button>').join('')
+  + '</div>';
+$('ctl').innerHTML = ctlHTML;
+
+const SPEC = SLIDERS.flatMap(g => g[1]);
+const syncOut = k => { const it = SPEC.find(x => x.k === k); const o = $('o_' + k);
+                       if(it && o) o.textContent = it.f(CFG[k]); };
+for(const it of SPEC){
+  $('s_' + it.k).addEventListener('input', e=>{ CFG[it.k] = parseFloat(e.target.value); syncOut(it.k); });
+}
+$('modes').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  CFG.mode = +b.dataset.m;
+  [...$('modes').children].forEach(x=>x.classList.toggle('on', x === b));
+});
+$('ress').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  CFG.res = +b.dataset.r; resize();
+  [...$('ress').children].forEach(x=>x.classList.toggle('on', x === b));
+});
+$('bAuto').addEventListener('click', ()=>{
+  CFG.auto = !CFG.auto;
+  $('bAuto').classList.toggle('on', CFG.auto);
+  $('bAuto').textContent = CFG.auto ? 'AUTO-ROTATE' : 'MANUAL';
+});
+$('bReset').addEventListener('click', ()=>{
+  CFG.camAz = DEFAULTS.camAz; CFG.camEl = DEFAULTS.camEl; CFG.zoom = DEFAULTS.zoom;
+  syncOut('zoom');
+});
+$('krel').textContent = CFG.relax.toFixed(2);
+$('s_relax').addEventListener('input', ()=>{ $('krel').textContent = CFG.relax.toFixed(2); });
+
+/* drag to orbit, wheel to dolly */
+let dragging = false, lx = 0, ly = 0;
+canvas.addEventListener('pointerdown', e=>{
+  dragging = true; lx = e.clientX; ly = e.clientY;
+  document.documentElement.classList.add('dragging');
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+});
+canvas.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  CFG.camAz -= (e.clientX - lx)*0.006;
+  CFG.camEl  = clamp(CFG.camEl + (e.clientY - ly)*0.005, -1.15, 1.15);
+  lx = e.clientX; ly = e.clientY;
+});
+const endDrag = e=>{ dragging = false; document.documentElement.classList.remove('dragging');
+                     try{ canvas.releasePointerCapture(e.pointerId); }catch(_){} };
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  CFG.zoom = clamp(CFG.zoom*(1 + Math.sign(e.deltaY)*0.07), 1.8, 6.0);
+  syncOut('zoom');
+}, {passive:false});
+
+addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k >= '1' && k <= '4'){
+    CFG.mode = +k - 1;
+    [...$('modes').children].forEach(x=>x.classList.toggle('on', +x.dataset.m === CFG.mode));
+  } else if(k === 'a'){ $('bAuto').click(); }
+  else if(k === 'r'){ $('bReset').click(); }
+  else if(k === 'h'){
+    for(const id of ['title','ctl','hud','hint'])
+      $(id).style.display = ($(id).style.display === 'none') ? '' : 'none';
+  }
+});
+
+/* hook for the render harness / console driving */
+window.__setParam = (k, v)=>{
+  if(k === 'dolly') k = 'zoom';       // the HUD's name for the dolly distance
+  if(!(k in CFG)) return false;
+  CFG[k] = v;
+  const s = $('s_' + k);
+  if(s){ s.value = v; syncOut(k); }
+  if(k === 'relax') $('krel').textContent = CFG.relax.toFixed(2);
+  if(k === 'mode') [...$('modes').children].forEach(x=>x.classList.toggle('on', +x.dataset.m === v));
+  if(k === 'res'){ resize(); [...$('ress').children].forEach(x=>x.classList.toggle('on', +x.dataset.r === v)); }
+  if(k === 'auto'){ $('bAuto').classList.toggle('on', !!v);
+                    $('bAuto').textContent = v ? 'AUTO-ROTATE' : 'MANUAL'; }
+  return true;
+};
+window.__cfg = CFG;
+
+/* ------------------------------------------------------------------ */
+/*  draw + frame                                                       */
+/* ------------------------------------------------------------------ */
+const probe = {
+  ready:false, fps:0, frameMs:0, res:'0x0', power:0, iterations:0, marchSteps:0,
+  relaxation:0, mode:'', autoRotate:true, rotSpeed:0, simTime:0, frames:0,
+  dolly:0, azimuth:0, elevation:0, surfaceHit:false, trapOrigin:0, trapPlane:0, residuum:0,
+ };
+window.__probe = probe;
+const pbuf = new Uint8Array(4);     // telemetry pixel from the 1x1 probe pass
+const dbuf = new Uint8Array(4);     // 1px drain, used only to sync the GPU
+const bar = $('bar').firstElementChild, stat = $('stat');
+let lastMs = 0, frames = 0, firstDone = false;
+
+function draw(){
+  const c = camPose();
+  gl.useProgram(PROG);
+  gl.uniform2f(UNI.uRes, RW, RH);
+  gl.uniform3f(UNI.uRo, c.ro[0], c.ro[1], c.ro[2]);
+  gl.uniformMatrix3fv(UNI.uCam, false, c.m);
+  gl.uniform2f(UNI.uOff, OFF_X, OFF_Y);
+  gl.uniform1f(UNI.uTan, Math.tan(FOV*0.5));
+  gl.uniform1f(UNI.uFar, CFG.zoom + 2.6);
+  gl.uniform1f(UNI.uPower, CFG.power);
+  gl.uniform1i(UNI.uIter, CFG.iter|0);
+  gl.uniform1i(UNI.uSteps, CFG.steps|0);
+  gl.uniform1f(UNI.uRelax, CFG.relax);
+  gl.uniform1f(UNI.uEps, 0.00075);
+  gl.uniform1i(UNI.uMode, CFG.mode|0);
+  gl.uniform1f(UNI.uBand, CFG.band);
+  gl.uniform1f(UNI.uSharp, CFG.sharp);
+  gl.uniform1f(UNI.uPrec, SIMT*CFG.rotSpeed*0.55);
+  gl.uniform1f(UNI.uScale, PROBE_SCALE);
+
+  /* telemetry: report the orbit of the pixel at the optical centre, read
+     back inside the same GL task so the HUD shows what was really drawn */
+  const px = clamp(Math.round(OFF_X*RW*0.5 + RW*0.5), 0, RW-1);
+  const py = clamp(Math.round(OFF_Y*RH*0.5 + RH*0.5), 0, RH-1);
+  gl.uniform1i(UNI.uProbe, 1);
+  gl.uniform2f(UNI.uProbePx, px + 0.5, py + 0.5);
+  gl.viewport(0, 0, 1, 1);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pbuf);
+
+  gl.uniform1i(UNI.uProbe, 0);
+  gl.viewport(0, 0, RW, RH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function hud(){
+  const rows = [
+    ['frame',    lastMs.toFixed(0) + ' ms  ·  ' + (1000/Math.max(lastMs, 1)).toFixed(1) + ' fps'],
+    ['buffer',   RW + ' × ' + RH + '   →   ' + innerWidth + ' × ' + innerHeight],
+    ['estimator','N = ' + CFG.power.toFixed(2) + '   iters = ' + CFG.iter + '   k = ' + CFG.relax.toFixed(2)],
+    ['march',    CFG.steps + ' steps  ·  sim t = ' + SIMT.toFixed(2) + ' s  ·  frame ' + frames],
+    ['camera',   'dolly ' + CFG.zoom.toFixed(2) + '   elev ' + CFG.camEl.toFixed(2) + '   '
+                 + (CFG.auto ? 'auto ' + CFG.rotSpeed.toFixed(2) + ' rad/s' : 'manual')],
+  ];
+  const tr = probe.surfaceHit
+    ? '<div><span class="sw" style="background:#ff8a3c"></span>min‖z‖<b>' + probe.trapOrigin.toFixed(3) + '</b></div>'
+      + '<div><span class="sw" style="background:#ff3d81"></span>min|z<sub>i</sub>|<b>' + probe.trapPlane.toFixed(3) + '</b></div>'
+      + '<div><span class="sw" style="background:#7a3bd6"></span>residuum<b>' + probe.residuum.toFixed(3) + '</b></div>'
+      + '<div><span class="sw" style="background:#63d8ff"></span>hit<b>' + (probe.surfaceHit ? 'yes' : 'no') + '</b></div>'
+    : '<div>orbit trap<br><b>—</b></div>'.repeat(4);
+  $('hud').innerHTML = rows.map(r=>'<div class="r"><span class="k">' + r[0] + '</span><b>' + r[1] + '</b></div>').join('')
+    + '<div class="tr">' + tr + '</div>';
+}
+
+function frame(){
+  requestAnimationFrame(frame);
+  const t0 = performance.now();
+  if(frames >= HOLD) SIMT += DT;    // fixed delta — same scene at 1 fps or 60
+  draw();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, dbuf);   // real sync, 1 px
+  const el = performance.now() - t0;
+  lastMs = lastMs ? lastMs*0.8 + el*0.2 : el;
+  frames++;
+
+  const hit = (pbuf[0] | pbuf[1] | pbuf[2] | pbuf[3]) !== 0;
+  probe.surfaceHit = hit;
+  if(hit){
+    probe.trapOrigin = pbuf[0]/255/PROBE_SCALE;   // min |z|
+    probe.trapPlane  = pbuf[1]/255/PROBE_SCALE;   // min |z.x|,|z.y|,|z.z|
+    probe.residuum   = pbuf[2]/255/PROBE_SCALE;   // log-residuum proxy
+    probe.trapX = probe.trapPlane; probe.trapY = probe.trapPlane; probe.trapZ = probe.trapPlane;
+  }
+  probe.res = RW + 'x' + RH;
+  probe.power = CFG.power; probe.iterations = CFG.iter;
+  probe.marchSteps = CFG.steps; probe.relaxation = CFG.relax;
+  probe.mode = MODES[CFG.mode]; probe.autoRotate = CFG.auto;
+  probe.rotSpeed = CFG.rotSpeed; probe.simTime = +SIMT.toFixed(3);
+  probe.frames = frames; probe.dolly = CFG.zoom;
+  probe.azimuth = +CFG.camAz.toFixed(3); probe.elevation = +CFG.camEl.toFixed(3);
+  probe.fps = +(1000/Math.max(lastMs, 1)).toFixed(2);
+  probe.frameMs = +lastMs.toFixed(1);
+  probe.ready = firstDone;
+
+  if(!firstDone){
+    firstDone = true;
+    bar.style.width = '100%';
+    stat.textContent = 'converged in ' + frames + ' frame' + (frames === 1 ? '' : 's');
+    hud();
+    $('boot').classList.add('gone');
+    setTimeout(()=>{ $('boot').style.display = 'none'; }, 500);
+    /* flag only after the composited first frame is on screen */
+    requestAnimationFrame(()=>{ window.__ready = true; });
+  } else if((frames & 7) === 0){
+    hud();
+  }
+}
+hud();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
